@@ -151,7 +151,7 @@ diagnostics() {
     for _ in $(seq 1 "$HANDLER_WAIT_S"); do pgrep -f -- "$EMULATOR_HANDLER" >/dev/null 2>&1 || break; sleep 1; done
     timeout 20 python3 -I "$DIR/crash-facts.py" decode "$cdir" "$t0" 2>&1 | redact || echo "(could not read: crash-facts.py decode)"
   fi
-  echo "--- the liveness trace (the last 60 samples: seconds after the cold start, emulator, app's process id, load)"
+  echo "--- the liveness trace (the last 60 samples: seconds after the cold start, emulator, its CPU % and resident kB, app's process id, load)"
   if [ -n "$A" ] && [ -s "$A/trace" ]; then tail -n 60 "$A/trace"; else echo "(no trace: the check stopped before the cold start)"; fi
   echo "--- disk (df -h)"
   st=0; out=$(timeout 10 df -h "$PWD" "${HOME:-}/.android" 2>&1) || st=$?
@@ -186,18 +186,25 @@ call() {
 }
 
 # trace: the liveness trace, in the background from just before the cold start (#363): every TRACE_S, the seconds since
-# the cold start, whether the emulator.pid process is alive, the app's process id as the device answers it (or none /
+# the cold start, whether the emulator.pid process is alive, its CPU % and resident memory in kB (ps; "-" when gone or
+# unreadable), the app's process id as the device answers it (or none /
 # fail / timeout), the host's 1-minute load, and whether the process check after the start had recorded its id (after=1).
 trace() {
   set +e
-  local t0 epid app r st load
+  local t0 epid app r st load use cpu rss
   t0=$(date +%s); epid=$(tr -dc '0-9' < "$EMULATOR_PID_FILE" 2>/dev/null)
   while :; do
     r=$(timeout 3 adb shell 'p=$(pidof com.openrs.dash); echo "pid:$p"' 2>/dev/null); st=$?; r=${r//$'\r'/}
     if [ "$st" -eq 124 ]; then app=timeout; elif [ "$st" -ne 0 ] || [[ "$r" != pid:* ]]; then app=fail
     else app=${r#pid:}; app=${app// /,}; [ -n "$app" ] || app=none; [[ "$app" =~ ^([0-9,]+|none)$ ]] || app=fail; fi
     load=$(cut -d' ' -f1 /proc/loadavg 2>/dev/null || echo -)
-    echo "+$(( $(date +%s) - t0 ))s emulator=$( [ -n "$epid" ] && kill -0 "$epid" 2>/dev/null && echo alive || echo gone) app=$app load=${load:--} after=$( [ -s "$A/pid1" ] && echo 1 || echo 0)" >> "$A/trace"
+    # the emulator's own CPU % and resident memory (kB), numbers only: saturation or growth before a crash (#363)
+    cpu=-; rss=-
+    if [ -n "$epid" ] && kill -0 "$epid" 2>/dev/null; then
+      use=$(timeout 5 ps -o pcpu=,rss= -p "$epid" 2>/dev/null); read -r cpu rss <<<"$use"
+      [[ "$cpu" =~ ^[0-9]+([.,][0-9]+)?$ ]] || cpu=-; [[ "$rss" =~ ^[0-9]+$ ]] || rss=-
+    fi
+    echo "+$(( $(date +%s) - t0 ))s emulator=$( [ -n "$epid" ] && kill -0 "$epid" 2>/dev/null && echo alive || echo gone) cpu=$cpu rss_kb=$rss app=$app load=${load:--} after=$( [ -s "$A/pid1" ] && echo 1 || echo 0)" >> "$A/trace"
     sleep "$TRACE_S"
   done
 }

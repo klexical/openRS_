@@ -60,6 +60,7 @@ if [ -z "$found" ] || [ "${FAKE_EMU-}" = exit ]; then
   echo "ERROR | Unknown AVD name [$name], use -list-avds to see valid list. (fake)"; exit 1
 fi
 echo "INFO | starting (fake, AVD in $found)"
+[ "${FAKE_GLES-swangle}" = none ] || echo "INFO         | emuglConfig_init: vulkan_mode_selected:swiftshader gles_mode_selected:${FAKE_GLES-swangle}"
 [ "${FAKE_EMU-}" = hang ] || { sleep 1; : > "$WORK/booted"; }
 while :; do sleep 1; done
 STUB
@@ -107,7 +108,7 @@ WHY=""; run 10
 [ "$CODE" -eq 0 ] || why "exit $CODE"
 [ -f "$WORK/home/.android/avd/nightly.ini" ] || why "no nightly.ini in \$HOME/.android/avd"
 [ ! -e "$WORK/home/.config/.android/avd/nightly.ini" ] || why "the AVD was written to the XDG folder"
-want="sdkmanager --install $IMAGE emulator platform-tools|avdmanager create avd -n nightly -k $IMAGE --force | ANDROID_AVD_HOME=<W>/home/.android/avd|avdmanager list avd | ANDROID_AVD_HOME=<W>/home/.android/avd|sudo -n sysctl -w kernel.print-fatal-signals=1|emulator -avd nightly -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect|"
+want="sdkmanager --install $IMAGE emulator platform-tools|avdmanager create avd -n nightly -k $IMAGE --force | ANDROID_AVD_HOME=<W>/home/.android/avd|avdmanager list avd | ANDROID_AVD_HOME=<W>/home/.android/avd|sudo -n sysctl -w kernel.print-fatal-signals=1|emulator -avd nightly -no-window -no-audio -no-boot-anim -no-snapshot -gpu swangle|"
 [ "$(calls)" = "$want" ] || why "calls '$(calls)', expected '$want'"
 check "on a runner-like home (XDG_CONFIG_HOME set) the AVD is created where the emulator looks, then the boot is awaited"
 
@@ -169,6 +170,27 @@ WHY=""; run 20 FAKE_EMU=segv
 has "the emulator exited (status 139)"
 check "a death by SIGSEGV is written as exit=139 by the wrapper (#363)"
 
+# ── The renderer: -gpu swangle, and the log must name swangle as the GLES translator (#363) ──────────────────────────────
+WHY=""; run 10
+[ "$CODE" -eq 0 ] || why "exit $CODE"
+has "Emulator renderer: GLES swangle (the log's emuglConfig_init line)"
+check "the emulator's log names swangle as its GLES renderer, and the start prints it (#363)"
+
+WHY=""; run 10 FAKE_GLES=swiftshader
+[ "$CODE" -ne 0 ] || why "exit 0"
+has "::error::the emulator selected the GLES renderer 'swiftshader', not swangle"
+has "gles_mode_selected:swiftshader"
+[ ! -s "$WORK/github_path" ] || why "adb's folder went on GITHUB_PATH after the wrong renderer"
+pid=$(cat "$WORK/emu.pid" 2>/dev/null); sleep 0.3
+[ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null || why "the emulator ($pid) was left running"
+check "a GLES renderer other than swangle fails the start, naming it, and stops the emulator (#363)"
+
+WHY=""; run 10 FAKE_GLES=none
+[ "$CODE" -ne 0 ] || why "exit 0"
+has "::error::the emulator's log has no gles_mode_selected line, so its renderer is unknown"
+[ ! -s "$WORK/github_path" ] || why "adb's folder went on GITHUB_PATH without a renderer line"
+check "a log without the renderer line fails the start: the renderer is the night's proof (#363)"
+
 # ── An emulator that never boots: fail at the limit, with its log ──────────────────────────────────────────────────────
 WHY=""; run 4 FAKE_EMU=hang
 [ "$CODE" -ne 0 ] || why "exit 0"
@@ -184,9 +206,10 @@ check "with XDG_CONFIG_HOME unset the variables print and the failure says it is
 
 # ── The log shown is the emulator's last 60 lines, after an exit and at the limit ──────────────────────────────────────
 for mode in exit hang; do
-  WHY=""; run 3 FAKE_EMU=$mode FAKE_EMU_LINES=70
+  WHY=""; run 3 FAKE_EMU=$mode FAKE_EMU_LINES=70 FAKE_GLES=none
   [ "$CODE" -ne 0 ] || why "exit 0"
-  # the fake writes 70 numbered lines, then one more (its error or its start line): the last 60 begin at line 12
+  # the fake writes 70 numbered lines, then one more (its error or its start line; no renderer line here): the last 60
+  # begin at line 12
   has "emulator log line 12"; has "emulator log line 70"
   [[ "$OUT" != *"emulator log line 11"$'\n'* ]] || why "line 11 of 71 was shown"
   check "the failure after the emulator $( [ $mode = exit ] && echo exits || echo never boots ) shows its last 60 log lines"

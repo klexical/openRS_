@@ -66,7 +66,7 @@ rm -f "$PID_FILE" "$EXIT_FILE"
 # process is alive and to match the kernel's lines), its exit status into emulator.exit
 nohup env EMU_BIN="$EMULATOR" EMU_PID_FILE="$PID_FILE" EMU_EXIT_FILE="$EXIT_FILE" \
   bash -c '"$EMU_BIN" "$@" & p=$!; echo "$p" > "$EMU_PID_FILE"; s=0; wait "$p" || s=$?; echo "exit=$s" > "$EMU_EXIT_FILE"' \
-  _ -avd "$AVD" -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect > "$LOG" 2>&1 &
+  _ -avd "$AVD" -no-window -no-audio -no-boot-anim -no-snapshot -gpu swangle > "$LOG" 2>&1 &
 for _ in $(seq 1 50); do [ -s "$PID_FILE" ] && break; sleep 0.1; done
 EMULATOR_PID=$(cat "$PID_FILE" 2>/dev/null || true)
 [ -n "$EMULATOR_PID" ] || fail "the emulator's wrapper wrote no process id within 5 s"
@@ -91,4 +91,16 @@ while :; do
   sleep "$POLL_S"
 done
 echo "Emulator booted about ${waited} s after its start (AVD $AVD in $ANDROID_AVD_HOME)"
+# The renderer is the night's proof (#363): under -gpu swiftshader_indirect the emulator crashed on its host RenderThread
+# with the legacy SwiftShader GLES translator (gles_mode_selected:swiftshader, run 43731241198). The log's emuglConfig_init
+# line names the GLES translator chosen; anything but swangle, or no line, stops here, with the emulator stopped.
+gles=$(sed -n '/gles_mode_selected:/{s/.*gles_mode_selected:\([A-Za-z0-9_]*\).*/\1/p;q;}' "$LOG" 2>/dev/null || true)
+if [ -z "$gles" ]; then
+  echo "::error::the emulator's log has no gles_mode_selected line, so its renderer is unknown (start-emulator.sh asks for -gpu swangle); the last lines of its log follow"
+  tail -n 60 "$LOG" || true; kill "$EMULATOR_PID" 2>/dev/null || true; exit 1
+elif [ "$gles" != swangle ]; then
+  echo "::error::the emulator selected the GLES renderer '$gles', not swangle (start-emulator.sh asks for -gpu swangle); its renderer lines follow"
+  grep -E 'emuglConfig_init|Graphics backend|Graphics API Version' "$LOG" || true; kill "$EMULATOR_PID" 2>/dev/null || true; exit 1
+fi
+echo "Emulator renderer: GLES $gles (the log's emuglConfig_init line)"
 [ -z "${GITHUB_PATH-}" ] || echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"

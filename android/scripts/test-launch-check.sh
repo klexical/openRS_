@@ -638,8 +638,16 @@ check "no liveness trace outlives a failed check, whatever moment it is stopped 
 
 WHY=""; run 1 "" FAKE_CLOSED_AT=logcat-d
 t=$(section "the liveness trace")
-grep -qE '^\+[0-9]+s emulator=(alive|gone) app=4242 load=[^ ]+ after=1$' <<<"$t" || why "no answered trace line after the start"
-check "the liveness trace shows the app's process id after the start (#363)"
+grep -qE '^\+[0-9]+s emulator=gone cpu=- rss_kb=- app=4242 load=[^ ]+ after=1$' <<<"$t" || why "no answered trace line after the start"
+check "the liveness trace shows the app's process id after the start, and no CPU or memory for a gone emulator (#363)"
+
+# The emulator's own CPU % and resident memory in every trace line: numbers only, from ps under timeout 5 (#363)
+WHY=""; sleep 60 & LIVE=$!; echo "$LIVE" > "$WORK/cwd/emulator.pid"
+run 1 "" FAKE_CLOSED_AT=logcat-d; kill "$LIVE" 2>/dev/null; wait "$LIVE" 2>/dev/null; echo "$DEAD_PID" > "$WORK/cwd/emulator.pid"
+t=$(section "the liveness trace")
+grep -qE '^\+[0-9]+s emulator=alive cpu=[0-9]+([.,][0-9]+)? rss_kb=[0-9]+ app=4242 load=[^ ]+ after=1$' <<<"$t" || why "no trace line with the live emulator's CPU and memory: '$(head -n 3 <<<"$t")'"
+[ "$(grep -c -x '5 ps' "$WORK/timeouts")" -ge 1 ] || why "the trace's ps did not run under timeout 5"
+check "the liveness trace records the emulator's CPU % and resident memory while it lives (#363)"
 
 WHY=""; r=$(python3 -I "$DIR/test-crash-facts.py" 2>&1); [ $? -eq 0 ] || why "$r"
 check "crash-facts.py prints only the four facts (test-crash-facts.py) (#363)"
