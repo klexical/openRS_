@@ -8,6 +8,17 @@ import { render, cleanup, waitFor, act, fireEvent, screen, within } from '@testi
 // whole-app seam (integrator, 2026-11-15). Invented data only.
 
 vi.mock('./components/charts/GpsMap', () => ({ GpsMap: () => null }))
+// jsdom has no layout, so Recharts' ResponsiveContainer measures 0 and draws nothing: give its chart a fixed size, so
+// the real charts draw their lines and bars (the colours the test reads)
+vi.mock('recharts', async (importOriginal) => {
+  const orig = await importOriginal<typeof import('recharts')>()
+  const { cloneElement, isValidElement } = await import('react')
+  return {
+    ...orig,
+    ResponsiveContainer: ({ children }: { children: unknown }) =>
+      isValidElement(children) ? cloneElement(children as React.ReactElement<{ width: number; height: number }>, { width: 600, height: 300 }) : null,
+  }
+})
 
 type Listener = (e: { matches: boolean }) => void
 /** The device's setting, invented: 'dark', 'light', or 'none' (states no preference). `old` = Safari's older form. */
@@ -218,6 +229,7 @@ describe('#384 ticket 08: the paint colours buttons, tabs and highlights only; d
     expect(paintedData()).toEqual([])
     fireEvent.click(screen.getByRole('button', { name: 'Trip' }))
     expect(await screen.findByText('RPM Distribution', {}, { timeout: 3000 })).toBeInTheDocument()
+    await waitFor(() => expect(document.querySelectorAll('.old-view .recharts-line-curve, .old-view .recharts-bar-rectangle').length).toBeGreaterThan(0))
     expect(paintedData()).toEqual([])
   })
 })
