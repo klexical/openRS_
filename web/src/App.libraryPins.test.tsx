@@ -339,16 +339,30 @@ describe('the compared drives (pins, Drive library commit 1)', () => {
     expect(document.body.textContent).not.toMatch(/ vs /)                                    // no figures
   })
 
-  it('K11 kept: a session-only entry can be ticked for Compare, which then says it needs drives with trip data', async () => {
+  // K11 changed in delivery C (owner, 2026-11-14, "three grilling questions on Sapphire's Compare", item 2): Compare
+  // counts only ticked drives; a ticked session-only entry is left out, and ticking stays (it is how rows are deleted)
+  it('Compare counts only ticked drives: one drive and a session-only entry offer no Compare, only Delete', async () => {
     await seed([drive('a', 1), { ...drive('s', 2), trip: null, diagnostics: { canInventory: [], fpsTimeline: [], decodeTrace: [],
       probeResults: [], dtcResults: [], sessionEvents: LOG } as never }])
     await boot()
     const root = await screen.findByRole('region', { name: 'Drives' }, { timeout: 3000 })
     await waitFor(() => expect(within(root).getAllByRole('checkbox')).toHaveLength(2))
     for (const box of within(root).getAllByRole('checkbox')) fireEvent.click(box)
+    expect(within(root).getByRole('button', { name: 'Delete selected (2)' })).toBeInTheDocument()
+    expect(within(root).queryByRole('button', { name: /^Compare/ })).toBeNull()
+  })
+
+  it('Compare counts only ticked drives: two drives and a session-only entry compare the two drives, and say so', async () => {
+    await seed([drive('a', 1), drive('b', 2), { ...drive('s', 3), trip: null, diagnostics: { canInventory: [], fpsTimeline: [],
+      decodeTrace: [], probeResults: [], dtcResults: [], sessionEvents: LOG } as never }])
+    const { useStore } = await boot()
+    const root = await screen.findByRole('region', { name: 'Drives' }, { timeout: 3000 })
+    await waitFor(() => expect(within(root).getAllByRole('checkbox')).toHaveLength(3))
+    for (const box of within(root).getAllByRole('checkbox')) fireEvent.click(box)
+    expect(within(root).getByRole('button', { name: 'Delete selected (3)' })).toBeInTheDocument()
+    expect(within(root).getByText('Session-only entries are left out of Compare.')).toBeInTheDocument()
     fireEvent.click(within(root).getByRole('button', { name: 'Compare (2)' }))
-    expect(await screen.findByText(/Need More Sessions/, {}, { timeout: 5000 })).toBeInTheDocument()
-    expect(document.body.textContent).toMatch(/Import at least 2 sessions with trip data/)
+    await waitFor(() => expect(useStore.getState().compareSessionIds.slice().sort()).toEqual(['a', 'b']))
   })
 })
 
