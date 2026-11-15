@@ -15,7 +15,8 @@ paths:
     write and then answers 0x0D. Every 22-byte `t…` frame (PCM polls, DTC requests, probes) is one ATT write at MTU 247.
     Source-level only: no GATT trace from a real adapter. USB FEE1 allows 64 bytes.
   - **Rule:** POSSIBLY_DELIVERED keeps the request outstanding until its own reply, but the PCM poller does not wait for that
-    reply: the batch gap paces the next request, as in rc.7 (#333). Replies slower than the gap then overlap, so their NRCs are
+    reply: the batch gap paces the next request, as in rc.7 (#333); only while Request capture is on does it wait for that
+    reply too, up to 2,000 ms (#209). Replies slower than the gap then overlap, so their NRCs are
     charged to nobody and, by the ledger's rule, no DID is suppressed for the rest of that connection (KR2 / KR3 on the
     reporting car; `BleWriteOutcomeTest`). Nothing is ever resent, and it is never a drive-mode / ESC confirmation (CAN
     only). Only a certainly-not-sent failure withdraws the request (`PcmRequestLedger.withdraw`). Other post-send failures

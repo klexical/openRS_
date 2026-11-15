@@ -72,6 +72,9 @@ import kotlin.math.roundToInt
     onRetryScanModule: (suspend (String) -> com.openrs.dash.data.DtcModuleRetry)? = null,
     onFetchFreezeFrames: (suspend (List<DtcResult>) -> List<DtcResult>)? = null,
     onSendRawQuery: (suspend (responseId: Int, frame: String, timeoutMs: Long) -> com.openrs.dash.can.RawReply?)? = null,
+    requestCaptureOn: Boolean = false,
+    /** Request capture (#209 Step B): null hides the switch (no service); returns false when the change was refused. */
+    onRequestCapture: ((Boolean) -> Boolean)? = null,
     onResetSession: () -> Unit = {},
     snackbarHostState: androidx.compose.material3.SnackbarHostState? = null,
 ) {
@@ -944,6 +947,15 @@ import kotlin.math.roundToInt
             exit = shrinkVertically(spring(stiffness = Spring.StiffnessMediumLow)) + fadeOut()
         ) {
             Column { DidProberSection(vs, onSendRawQuery) }
+        }
+
+        // ── Request capture (#209 Step B): beside the DID prober, this connection only ──
+        onRequestCapture?.let { set ->
+            RequestCaptureRow(on = requestCaptureOn, enabled = vs.isConnected && !com.openrs.dash.demo.DemoMode.isActive,
+                onChange = { want ->
+                    // A refusal has a reason on screen (the spec review's N5): no live link at the moment of the tap
+                    if (!set(want)) scope.launch { snackbarHostState?.showSnackbar(REQUEST_CAPTURE_REFUSED) }
+                })
         }
 
         Spacer(Modifier.height(Tokens.SectionGap))

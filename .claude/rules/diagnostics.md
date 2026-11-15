@@ -137,6 +137,8 @@ paths:
     The data goes through the VIN content mask (#260's second mask site); no request carries the VIN.
   - **Cap.** Request lines share the 2,000,000-line cap with received frames; the lines dropped at it are counted
     (`slcanLinesDropped`, LOG LIMITS).
+  - **Request capture's timeout line** (`# CAPTURE-TIMEOUT …`, obd-polling.md) is written the same way: same parse, VIN
+    mask, cap and clock. Our readers' anchored matches skip it as they skip `# TX` lines.
   - **Readers.** Ours match frame lines anchored at the line's start (`tools/claude/hardware/slcan_tools.py`,
     `check_export.py`; `tools/replay/candump_to_slcan.py` drops `# TX` lines), so a TX line is never read as a frame: keep
     that anchor. can-utils' `canplayer` / `log2asc` read the frame lines and skip any line not starting with `(` (their

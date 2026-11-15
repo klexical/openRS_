@@ -63,6 +63,8 @@ object DiagnosticLogger {
     const val EVENT_LINK_TASK_REMOVED = "LINK_TASK_REMOVED"
     const val EVENT_LINK_PREV = "LINK_PREV"
     const val EVENT_LINK_PREV_EXIT = "LINK_PREV_EXIT"
+    /** Request capture went on or off, with the reason (#209 Step B). */
+    const val EVENT_REQUEST_CAPTURE = "REQUEST_CAPTURE"
     private val CARRIED_EVENT_TYPES = listOf(EVENT_LINK_STOP, EVENT_LINK_START_REFUSED, EVENT_LINK_TASK_REMOVED)
 
     /** Maximum DID probe sessions stored per diagnostic session. */
@@ -264,11 +266,13 @@ object DiagnosticLogger {
     /** One reading of the counters an export reports, taken under one lock: its summary and detail state the same numbers (L12). */
     class ExportCounters(val integrity: LinkIntegrity, val nrcUnattributed: Int, val limits: LogLimits,
                          val dids: DidInventory = DidInventory(emptyList(), 0),
-                         val bleMtu: BleMtuAttempt? = null)
+                         val bleMtu: BleMtuAttempt? = null,
+                         val capture: RequestCaptureRecord = RequestCaptureRecord(emptyList(), 0, 0, 0, 0))
     val exportCounters: ExportCounters get() = synchronized(lock) {
         ExportCounters(linkIntegrityLive.copy(), nrcUnattributedTotal, logLimits,
             DidInventory(didInventoryLive.values.map { it.copy() }, didInventoryOverflow),
-            attemptMtuTrace?.let { BleMtuAttempt(connectionAttempts, it.read()) })
+            attemptMtuTrace?.let { BleMtuAttempt(connectionAttempts, it.read()) },
+            RequestCaptureRecord(captureSpans.toList(), captureSpansDropped, captureTimeouts, captureLateInWindow, captureLateAfterWindow))
     }
 
     /** The current connection attempt's MTU context: [attempt] counts this session's attempts from 1 (#253). */
@@ -427,6 +431,7 @@ object DiagnosticLogger {
             f190CfBytesLeft.clear()
             vinFramesMaskedPage = 0L
             vinFramesMaskedContent = 0L
+            captureSpans.clear(); captureSpansDropped = 0; captureTimeouts = 0; captureLateInWindow = 0; captureLateAfterWindow = 0
 
             sessionStartMs = sessionClock()
             sessionHost = safeHost
@@ -733,16 +738,69 @@ object DiagnosticLogger {
      * data goes through the VIN mask's content layer (#260) like any frame; no request carries the VIN.
      */
     fun logTxLine(slcanFrame: String, stampMs: Long, result: String) {   // no defaults: the time before the write and the result are always the caller's
+        val body = requestBody(slcanFrame, stampMs) ?: return
+        synchronized(lock) { writePreformattedSlcanLine(stampMs, "# TX $body $result\n") }
+    }
+
+    /**
+     * Request capture (#209 Step B): [slcanFrame]'s request got no answer within [waitedMs]; [stampMs] is when the wait
+     * ended. A comment line that does not start with `# TX`, so no reader picks it as a request; the frame goes through the
+     * same parse and VIN mask as a TX line.
+     */
+    fun logCaptureTimeout(slcanFrame: String, stampMs: Long, waitedMs: Long, pending: Boolean) {
+        val body = requestBody(slcanFrame, stampMs) ?: return
+        val what = if (pending) "response pending, no final answer" else "no answer"   // a 7F 22 78 came (N3)
+        synchronized(lock) {
+            captureTimeouts++
+            writePreformattedSlcanLine(stampMs, "# CAPTURE-TIMEOUT $body $what within $waitedMs ms\n")
+        }
+    }
+
+    /** A request frame's candump part (`(time) can0 ID#DATA`), VIN-masked; null for anything but a `t` frame. */
+    private fun requestBody(slcanFrame: String, stampMs: Long): String? {
         val f = slcanFrame.trimEnd('\r')
-        if (f.length < 5 || f[0] != 't') return
-        val id = f.substring(1, 4).toIntOrNull(16) ?: return
+        if (f.length < 5 || f[0] != 't') return null
+        val id = f.substring(1, 4).toIntOrNull(16) ?: return null
         val hex = f.substring(5)
-        if (hex.length % 2 != 0 || hex.any { Character.digit(it, 16) < 0 }) return
+        if (hex.length % 2 != 0 || hex.any { Character.digit(it, 16) < 0 }) return null
         val data = ByteArray(hex.length / 2) { ((Character.digit(hex[2 * it], 16) shl 4) or Character.digit(hex[2 * it + 1], 16)).toByte() }
         val run = vinRunBytes(data)
         if (run != 0) synchronized(lock) { vinFramesMaskedContent++ }
-        val body = buildSlcanLine(stampMs, id, if (run != 0) data.maskedCompactHex(run) else data.toCompactHex()).trimEnd('\n')
-        synchronized(lock) { writePreformattedSlcanLine(stampMs, "# TX $body $result\n") }
+        return buildSlcanLine(stampMs, id, if (run != 0) data.maskedCompactHex(run) else data.toCompactHex()).trimEnd('\n')
+    }
+
+    // ── Request capture record (#209 Step B) ─────────────────────────────────
+    /** One stretch of request capture, session-relative ms: on at [onMs], off at [offMs] (null: still on) for [offReason]. */
+    data class CaptureSpan(val onMs: Long, val offMs: Long?, val offReason: String?)
+    /** The session's request capture record for the export: spans (capped), spans not kept, answers that timed out. */
+    class RequestCaptureRecord(val spans: List<CaptureSpan>, val spansDropped: Int, val timeouts: Int,
+                               val lateInWindow: Int, val lateAfterWindow: Int)
+    private val captureSpans = mutableListOf<CaptureSpan>()     // guarded by lock; cleared by sessionStart
+    private var captureSpansDropped = 0
+    private var captureTimeouts = 0
+    private var captureLateInWindow = 0
+    private var captureLateAfterWindow = 0
+
+    /**
+     * A late PCM answer under request capture (#209, the spec review's C1): [inWindow] = an answer inside the late-answer
+     * window after a timed-out request (that request's); false = a positive reply after the window for a DID that timed
+     * out and is not the one being waited for.
+     */
+    fun countCaptureLate(inWindow: Boolean) = synchronized(lock) { if (inWindow) captureLateInWindow++ else captureLateAfterWindow++ }
+    private const val MAX_CAPTURE_SPANS = 100
+
+    /** Request capture went [on] or off for [reason]: a session event, and the span the export reports. */
+    fun requestCaptureChanged(on: Boolean, reason: String) = synchronized(lock) {
+        val relMs = relativeMs()
+        if (on) {
+            if (captureSpans.size < MAX_CAPTURE_SPANS) captureSpans += CaptureSpan(relMs, null, null) else captureSpansDropped++
+        } else {
+            val i = captureSpans.indexOfLast { it.offMs == null }
+            if (i >= 0) captureSpans[i] = captureSpans[i].copy(offMs = relMs, offReason = reason)
+        }
+        addEventLocked(SessionEvent(relMs, EVENT_REQUEST_CAPTURE,
+            if (on) "Request capture on: PCM requests one at a time, up to ${com.openrs.dash.can.RequestCapture.WAIT_MS} ms per answer"
+            else "Request capture off: $reason"))
     }
 
     /** Build a candump-format line outside the lock to keep hot-path holds short. Always `.` decimals (candump). */

@@ -45,13 +45,19 @@ can/
                             Single PCM sender — an NRC is attributed only when every outstanding request is one DID and no
                             earlier request is still unanswered (no time releases one — only its own positive reply); queue
                             eviction marks the connection unresolved; 300 ms = poll pacing only, after a write reported sent
-                            (none after a possibly delivered one, #333); certainly-not-sent writes withdrawn;
+                            (none after a possibly delivered one, #333; Request capture: one PCM request at a time, up to
+                            2,000 ms, after a possibly delivered write too, gated with a PCM probe, #209); certainly-not-sent
+                            writes withdrawn;
                             7F 22 78 keeps the request outstanding (PcmRequestLedger, #216). OPENRS? probe schedule
                             on its own coroutine (×3, give-up 13 s, late replies accepted, #220); DTC frames diverted by
                             service ID (#215)
                             Command response channel routes +FRS: lines separately from SLCAN frames
                             Every frame write is a `# TX` line in the SLCAN log with what `write()` established
                             (noteWrite / noteWriteFailure for tracked requests; the rest through writeLogged or the DTC scan's send; #209)
+  RequestCapture.kt       — Request capture (#209 Step B): the one switch (`shared`), off at every link up / down with a
+                            session event (a token per link: an old link's late end is ignored), refused with no link;
+                            `WAIT_MS` = 2,000 ms per PCM answer; `LATE_WINDOW_MS` = 5,000 ms pause after a timeout (a chosen
+                            value); DTC operations hold the gate while it is on
   AdapterState.kt         — Disconnected / Connecting / Connected / Reconnecting / Idle / Error (sealed, `label` = fixed
                             names for logs — R8 renames the classes) + LinkPhase (OFF/CONNECTING/CONNECTED/RECONNECTING/FAILED)
   SlcanParser.kt          — SLCAN frame tokenizer ('t'=standard, 'T'=extended); exact DLC × 2 data (+4 only when timestamped)
@@ -208,7 +214,7 @@ ui/
                             concept sheet (BrandArt.kt, res/drawable*/) — never redraw or substitute them unasked
   TripPage.kt (trip/)      — TRIP tab: live Google Map + drive history list; see trip/DriveMap.kt
   GaragePage.kt            — GARAGE tab: CONTROL/DIAG segmented picker → MorePage + DiagPage
-  DiagPage.kt              — DTC scan/clear, PID browser, DID prober, diagnostic export (inside GARAGE)
+  DiagPage.kt              — DTC scan/clear, PID browser, DID prober, Request capture (#209), diagnostic export (inside GARAGE)
   MorePage.kt              — Drive mode selector, ESC band, fw features, module status, custom dash entry
                             (inside GARAGE); offline branches added for ESC descriptor + MODULE STATUS
   CustomDashPage.kt        — Custom dashboard overlay: user-configurable gauge rows from DashLayout (instrument cells,
@@ -295,6 +301,7 @@ ui/
     CarDiagram.kt           — TopDownCar: approved top-down RS art (body in ink, tyres tinted per state, TOPDOWN_ASPECT,
                             WHEEL_ANCHORS measured from the tyre layer)
   PidBrowserSection.kt    — DIAG tab: expandable FORScan catalog per module with coverage bar
+  RequestCaptureRow.kt    — DIAG's Request capture switch beside the DID prober (#209): the owner's label and text as constants
   DidProberSection.kt     — DIAG tab: interactive Mode 22 scanner for any ECU+DID (UI only; the scan runs in
                             diagnostics/DidProbeScan.kt)
   WhatsNewDialog.kt       — Version changelog dialog; shown on first launch after update

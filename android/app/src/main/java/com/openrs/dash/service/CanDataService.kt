@@ -229,6 +229,13 @@ class CanDataService : Service() {
      * Send a single Mode 22 (or arbitrary) SLCAN frame and wait for a response.
      * Used by the DID prober to test individual DIDs against an ECU.
      */
+    /**
+     * DIAG's Request capture switch (#209 Step B): false when refused, with no live link or in demo mode (the simulation
+     * has no PCM to pace). The connection turns it off by itself at every link up and down.
+     */
+    fun setRequestCapture(on: Boolean): Boolean =
+        if (DemoMode.isActive) false else com.openrs.dash.can.RequestCapture.shared.set(on)
+
     suspend fun sendRawQuery(responseId: Int, frame: String, timeoutMs: Long = 1_500L): com.openrs.dash.can.RawReply? {
         // Demo: no ECU on the other end — probes time out as they would with no response.
         if (DemoMode.isActive) { delay(timeoutMs.coerceAtMost(600L)); return null }
@@ -1014,6 +1021,11 @@ class CanDataService : Service() {
         link.end(phase)
         stopSessionRecording()
         DiagnosticLogger.event(stopType, stopLine)
+        // Request capture ends here, in the session it belongs to: the old connection's own end comes later, after the
+        // job's cancellation, and could land in the next session (#209, the spec review's C6)
+        com.openrs.dash.can.RequestCapture.shared.linkDown(null,
+            if (reason == LinkStopReason.USER_RETRY) com.openrs.dash.can.RequestCapture.REASON_RECONNECTED
+            else com.openrs.dash.can.RequestCapture.REASON_STOPPED)
         DiagnosticLogger.sessionEnd()
         connection?.abort()          // a blocking connect / read returns now instead of after its timeout
         connectionJob?.cancel()

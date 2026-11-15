@@ -45,6 +45,8 @@ class SlcanConnection(
     /** True while a drive is recording, not paused: MAP 0xF40B joins the PCM fast group (#271). Read for every batch. */
     private val mapPoll: () -> Boolean = { false },
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    /** Request capture (#209 Step B): the switch this connection reads, and turns off at every link up and down. */
+    private val capture: RequestCapture = RequestCapture.shared,
     private val debugSink: (String) -> Unit = { OpenRSDashApp.instance.pushDebugLine(it) },
     /** Wall clock for NRC attribution / re-probe timing — tests pass the virtual clock. */
     private val clock: () -> Long = System::currentTimeMillis,
@@ -168,11 +170,69 @@ class SlcanConnection(
      * NRCs another request could own — takes the normal path (parser, ledger, NRC tracker).
      */
     private class ProbeQuery(val responseId: Int, val did: Int, val ledger: PcmRequestLedger) {
+        /** A `7F 22 78` came while this PCM probe waited: its capture timeout line says so (#209). */
+        @Volatile var pending = false
         val reply = CompletableDeferred<ByteArray>()
         /** A `7F 22` arrived while another request could own it (charged to nobody). */
         @Volatile var ambiguousNrc: Int? = null
     }
     @Volatile private var _probe: ProbeQuery? = null
+
+    /**
+     * Request capture (#209 Step B): held by the PCM poller and by a PCM DID probe from the write until the answer or
+     * [RequestCapture.WAIT_MS], while the capture is on, so the two never have requests waiting at once. A probe takes it
+     * inside [_dtcMutex]; the poller never takes [_dtcMutex], so the order is fixed.
+     */
+    private val captureGate = Mutex()
+    /** The poller's request waiting under the capture: ended by its DID's positive reply or any final `7F 22` (not 78). */
+    private class CaptureWait(val did: Int) {
+        val answered = kotlinx.coroutines.CompletableDeferred<Unit>()
+        /** A `7F 22 78` came: the timeout line then says the answer was pending (the spec review's N3). */
+        @Volatile var pending = false
+    }
+    @Volatile private var captureWait: CaptureWait? = null
+    /** C1 (owner, 2026-11-14): after a timed-out PCM request, nothing goes to the PCM before this ([clock] ms); 0 = no pause. */
+    @Volatile private var captureLateUntil = 0L
+    /** The DID of the request that opened the pause, whose late answer it waits for. */
+    @Volatile private var captureLateDid: Int? = null
+    /** DIDs whose capture request timed out and whose answer has not come: a later positive for one is counted late. */
+    private val captureTimedOut: MutableSet<Int> = java.util.Collections.synchronizedSet(mutableSetOf())
+    /** The capture this connection's turns belong to ([RequestCapture.switchOns]) and the clock when its first turn came. */
+    @Volatile private var captureSeen = -1
+    @Volatile private var captureFloor = 0L
+    /** The last PCM probe, read after it returns: whether a response pending came for it. */
+    @Volatile private var lastPcmProbe: ProbeQuery? = null
+
+    /**
+     * Request capture's turn, inside [captureGate] before any write to the PCM: the late-answer pause after a timeout
+     * (C1), then any PCM request still waiting from before the switch, up to [RequestCapture.WAIT_MS] after its write.
+     */
+    private suspend fun awaitCaptureTurn() {
+        val rest = captureLateUntil - clock()
+        if (rest > 0) delay(rest)
+        // The first turn of a capture marks its start: only requests sent before it are waited for (the capture's own
+        // requests can stay outstanding after an unattributable rejection, and are not waited for again)
+        if (captureSeen != capture.switchOns) { captureSeen = capture.switchOns; captureFloor = clock() }
+        _ledgerFor?.invoke(ObdConstants.PCM_RESPONSE_ID)?.outstandingRequests()?.filter { it.sentAtMs < captureFloor }?.forEach { r ->
+            val left = r.sentAtMs + RequestCapture.WAIT_MS - clock()
+            if (left > 0) withTimeoutOrNull(left) { r.reply.await() }
+        }
+    }
+
+    /** A capture request for [did], written at [writtenAt], got no answer in time: the late-answer pause starts (C1). */
+    private fun captureTimedOut(did: Int, writtenAt: Long) {
+        captureLateUntil = writtenAt + RequestCapture.LATE_WINDOW_MS
+        captureLateDid = did
+        captureTimedOut += did
+    }
+
+    /**
+     * A DTC scan, clear or freeze-frame read (C2, owner 2026-11-14): under [_dtcMutex] as always; while the capture is on
+     * it also holds [captureGate] for the whole operation, after its turn, so the PCM poller pauses for its length.
+     */
+    private suspend inline fun <T> dtcOperation(block: () -> T): T = _dtcMutex.withLock {
+        if (capture.on.value) captureGate.withLock { awaitCaptureTurn(); block() } else block()
+    }
     /** This connection's Mode 22 request ledger for a response ID (the PCM's is the poller's own), null when offline. */
     @Volatile private var _ledgerFor: ((Int) -> PcmRequestLedger)? = null
     private val possiblyDeliveredNoted = java.util.concurrent.atomic.AtomicBoolean(false)
@@ -236,11 +296,30 @@ class SlcanConnection(
         frame: String,
         timeoutMs: Long = 1_500L
     ): RawReply? = _dtcMutex.withLock {
+        // While the capture is on, a PCM probe waits for the poller's request and holds the poller off (#209 Step B)
+        // While the capture is on, a PCM probe waits for the poller's request and holds the poller off, waits up to
+        // max(its timeout, the capture's set time), and marks no answer as the poller does (#209 Step B, the spec review's C3)
+        if (responseId == ObdConstants.PCM_RESPONSE_ID && capture.on.value) captureGate.withLock {
+            awaitCaptureTurn()
+            val waitMs = maxOf(timeoutMs, RequestCapture.WAIT_MS)
+            val writtenAt = clock()
+            probeOnce(responseId, frame, waitMs).also {
+                if (it == null && _transport != null) {
+                    DiagnosticLogger.logCaptureTimeout(frame, DiagnosticLogger.txStamp(), waitMs, lastPcmProbe?.pending == true)
+                    Mode22.request(frame)?.second?.let { did -> captureTimedOut(did, writtenAt) }
+                }
+            }
+        }
+        else probeOnce(responseId, frame, timeoutMs)
+    }
+
+    private suspend fun probeOnce(responseId: Int, frame: String, timeoutMs: Long): RawReply? {
         val transport = _transport ?: throw java.io.IOException(com.openrs.dash.diagnostics.QUERY_NOT_CONNECTED)
         val ledgerFor = _ledgerFor ?: throw java.io.IOException(com.openrs.dash.diagnostics.QUERY_NOT_CONNECTED)
         val did = Mode22.request(frame)?.second ?: throw WriteFailure.notSent("not a Mode 22 read request")
         val ledger = ledgerFor(responseId)
         val probe = ProbeQuery(responseId, did, ledger)
+        if (responseId == ObdConstants.PCM_RESPONSE_ID) lastPcmProbe = probe
         val req = ledger.sent(did, clock())
         _probe = probe
         try {
@@ -251,7 +330,7 @@ class SlcanConnection(
                 if (e !is CancellationException && !WriteFailure.isUncertain(e)) ledger.withdraw(req)
                 throw e
             }
-            withTimeoutOrNull(timeoutMs) { probe.reply.await() }?.let { RawReply.Frame(it) }
+            return withTimeoutOrNull(timeoutMs) { probe.reply.await() }?.let { RawReply.Frame(it) }
                 ?: probe.ambiguousNrc?.let { RawReply.AmbiguousNrc(it) }
         } finally {
             if (_probe === probe) _probe = null
@@ -286,6 +365,7 @@ class SlcanConnection(
 
         while (currentCoroutineContext().isActive) {
             var connectionSucceeded = false
+            var captureToken: Any? = null                          // this attempt's link, for request capture (#209)
             var connectedAtMs = 0L
             _state.value = if (everConnected) AdapterState.Reconnecting else AdapterState.Connecting
             val transport = try {
@@ -364,6 +444,8 @@ class SlcanConnection(
 
                 _state.value = AdapterState.Connected
                 _transport = transport
+                captureToken = capture.linkUp()                        // every connection starts with request capture off (#209)
+                captureLateUntil = 0L; captureLateDid = null; captureTimedOut.clear()
                 connectionSucceeded = true
                 everConnected = true
                 connectedAtMs = System.currentTimeMillis()
@@ -453,29 +535,49 @@ class SlcanConnection(
                         var sentAny = false
                         batch.queries.forEach { q ->
                             val did = ObdConstants.extractDid(q)
-                            if (did != null && !nrcTracker.shouldPoll(did, clock())) return@forEach
+                            // Request capture (#209 Step B): one PCM request at a time, every DID (suppression skips none
+                            // while it is on; shouldPoll is not asked, so its re-probe state is left as it was)
+                            val capturing = did != null && capture.on.value
+                            if (did != null && !capturing && !nrcTracker.shouldPoll(did, clock())) return@forEach
                             // #271: the batch was built while recording; a STOP / PAUSE since then sends no MAP request
                             if (q == ObdConstants.PCM_QUERY_MAP && !mapPoll()) return@forEach
                             // Registered before the write so an instant reply finds it; withdrawn if the write
                             // certainly didn't reach the bus (#216) — a BLE write that failed after it was handed to the
                             // stack may have, so it keeps its request (it lapses) and is never resent (#248)
                             val start = clock()
-                            var req = did?.let { pcmRequests.sent(it, start) }
-                            var outcome: WriteOutcome? = null
-                            val at = DiagnosticLogger.txStamp()
-                            try { outcome = transport.write(q); noteWrite(q, at, outcome) } catch (e: Exception) {
-                                noteWriteFailure(q, at, e)
-                                if (!WriteFailure.isUncertain(e)) { req?.let { pcmRequests.withdraw(it) }; req = null }
+                            suspend fun writeAndWait() {
+                                var req = did?.let { pcmRequests.sent(it, clock()) }
+                                // Before the write, so an instant answer finds it (#209 Step B)
+                                val wait = if (capturing) CaptureWait(did!!).also { captureWait = it } else null
+                                var outcome: WriteOutcome? = null
+                                val at = DiagnosticLogger.txStamp()
+                                val writtenAt = clock()
+                                try { outcome = transport.write(q); noteWrite(q, at, outcome) } catch (e: Exception) {
+                                    noteWriteFailure(q, at, e)
+                                    if (!WriteFailure.isUncertain(e)) { req?.let { pcmRequests.withdraw(it) }; req = null }
+                                }
+                                if (did != null && req != null) DiagnosticLogger.countDidSent(ObdConstants.PCM_RESPONSE_ID, did)   // inventory (#253)
+                                if (wait != null) {
+                                    // Request capture: the next request only after an answer or the set time, after a possibly
+                                    // delivered write too; a certainly-not-sent write waits for nothing. The end of a wait with
+                                    // no answer is a CAPTURE-TIMEOUT line, so a later answer reads as late.
+                                    try {
+                                        if (req != null && withTimeoutOrNull(RequestCapture.WAIT_MS) { wait.answered.await() } == null) {
+                                            DiagnosticLogger.logCaptureTimeout(q, DiagnosticLogger.txStamp(), RequestCapture.WAIT_MS, wait.pending)
+                                            captureTimedOut(did!!, writtenAt)
+                                        }
+                                    } finally { if (captureWait === wait) captureWait = null }
+                                // Wait (bounded) for the reply, so normally one request is in flight and its NRC attributable.
+                                // Not after a possibly delivered write (GATT 13, every Pro poll over Bluetooth): its request is
+                                // kept and its reply still resolves it, but the gap alone paces the next one, as in rc.7 — the
+                                // wait cost every reply's Bluetooth latency and halved the fast group's rate (#333). Replies
+                                // slower than the gap then overlap, and the ledger charges their NRCs to nobody.
+                                } else if (req != null && outcome != WriteOutcome.POSSIBLY_DELIVERED) {
+                                    withTimeoutOrNull(PcmRequestLedger.REPLY_WINDOW_MS) { req.reply.await() }
+                                }
                             }
-                            if (did != null && req != null) DiagnosticLogger.countDidSent(ObdConstants.PCM_RESPONSE_ID, did)   // inventory (#253)
+                            if (capturing) captureGate.withLock { awaitCaptureTurn(); writeAndWait() } else writeAndWait()
                             sentAny = true
-                            // Wait (bounded) for the reply, so normally one request is in flight and its NRC attributable.
-                            // Not after a possibly delivered write (GATT 13, every Pro poll over Bluetooth): its request is
-                            // kept and its reply still resolves it, but the gap alone paces the next one, as in rc.7 — the
-                            // wait cost every reply's Bluetooth latency and halved the fast group's rate (#333). Replies
-                            // slower than the gap then overlap, and the ledger charges their NRCs to nobody.
-                            if (req != null && outcome != WriteOutcome.POSSIBLY_DELIVERED)
-                                withTimeoutOrNull(PcmRequestLedger.REPLY_WINDOW_MS) { req.reply.await() }
                             delay((batch.gapMs - (clock() - start)).coerceAtLeast(0L))
                         }
                         // Every DID of the batch suppressed: still suspend, never spin
@@ -687,7 +789,17 @@ class SlcanConnection(
                                 // 0x78 = response pending: the real reply follows (no time bound assumed), still outstanding
                                 if ((d[2].toInt() and 0xFF) == 0x22 && nrcCode == NrcTracker.NRC_RESPONSE_PENDING) {
                                     pcmRequests.pending(clock())
+                                    captureWait?.pending = true
+                                    _probe?.takeIf { it.responseId == ObdConstants.PCM_RESPONSE_ID }?.pending = true
                                 } else if ((d[2].toInt() and 0xFF) == 0x22) {
+                                    // A final rejection ends a capture's wait even when the ledger can't charge it (#209 Step B);
+                                    // inside the late-answer pause, with nothing waiting, it is the timed-out request's (C1)
+                                    val waitingNow = captureWait
+                                    if (waitingNow == null && clock() < captureLateUntil) {
+                                        captureLateDid?.let { captureTimedOut.remove(it) }
+                                        DiagnosticLogger.countCaptureLate(inWindow = true)
+                                    }
+                                    waitingNow?.answered?.complete(Unit)
                                     val waiting = pcmRequests.waiting(clock())
                                     val unresolved = pcmRequests.unresolved(clock())
                                     val did = pcmRequests.negative(clock())
@@ -709,7 +821,9 @@ class SlcanConnection(
                                     } else {
                                         DiagnosticLogger.countAttributedNrc()
                                         if (probing == null || did != probing.did) DiagnosticLogger.countDidNrc(ObdConstants.PCM_RESPONSE_ID, did)
-                                        if ((probing == null || did != probing.did || did in PCM_POLLED_DIDS) &&
+                                        // No rejection counts toward suppression while request capture is on (#209: the
+                                        // owner's "suppression off in the mode"); it resumes from where it was afterwards
+                                        if (!capture.on.value && (probing == null || did != probing.did || did in PCM_POLLED_DIDS) &&
                                             nrcTracker.recordNrc(did, nrcCode, clock())) {
                                             DiagnosticLogger.event("NRC_SUPPRESS",
                                                 "DID 0x%04X suppressed: NRC 0x%02X (%s), the only request waiting; re-probed after %d s".format(
@@ -722,6 +836,10 @@ class SlcanConnection(
                             }
                             // A single frame or the first frame of a multi-frame reply: either way the DID answered (no flow control is sent)
                             Mode22.positiveDid(d)?.let { did ->
+                                val waitingNow = captureWait
+                                if (waitingNow != null && waitingNow.did == did) { waitingNow.answered.complete(Unit); captureTimedOut.remove(did) }
+                                // A timed-out request's answer, late: inside the pause or after it (C1); never another DID's wait
+                                else if (captureTimedOut.remove(did)) DiagnosticLogger.countCaptureLate(inWindow = clock() < captureLateUntil)
                                 pcmRequests.positive(did)
                                 if (nrcTracker.recordPositive(did)) {
                                     DiagnosticLogger.event("NRC_RECOVER", "DID 0x%04X answered — no longer suppressed".format(did))
@@ -788,6 +906,8 @@ class SlcanConnection(
                 addDebugLine("Error: $why")
             } finally {
                 _transport = null
+                // A link drop ends a capture, never silently; only this attempt's link: a late end of an old one is ignored (#209)
+                if (captureToken != null) capture.linkDown(captureToken, RequestCapture.REASON_LINK_ENDED)
                 _ledgerFor = null
                 attemptTransport = null
                 _dtcScanActive = false
@@ -848,7 +968,7 @@ class SlcanConnection(
         modules: List<DtcModuleSpec>,
         onModuleProgress: ((String, ModuleScanStatus?) -> Unit)? = null
     ): DtcRawScan =
-        _dtcMutex.withLock {
+        dtcOperation {
             val transport = _transport ?: return DtcRawScan()
             val results = mutableMapOf<String, ByteArray>()
             val pending = mutableSetOf<String>()
@@ -954,7 +1074,7 @@ class SlcanConnection(
         }
 
     suspend fun performDtcClear(modules: List<DtcModuleSpec>): Map<String, Boolean> =
-        _dtcMutex.withLock {
+        dtcOperation {
             val transport = _transport ?: return emptyMap()
             val results = mutableMapOf<String, Boolean>()
 
@@ -1034,7 +1154,7 @@ class SlcanConnection(
      */
     suspend fun performFreezeFrameIdentification(
         module: DtcModuleSpec
-    ): ByteArray? = _dtcMutex.withLock {
+    ): ByteArray? = dtcOperation {
         val transport = _transport ?: return null
         beginDtcOperation(setOf(module.responseId), sid = DtcReply.SID)
         while (_dtcChannel.tryReceive().isSuccess) { /* drain */ }
@@ -1056,7 +1176,7 @@ class SlcanConnection(
         module: DtcModuleSpec,
         dtcBytes: ByteArray,
         recordNumber: Int
-    ): ByteArray? = _dtcMutex.withLock {
+    ): ByteArray? = dtcOperation {
         val transport = _transport ?: return null
         beginDtcOperation(setOf(module.responseId), sid = DtcReply.SID)
         while (_dtcChannel.tryReceive().isSuccess) { /* drain */ }
