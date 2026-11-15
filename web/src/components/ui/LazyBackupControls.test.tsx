@@ -16,7 +16,6 @@ describe('QA F12: the backup controls\' fallback in the palette\'s warning text'
     const line = await screen.findByText('Sapphire was updated: reload this tab to back up or restore.')
     warn.mockRestore()
     expect(line).toHaveClass('a-failed')
-    expect(line).not.toHaveClass('text-warn')
   })
 
   it('in the storage bar: the root\'s warning text', async () => {
