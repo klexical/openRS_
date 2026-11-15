@@ -63,12 +63,14 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); window.history.replaceState(
 
 describe('#384 ticket 09: "What\'s new" is shown once after the update, not on a fresh install', () => {
   it('a fresh install: not shown, and not after a reload either', async () => {
-    await boot()
+    let app = await boot()
     await decided()
+    expect(app.useStore.getState().whatsNewOpen).toBe(false)     // the decision itself (the dialog loads lazily)
     expect(whatsNew()).toBeNull()
     expect(SEEN()).toBe('slice-2')                               // a fresh install is marked seen without showing it
-    await boot()
+    app = await boot()
     await decided()
+    expect(app.useStore.getState().whatsNewOpen).toBe(false)
     expect(whatsNew()).toBeNull()
   })
 
@@ -81,8 +83,9 @@ describe('#384 ticket 09: "What\'s new" is shown once after the update, not on a
     fireEvent.click(within(dialog).getByRole('button', { name: 'Got it' }))
     expect(whatsNew()).toBeNull()
     expect(SEEN()).toBe('slice-2')
-    await boot()
+    const again = await boot()
     await decided()
+    expect(again.useStore.getState().whatsNewOpen).toBe(false)   // the decision itself (the dialog loads lazily)
     expect(whatsNew()).toBeNull()
   })
 
@@ -139,8 +142,9 @@ describe('#384 ticket 09: "What\'s new" is shown once after the update, not on a
     await act(async () => { fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Clear all' })) })
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(SEEN()).toBe('slice-2')                               // Clear all left the answer (QA F7: held directly)
-    await boot()
+    const again = await boot()
     await decided()
+    expect(again.useStore.getState().whatsNewOpen).toBe(false)
     expect(whatsNew()).toBeNull()
   })
 })
