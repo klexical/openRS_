@@ -207,6 +207,19 @@ describe('Drive library: an Import', () => {
     expect(env.st().compareSessions[0]).toBe(a)
   })
 
+  it('kept (K8): a fill-in whose re-read of the list fails still ends the Import: it resolves, warns, and lists what it stored', async () => {
+    const env = await fresh([drive('a', 1)])
+    await env.library.loadList()
+    vi.spyOn(env.storage, 'listDrives').mockRejectedValue(new DOMException('invented list failure', 'UnknownError'))
+    const results = await env.library.importDrives([], () => {}, async (_f, _p, step) => [
+      result('again.zip', await step([withLog(drive('a', 1))])),                 // fills a in: the list is read again
+      result('new.zip', await step([drive('c', 3)])),
+    ])
+    expect(results.map((r) => r.stored.length)).toEqual([0, 1])
+    expect(console.warn).toHaveBeenCalledWith('[Sapphire] Could not read the filled-in drives again:', expect.anything())
+    expect(env.st().drives.map((d) => d.id)).toEqual(['a', 'c'])
+  })
+
   it('the storing step refuses once its Import has ended, and stores nothing (I3)', async () => {
     const env = await fresh()
     let kept: import('./driveLibrary').StoringStep | null = null
@@ -252,9 +265,20 @@ describe('Drive library: the Current drive', () => {
 
   it('a late answer for an earlier drive never becomes the Current drive (one guard)', async () => {
     const env = await fresh([drive('a', 1), drive('b', 2)])
+    // a's read is held until b is shown, so a's answer is the late one (QA's FINAL: without the hold this passed with
+    // the guard off)
+    const real = env.storage.loadDrive
+    let release = () => {}
+    const hold = new Promise<void>((r) => { release = r })
+    let aAnswered = false
+    vi.spyOn(env.storage, 'loadDrive').mockImplementation((id: string) =>
+      id === 'a' ? hold.then(() => real(id)).finally(() => setTimeout(() => { aAnswered = true }, 0)) : real(id))
     const detach = env.library.attach()
     env.library.showDrive('a')
     env.library.showDrive('b')                                                   // a's read is still on its way
+    await vi.waitFor(() => expect(env.st().activeSession?.id).toBe('b'))
+    release()
+    await vi.waitFor(() => expect(aAnswered).toBe(true))
     await settle()
     expect(env.st().activeSession?.id).toBe('b')
     expect(env.library.currentDriveState(env.st())).toBe('shown')
