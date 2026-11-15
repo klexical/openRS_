@@ -23,9 +23,10 @@ import java.io.File
  *
  * All methods are thread-safe. DiagnosticExporter reads from this object to build the ZIP.
  *
- * SLCAN log format (compatible with candump / SavvyCAN / Kayak):
+ * SLCAN log format (candump-style lines; the app's requests are `# TX` comment lines, #209):
  *   (   0.000) can0 0F8#0102030405060708
  *   (  30.512) can0 190#AABBCCDDEE001122
+ *   # TX (  30.600) can0 7E0#0322033E00000000 sent
  */
 object DiagnosticLogger {
 
@@ -176,6 +177,7 @@ object DiagnosticLogger {
     private var slcanLinesWritten = 0L
     private var slcanWriteFailed = false  // a write failed: lines are missing from the raw log, first one logs an event
     private var slcanCapHit = false       // the line cap itself, for the export; first one marks the log and logs an event
+    private var slcanLinesDropped = 0L    // lines not written at the cap, received frames and request lines alike (#209)
 
     @Volatile var sessionStartMs: Long = 0L; private set
     @Volatile var lastVehicleState: VehicleState? = null
@@ -303,7 +305,7 @@ object DiagnosticLogger {
     data class LogLimits(
         val decodeTraceDropped: Long = 0, val eventsDropped: Long = 0, val fpsPointsDropped: Long = 0,
         val probeSessionsDropped: Long = 0, val inventoryFramesNotListed: Long = 0, val slcanCapReached: Boolean = false, val slcanWriteFailed: Boolean = false,
-        val vinFramesMaskedPage: Long = 0, val vinFramesMaskedContent: Long = 0,
+        val vinFramesMaskedPage: Long = 0, val vinFramesMaskedContent: Long = 0, val slcanLinesDropped: Long = 0,
     )
     /** Second ID holding the VIN (#260). No decoder. */
     private const val ID_VIN_MUX_2 = 0x405
@@ -321,7 +323,7 @@ object DiagnosticLogger {
     /** A consistent copy of this session's counts. */
     val logLimits: LogLimits get() = synchronized(lock) {
         LogLimits(traceDropped, eventsDropped, fpsDropped, probeSessionsDropped, inventoryNotListed, slcanCapHit, slcanWriteFailed,
-            vinFramesMaskedPage, vinFramesMaskedContent)
+            vinFramesMaskedPage, vinFramesMaskedContent, slcanLinesDropped)
     }
 
     /** Identity of the current session — [sessionStart] returns it; adapter-status writes carry it (#233). */
@@ -426,7 +428,7 @@ object DiagnosticLogger {
             vinFramesMaskedPage = 0L
             vinFramesMaskedContent = 0L
 
-            sessionStartMs = System.currentTimeMillis()
+            sessionStartMs = sessionClock()
             sessionHost = safeHost
             sessionPort = port
             sessionTransport = safeTransport
@@ -449,7 +451,7 @@ object DiagnosticLogger {
             connectionAttempts = 0; attemptMtuTrace = null
             didInventoryLive.clear(); didInventoryOverflow = 0
             traceDropped = 0L; eventsDropped = 0L; fpsDropped = 0L; probeSessionsDropped = 0L; inventoryNotListed = 0L
-            slcanCapHit = false
+            slcanCapHit = false; slcanLinesDropped = 0L
 
             // Option C: open SLCAN log file
             if (logDir != null) {
@@ -461,8 +463,9 @@ object DiagnosticLogger {
                     val transportLabel = if (safeTransport.isNotEmpty()) " ($safeTransport)" else ""
                     w.write("# openRS_ SLCAN log — $safeHost:$port$transportLabel\n")
                     w.write("# Session started: ${System.currentTimeMillis()} ms epoch\n")
-                    w.write("# Format: (relative_seconds) can0 ID#DATA\n")
-                    w.write("# Compatible with candump, SavvyCAN, Kayak\n")
+                    // The request form sits inside the Format line: a header line starting "# TX " would read as a request (#209)
+                    w.write("# Format: (relative_seconds) can0 ID#DATA; the app's requests: # TX (relative_seconds) can0 ID#DATA <result>\n")
+                    w.write("# Read by can-utils' canplayer and log2asc, which skip the # lines\n")
                     w.write("# VIN-bearing frames keep ID, length, time and mux; their data bytes read 00\n")
                     w.flush()
                     slcanWriter = w
@@ -717,20 +720,32 @@ object DiagnosticLogger {
         }
     }
 
+    /** The session clock now, for a request's line: taken BEFORE its write (#209, QA's T1), as the ledger stamps it. */
+    fun txStamp(): Long = relativeMs()
+
     /**
-     * An outgoing frame the app wrote (DTC scan requests / flow control, #215) — a `# TX` comment line in the SLCAN
-     * log, so candump / SavvyCAN readers skip it and a reader can tell requests from the replies around them.
-     * [slcanFrame] is the SLCAN text written to the adapter (`t<id><dlc><data>\r`).
+     * A frame the app wrote (#209; the DTC scan's since #215): a `# TX` comment line in the SLCAN log, on the replies'
+     * clock, with [stampMs] taken before the write ([txStamp]) and the write's [result] in the link-integrity counters' own
+     * words ([WRITE_SENT] …; a failed write is logged too). Being a comment, candump's readers skip it (can-utils'
+     * canplayer and log2asc skip any line not starting with "("). Written when the result is known, so the file can hold a
+     * reply before the request line that is earlier than it: a reader orders by the time field.
+     * Only a CAN frame (`t<id><dlc><data>\r`) is a TX line: the SLCAN init, `OPENRS?` and `AT+FRS` lines never are. The
+     * data goes through the VIN mask's content layer (#260) like any frame; no request carries the VIN.
      */
-    fun logTxLine(slcanFrame: String) {
+    fun logTxLine(slcanFrame: String, stampMs: Long, result: String) {   // no defaults: the time before the write and the result are always the caller's
         val f = slcanFrame.trimEnd('\r')
         if (f.length < 5 || f[0] != 't') return
-        val relMs = relativeMs()
-        val line = "# TX " + buildSlcanLine(relMs, f.substring(1, 4).toIntOrNull(16) ?: return, f.substring(5))
-        synchronized(lock) { writePreformattedSlcanLine(relMs, line) }
+        val id = f.substring(1, 4).toIntOrNull(16) ?: return
+        val hex = f.substring(5)
+        if (hex.length % 2 != 0 || hex.any { Character.digit(it, 16) < 0 }) return
+        val data = ByteArray(hex.length / 2) { ((Character.digit(hex[2 * it], 16) shl 4) or Character.digit(hex[2 * it + 1], 16)).toByte() }
+        val run = vinRunBytes(data)
+        if (run != 0) synchronized(lock) { vinFramesMaskedContent++ }
+        val body = buildSlcanLine(stampMs, id, if (run != 0) data.maskedCompactHex(run) else data.toCompactHex()).trimEnd('\n')
+        synchronized(lock) { writePreformattedSlcanLine(stampMs, "# TX $body $result\n") }
     }
 
-    /** Build a candump-format line outside the lock to keep hot-path holds short. Always `.` decimals (candump / SavvyCAN). */
+    /** Build a candump-format line outside the lock to keep hot-path holds short. Always `.` decimals (candump). */
     internal fun buildSlcanLine(relMs: Long, canId: Int, compactHex: String): String {
         val seconds = relMs / 1000.0
         return "(%10.3f) can0 %03X#%s\n".format(java.util.Locale.ROOT, seconds, canId, compactHex)
@@ -744,9 +759,10 @@ object DiagnosticLogger {
     private fun writePreformattedSlcanLine(relMs: Long, line: String) {
         val w = slcanWriter ?: return
         if (slcanLinesWritten >= MAX_SLCAN_LINES) {
+            slcanLinesDropped++
             if (!slcanCapHit) {
                 slcanCapHit = true
-                try { w.write("# LOG CAP REACHED — further frames not written\n"); w.flush() } catch (_: Exception) {}
+                try { w.write("# LOG CAP REACHED — further lines (frames and requests) not written\n"); w.flush() } catch (_: Exception) {}
                 // Already within the lock
                 addEventLocked(SessionEvent(relMs, "SLCAN", "SLCAN log cap reached ($MAX_SLCAN_LINES lines)"))
             }
@@ -824,7 +840,14 @@ object DiagnosticLogger {
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
-    private fun relativeMs() = (System.currentTimeMillis() - sessionStartMs).coerceAtLeast(0L)
+    /**
+     * The wall clock behind the session clock ([relativeMs], so every raw-log time). Production never sets it; tests that
+     * must tell a time taken before a write from one taken after it (#209, QA's T1) set a virtual clock, and restore it.
+     */
+    @androidx.annotation.VisibleForTesting(otherwise = androidx.annotation.VisibleForTesting.PRIVATE)
+    @Volatile internal var sessionClock: () -> Long = System::currentTimeMillis
+
+    private fun relativeMs() = (sessionClock() - sessionStartMs).coerceAtLeast(0L)
 
     fun formatDuration(ms: Long): String {
         val s = ms / 1000

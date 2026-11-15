@@ -177,20 +177,47 @@ class SlcanConnection(
     @Volatile private var _ledgerFor: ((Int) -> PcmRequestLedger)? = null
     private val possiblyDeliveredNoted = java.util.concurrent.atomic.AtomicBoolean(false)
 
-    /** A tracked request write that threw, counted by what it established (#253 diagnostics). */
-    private fun noteWriteFailure(e: Exception) {
-        if (e is CancellationException) return
-        DiagnosticLogger.countWrite(when {
-            WriteFailure.isNotSent(e) -> DiagnosticLogger.WRITE_NOT_SENT
-            WriteFailure.isUncertain(e) -> DiagnosticLogger.WRITE_UNCERTAIN
-            else -> DiagnosticLogger.WRITE_OTHER_FAILURE
-        })
+    /**
+     * A frame write outside the tracked requests (flow control, a DTC clear, a freeze-frame read): its `# TX` line too, with
+     * what the write established (#209). Through [SlcanTransport.write], never `writeLine`: on Bluetooth `writeLine` returns
+     * normally for a possibly delivered write and drops that outcome.
+     */
+    private suspend fun writeLogged(transport: SlcanTransport, frame: String) {
+        val at = DiagnosticLogger.txStamp()
+        val outcome = try { transport.write(frame) } catch (e: Exception) { DiagnosticLogger.logTxLine(frame, at, failureKind(e)); throw e }
+        DiagnosticLogger.logTxLine(frame, at, outcomeKind(outcome))
     }
 
-    /** One bounded line per connection the first time a write comes back possibly delivered (#248). */
-    private fun noteWrite(outcome: WriteOutcome) {
-        DiagnosticLogger.countWrite(if (outcome == WriteOutcome.POSSIBLY_DELIVERED) DiagnosticLogger.WRITE_POSSIBLY_DELIVERED
-            else DiagnosticLogger.WRITE_SENT)
+    /** What a write that returned established, in the link-integrity counters' words (#248, #209). */
+    private fun outcomeKind(outcome: WriteOutcome): String =
+        if (outcome == WriteOutcome.POSSIBLY_DELIVERED) DiagnosticLogger.WRITE_POSSIBLY_DELIVERED else DiagnosticLogger.WRITE_SENT
+
+    /** What a write that threw established, in the link-integrity counters' words (#253); a cancelled write may have gone out. */
+    private fun failureKind(e: Exception): String = when {
+        e is CancellationException -> DiagnosticLogger.WRITE_UNCERTAIN
+        WriteFailure.isNotSent(e) -> DiagnosticLogger.WRITE_NOT_SENT
+        WriteFailure.isUncertain(e) -> DiagnosticLogger.WRITE_UNCERTAIN
+        else -> DiagnosticLogger.WRITE_OTHER_FAILURE
+    }
+
+    /**
+     * A tracked request write that threw: counted by what it established (#253 diagnostics), and its `# TX` line written with
+     * [atMs], the time taken before the write (#209).
+     */
+    private fun noteWriteFailure(frame: String, atMs: Long, e: Exception) {
+        DiagnosticLogger.logTxLine(frame, atMs, failureKind(e))
+        if (e is CancellationException) return
+        DiagnosticLogger.countWrite(failureKind(e))
+    }
+
+    /**
+     * A tracked request write that returned: counted, its `# TX` line written with [atMs] (taken before the write, #209), and
+     * one bounded line per connection the first time a write comes back possibly delivered (#248).
+     */
+    private fun noteWrite(frame: String, atMs: Long, outcome: WriteOutcome) {
+        val kind = outcomeKind(outcome)
+        DiagnosticLogger.logTxLine(frame, atMs, kind)
+        DiagnosticLogger.countWrite(kind)
         if (outcome == WriteOutcome.POSSIBLY_DELIVERED && possiblyDeliveredNoted.compareAndSet(false, true)) {
             DiagnosticLogger.event("BLE_WRITE", "Adapter answered a write with GATT 13 (longer than its declared maximum); " +
                 "treated as possibly delivered — the request stays outstanding until its reply and is never resent")
@@ -217,8 +244,9 @@ class SlcanConnection(
         val req = ledger.sent(did, clock())
         _probe = probe
         try {
-            try { noteWrite(transport.write(frame)) } catch (e: Exception) {
-                noteWriteFailure(e)
+            val at = DiagnosticLogger.txStamp()
+            try { noteWrite(frame, at, transport.write(frame)) } catch (e: Exception) {
+                noteWriteFailure(frame, at, e)
                 // Withdrawn only when certainly not sent — an uncertain or cancelled write may have reached CAN (#248)
                 if (e !is CancellationException && !WriteFailure.isUncertain(e)) ledger.withdraw(req)
                 throw e
@@ -369,8 +397,9 @@ class SlcanConnection(
                     val target = Mode22.request(q)
                     val ledger = target?.let { ledgerFor(it.first + 8) }
                     val req = target?.let { ledger!!.sent(it.second, clock()) }
-                    try { noteWrite(transport.write(q)) } catch (e: Exception) {
-                        noteWriteFailure(e)
+                    val at = DiagnosticLogger.txStamp()
+                    try { noteWrite(q, at, transport.write(q)) } catch (e: Exception) {
+                        noteWriteFailure(q, at, e)
                         if (req != null && !WriteFailure.isUncertain(e)) ledger!!.withdraw(req)
                         else if (target != null) DiagnosticLogger.countDidSent(target.first + 8, target.second)   // may have gone out
                         throw e
@@ -433,8 +462,9 @@ class SlcanConnection(
                             val start = clock()
                             var req = did?.let { pcmRequests.sent(it, start) }
                             var outcome: WriteOutcome? = null
-                            try { outcome = transport.write(q); noteWrite(outcome) } catch (e: Exception) {
-                                noteWriteFailure(e)
+                            val at = DiagnosticLogger.txStamp()
+                            try { outcome = transport.write(q); noteWrite(q, at, outcome) } catch (e: Exception) {
+                                noteWriteFailure(q, at, e)
                                 if (!WriteFailure.isUncertain(e)) { req?.let { pcmRequests.withdraw(it) }; req = null }
                             }
                             if (did != null && req != null) DiagnosticLogger.countDidSent(ObdConstants.PCM_RESPONSE_ID, did)   // inventory (#253)
@@ -638,7 +668,7 @@ class SlcanConnection(
                         if (frame.first == ObdConstants.BCM_RESPONSE_ID) {
                             val (reassembled, isFF, isSF) = bcmIsoTp.feed(frame.second)
                             if (isFF) {
-                                try { transport.writeLine(ObdConstants.BCM_FLOW_CONTROL) } catch (_: Exception) {}
+                                try { writeLogged(transport, ObdConstants.BCM_FLOW_CONTROL) } catch (_: Exception) {}
                             }
                             // A single frame goes to its parser even when the buffer refused it: the parser counts a truncated reply
                             if (isSF) ObdResponseParser.parseBcmResponse(frame.second, getCurrentState(), onObdUpdate)
@@ -824,16 +854,20 @@ class SlcanConnection(
             val pending = mutableSetOf<String>()
             val failures = LinkedHashMap<String, DtcSendFailure>()   // first failed write per module (#215)
             // A scan write, logged as TX in the private SLCAN log; a failure is kept with its stage, never swallowed
-            suspend fun send(module: String, stage: DtcStage, frame: String): Boolean = try {
-                transport.writeLine(frame)
-                DiagnosticLogger.logTxLine(frame)
-                true
-            } catch (e: Exception) {
-                if (e is kotlinx.coroutines.CancellationException) throw e
-                val f = DtcSendFailure(stage, LogText.sanitizeReason(e))
-                // Request > flow control > extended session (DtcRawScan.keeps) — the failure that explains the module
-                if (DtcRawScan.keeps(failures[module], f)) failures[module] = f
-                false
+            suspend fun send(module: String, stage: DtcStage, frame: String): Boolean {
+                val at = DiagnosticLogger.txStamp()
+                return try {
+                    val outcome = transport.write(frame)                          // write, not writeLine: keeps the outcome (#209)
+                    DiagnosticLogger.logTxLine(frame, at, outcomeKind(outcome))
+                    true
+                } catch (e: Exception) {
+                    DiagnosticLogger.logTxLine(frame, at, failureKind(e))         // #209: a failed write is a line too, never "sent"
+                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    val f = DtcSendFailure(stage, LogText.sanitizeReason(e))
+                    // Request > flow control > extended session (DtcRawScan.keeps) — the failure that explains the module
+                    if (DtcRawScan.keeps(failures[module], f)) failures[module] = f
+                    false
+                }
             }
 
             beginDtcOperation(modules.map { it.responseId }.toSet(), sid = DtcReply.SID)
@@ -930,7 +964,7 @@ class SlcanConnection(
             try {
                 for (module in modules) {
                     val reqFrame = "t%03X80414FFFFFF000000\r".format(module.requestId)
-                    try { transport.writeLine(reqFrame) } catch (_: Exception) { continue }
+                    try { writeLogged(transport, reqFrame) } catch (_: Exception) { continue }
                     val payload = assembleIsotpResponse(transport, module.responseId, module.requestId, 2_000L)
                     results[module.name] = payload != null &&
                         payload.isNotEmpty() &&
@@ -976,7 +1010,7 @@ class SlcanConnection(
                     totalLen = length
                     buf.write(data, 2, IsoTpBuffer.FF_DATA_BYTES); received = IsoTpBuffer.FF_DATA_BYTES
                     val fcFrame = "t%03X83000000000000000\r".format(requestId)
-                    try { transport.writeLine(fcFrame) } catch (_: Exception) { }
+                    try { writeLogged(transport, fcFrame) } catch (_: Exception) { }
                 }
                 2 -> {
                     val seq = data[0].toInt() and 0x0F; if (seq != seqNext) { DiagnosticLogger.countIsoTpRefused(); return null }
@@ -1007,7 +1041,7 @@ class SlcanConnection(
         try {
             // UDS 0x19/04: reportDTCSnapshotIdentification
             val req = "t%03X8031904FF00000000\r".format(module.requestId)
-            try { transport.writeLine(req) } catch (_: Exception) { return null }
+            try { writeLogged(transport, req) } catch (_: Exception) { return null }
             assembleIsotpResponse(transport, module.responseId, module.requestId, 3_000L)
         } finally {
             endDtcOperation()
@@ -1036,7 +1070,7 @@ class SlcanConnection(
                 dtcBytes[2].toInt() and 0xFF,
                 recordNumber
             )
-            try { transport.writeLine(req) } catch (_: Exception) { return null }
+            try { writeLogged(transport, req) } catch (_: Exception) { return null }
             assembleIsotpResponse(transport, module.responseId, module.requestId, 3_000L)
         } finally {
             endDtcOperation()

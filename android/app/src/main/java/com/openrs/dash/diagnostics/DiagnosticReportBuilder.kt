@@ -264,7 +264,7 @@ internal object DiagnosticReportBuilder {
             appendLine("  Lines written : $slcanLines")
             appendLine("  File size     : ${"%.2f".format(sizeMb)} MB (uncompressed)")
             appendLine("  File included : slcan_log_$ts.log in this ZIP")
-            appendLine("  Compatible with SavvyCAN, Kayak, candump for offline analysis")
+            appendLine("  Read by       : can-utils' canplayer and log2asc (the app's requests are # TX lines, which they skip)")
         } else {
             appendLine("  No SLCAN log recorded (log directory not available this session)")
         }
@@ -418,7 +418,7 @@ internal object DiagnosticReportBuilder {
 
         appendLine("═══════════════════════════════════════════════════════════")
         appendLine("  END OF REPORT — full data in diagnostic_detail_$ts.json")
-        if (slcanLines > 0) appendLine("  SLCAN log    — slcan_log_$ts.log  ($slcanLines frames)")
+        if (slcanLines > 0) appendLine("  SLCAN log    — slcan_log_$ts.log  ($slcanLines lines)")
         appendLine("═══════════════════════════════════════════════════════════")
     }
 
@@ -689,8 +689,8 @@ internal fun logLimitsText(l: DiagnosticLogger.LogLimits, knockDropped: Int, li:
     if (l.fpsPointsDropped > 0) add("  ${l.fpsPointsDropped} older FPS sample(s) rolled off")
     if (l.probeSessionsDropped > 0) add("  ${l.probeSessionsDropped} older DID probe session(s) rolled off")
     if (l.inventoryFramesNotListed > 0) add("  ${l.inventoryFramesNotListed} frame(s) of IDs past the inventory limit: FRAME INVENTORY is not every ID")
-    if (l.slcanCapReached) add("  SLCAN log cap reached: later frames are not in the raw log")
-    if (l.slcanWriteFailed) add("  SLCAN log write failed: frames may be missing from the raw log")
+    if (l.slcanCapReached) add("  SLCAN log cap reached: ${l.slcanLinesDropped} later line(s) are not in the raw log")
+    if (l.slcanWriteFailed) add("  SLCAN log write failed: lines may be missing from the raw log")
     if (knockDropped > 0) add("  $knockDropped older session knock event(s) rolled off: drive_knock_session holds the newest only")
     if (size == 1) {
         val buffersHit = li.overlongLines + li.linesDropped + li.commandRepliesDropped + li.dtcFramesDropped > 0
@@ -707,6 +707,7 @@ internal fun logLimitsJson(l: DiagnosticLogger.LogLimits, knockDropped: Int): JS
     put("probeSessionsDropped", l.probeSessionsDropped)
     put("inventoryFramesNotListed", l.inventoryFramesNotListed)
     put("slcanCapReached", l.slcanCapReached)
+    put("slcanLinesDropped", l.slcanLinesDropped)          // #209, additive: received frames and request lines alike
     put("slcanWriteFailed", l.slcanWriteFailed)
     put("vinFramesMaskedPage", l.vinFramesMaskedPage)
     put("vinFramesMaskedContent", l.vinFramesMaskedContent)

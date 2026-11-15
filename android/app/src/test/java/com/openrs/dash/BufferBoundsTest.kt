@@ -741,7 +741,7 @@ class BufferBoundsTest {
         DiagnosticLogger.sessionStart("test", 0, prefs = null, logDir = dir)
         staticField("slcanLinesWritten").setLong(null, 2_000_000L - 2)    // the cap, without writing 2 M lines
         repeat(5) { DiagnosticLogger.logObdFrame(0x7E8, byteArrayOf(it.toByte())) }
-        DiagnosticLogger.logTxLine("t7E08031902FF00000000\r")
+        DiagnosticLogger.logTxLine("t7E08031902FF00000000\r", DiagnosticLogger.txStamp(), DiagnosticLogger.WRITE_SENT)
         DiagnosticLogger.logUnknownFrame(0x123, byteArrayOf(9))
         DiagnosticLogger.flushSlcan()
         val text = File(dir, "session_slcan.log").readLines()
@@ -751,8 +751,10 @@ class BufferBoundsTest {
         assertEquals(1, DiagnosticLogger.sessionEvents.count { it.type == "SLCAN" })
         assertEquals("the inventory keeps counting past the cap", 1L, DiagnosticLogger.frameInventorySnapshot.getValue(0x123).totalReceived)
         assertEquals(true, detail().optJSONObject("logLimits")?.optBoolean("slcanCapReached", false))
+        // #209: the lines not written at the cap are counted, frames and request lines alike (3 replies + 1 request + 1 frame)
+        assertEquals(5L, detail().optJSONObject("logLimits")?.optLong("slcanLinesDropped", -1))
         val limitsBlock = summary().lines().dropWhile { !it.startsWith("─── LOG LIMITS") }.drop(1).takeWhile { !it.startsWith("───") }
-        assertTrue(limitsBlock.toString(), limitsBlock.any { it.contains("SLCAN log cap reached") })
+        assertTrue(limitsBlock.toString(), limitsBlock.any { it.contains("SLCAN log cap reached: 5 later line(s) are not in the raw log") })
     }
 
     @Test fun `logger - the SLCAN cap's own event can't push the event list past its limit`() {
