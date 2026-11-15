@@ -51,6 +51,8 @@ async function mirrored(write: Promise<DriveRecord | null>): Promise<DriveRecord
 /**
  * Delete drives, all or none (one transaction). Mirrored after the write: they leave the list, stop being the Current
  * drive, and leave Compare's ids and copies (K1). Rejects when nothing was deleted (nothing mirrored).
+ * Not attached (no app shell: tests, later pages), removing the Current drive does not move the read token, so its read
+ * already on its way can still land (QA's FINAL, 6); the app always attaches, where the id change moves it.
  */
 export async function remove(ids: string[]): Promise<void> {
   await deleteDrives(ids)
@@ -204,6 +206,7 @@ const attached = () => store().libraryAttachment.count > 0
  * a new id array is set (equal ids included), from whatever sets them. [onNotStored] is called once when the Current
  * drive's read finds no such drive. Returns a detach function. Attaching again while attached adds no second
  * subscription (I2): it counts, and the reads stop when every attach has detached.
+ * A second attach's [onNotStored] replaces the first, and its detach does not put the first back (QA's FINAL, 7).
  */
 export function attach(handlers: { onNotStored?: () => void } = {}): () => void {
   const a = store().libraryAttachment
