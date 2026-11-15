@@ -115,6 +115,21 @@ describe('#384 ticket 07: the browser is asked to keep the data once, after the 
     expect(sm.persist).toHaveBeenCalledTimes(1)
   })
 
+  it('a second import while the browser has not answered yet does not ask again', async () => {
+    const sm = storageManager()
+    let answer = (_: boolean) => {}
+    sm.persist.mockImplementation(() => new Promise<boolean>((r) => { answer = r }))     // the browser takes its time
+    await boot()
+    await list()
+    await choose([await single(1)])
+    await waitFor(() => expect(sm.persist).toHaveBeenCalledTimes(1))
+    await act(async () => { window.location.hash = '#/' })
+    await list()
+    await choose([await single(2)])                                              // the first answer is still pending
+    answer(true)
+    expect(sm.persist).toHaveBeenCalledTimes(1)
+  })
+
   it('an import that stores no drive does not ask', async () => {
     const sm = storageManager()
     await boot()
@@ -146,7 +161,9 @@ describe('#384 ticket 07: Settings says, in words, whether the browser keeps the
   it('a browser without a storage manager is not guessed at', async () => {
     await boot('#/settings')
     const panel = await dataPanel()
-    await waitFor(() => expect(panel.textContent).toContain('This browser does not say whether it keeps Sapphire\'s drives, or how much space they use.'))
+    // the words exactly, and the summary says "not said": nothing is guessed
+    expect(await within(panel).findByText('This browser does not say whether it keeps Sapphire\'s drives, or how much space they use.')).toBeInTheDocument()
+    expect(within(panel).getByText('Kept').nextElementSibling?.textContent).toBe('Not said')
   })
 
   it('Settings says where the map background comes from, word for word', async () => {
