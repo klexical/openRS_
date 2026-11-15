@@ -106,7 +106,8 @@ describe('#384 ticket 08: the first visit follows the device; Match device picks
 
   it('Match device follows a change of the device setting while Sapphire is open', async () => {
     const d = device('dark')
-    await boot()
+    const { useStore } = await boot()
+    await waitFor(() => expect(useStore.getState().drivesLoaded).toBe(true))   // a first visit: Match device once known (G2)
     await waitFor(() => expect(shown()).toBe('night'))
     act(() => d.set('light'))
     expect(shown()).toBe('day')
@@ -178,6 +179,46 @@ describe('#384 ticket 08: Settings offers Match device, Night, Day and Ultra, na
     expect(within(await palettePicker()).getByRole('radio', { name: 'Night' })).toHaveAttribute('aria-checked', 'true')
   })
 
+  it('a returning user with earlier drives and no settings record keeps Night on a light device, never a frame of Day (QA G2)', async () => {
+    device('light')
+    vi.resetModules()
+    const storage = await import('./lib/storage')                // an earlier visit stored a drive and never opened Settings
+    const T0 = 4_000_000_000_000
+    await storage.storeImported([{ id: 'r', name: 'Invented r', importedAt: T0, tags: [],
+      trip: { points: [0, 1].map((i) => ({ ts: T0 + i * 1000, lat: 10, lng: 20, speedKph: 40, rpm: 3000 })) as never, summary: null as never },
+      diagnostics: null, meta: { appVersion: '2.2.7', firmwareVersion: 'unknown', sessionStart: '', generatedAt: '' } }])
+    storage.closeStorage()
+    expect(localStorage.getItem('sapphire_settings')).toBeNull()
+    const seen: (string | null)[] = []
+    const { useStore } = await boot()
+    seen.push(shown())                                           // the first frame
+    await waitFor(() => expect(useStore.getState().drivesLoaded).toBe(true))
+    await act(async () => { await new Promise((r) => setTimeout(r, 30)) })
+    seen.push(shown())
+    expect(seen).toEqual(['night', 'night'])
+    expect(JSON.parse(localStorage.getItem('sapphire_settings') ?? '{}').palette).toBe('night')   // known at once next time
+  })
+
+  it('a true first visit (no earlier data) gets Match device, and keeps it', async () => {
+    device('light')
+    const { useStore } = await boot()
+    await waitFor(() => expect(useStore.getState().drivesLoaded).toBe(true))
+    await waitFor(() => expect(shown()).toBe('day'))
+    expect(JSON.parse(localStorage.getItem('sapphire_settings') ?? '{}').palette).toBe('match')
+  })
+
+  it('after "Reset units, palette and paint colour", the next visit is on Match device again (QA G2)', async () => {
+    device('light')
+    const { useStore } = await boot('#/settings')
+    await waitFor(() => expect(useStore.getState().drivesLoaded).toBe(true))
+    fireEvent.click(within(await palettePicker()).getByRole('radio', { name: 'Night' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Reset units, palette and paint colour' }))
+    const again = await boot('#/settings')                      // the storage is there now: a returning visit
+    await waitFor(() => expect(again.useStore.getState().drivesLoaded).toBe(true))
+    expect(within(await palettePicker()).getByRole('radio', { name: 'Match device' })).toHaveAttribute('aria-checked', 'true')
+    await waitFor(() => expect(shown()).toBe('day'))
+  })
+
   it('the option is never named "Auto", and the words "Theme", "Mode" and "Look" do not name it', async () => {
     device('dark')
     await boot('#/settings')
@@ -214,7 +255,8 @@ describe('#384 ticket 08: the paint and the warning colour meet AA on Day; the o
 
   it('the old Trip, Dashboard and Diagnostics views take the palette: their surface and text colours follow it', async () => {
     const d = device('dark')
-    await boot()
+    const { useStore } = await boot()
+    await waitFor(() => expect(useStore.getState().drivesLoaded).toBe(true))   // a first visit: Match device once known (G2)
     await waitFor(() => expect(shown()).toBe('night'))
     const night = ['--color-bg', '--color-surf2', '--color-frost', '--color-dim'].map(rootVar)
     act(() => d.set('light'))
@@ -262,6 +304,6 @@ describe('#384 ticket 08: the paint colours buttons, tabs and highlights only; d
     fireEvent.click(screen.getByRole('button', { name: 'Diagnostics' }))
     expect(await screen.findByText('0x0F8', {}, { timeout: 3000 })).toBeInTheDocument()
     expect(paintedData()).toEqual([])
-  })
+  }, 15_000)                                        // three views drawn in jsdom: about 2 s idle, much more under load (QA F8)
 })
 

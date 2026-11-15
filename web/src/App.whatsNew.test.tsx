@@ -49,6 +49,12 @@ async function list() {
   await waitFor(() => expect(root).toHaveAttribute('aria-busy', 'false'), { timeout: 3000 })
 }
 const whatsNew = () => screen.queryByRole('dialog', { name: "What's new" })
+/** The decision has run: it follows the list's first read at once (App.tsx), so wait for the list, then its callbacks. */
+async function decided() {
+  await list()
+  await act(async () => { for (let i = 0; i < 5; i++) await Promise.resolve() })
+}
+const SEEN = () => localStorage.getItem('sapphire_whats_new_seen')
 beforeEach(() => {
   vi.stubGlobal('localStorage', memoryStorage())
   ;(globalThis as { indexedDB: IDBFactory }).indexedDB = new IDBFactory()
@@ -58,12 +64,11 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); window.history.replaceState(
 describe('#384 ticket 09: "What\'s new" is shown once after the update, not on a fresh install', () => {
   it('a fresh install: not shown, and not after a reload either', async () => {
     await boot()
-    await list()
-    await act(async () => { await new Promise((r) => setTimeout(r, 50)) })
+    await decided()
     expect(whatsNew()).toBeNull()
+    expect(SEEN()).toBe('slice-2')                               // a fresh install is marked seen without showing it
     await boot()
-    await list()
-    await act(async () => { await new Promise((r) => setTimeout(r, 50)) })
+    await decided()
     expect(whatsNew()).toBeNull()
   })
 
@@ -75,9 +80,9 @@ describe('#384 ticket 09: "What\'s new" is shown once after the update, not on a
     expect(screen.getByRole('region', { name: 'Drives' })).toBeInTheDocument()                             // the list is behind it
     fireEvent.click(within(dialog).getByRole('button', { name: 'Got it' }))
     expect(whatsNew()).toBeNull()
+    expect(SEEN()).toBe('slice-2')
     await boot()
-    await list()
-    await act(async () => { await new Promise((r) => setTimeout(r, 50)) })
+    await decided()
     expect(whatsNew()).toBeNull()
   })
 
@@ -108,7 +113,7 @@ describe('#384 ticket 09: "What\'s new" is shown once after the update, not on a
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     await boot()
     await waitFor(() => expect(document.body.textContent).toMatch(/Sapphire couldn't update its storage/), { timeout: 3000 })
-    await act(async () => { await new Promise((r) => setTimeout(r, 50)) })
+    await act(async () => { for (let i = 0; i < 5; i++) await Promise.resolve() })   // the decision has run (it follows the read)
     warn.mockRestore()
     expect(whatsNew()).toBeNull()
     expect(localStorage.getItem('sapphire_whats_new_seen')).toBeNull()
@@ -133,9 +138,9 @@ describe('#384 ticket 09: "What\'s new" is shown once after the update, not on a
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Skip the backup' }))
     await act(async () => { fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Clear all' })) })
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(SEEN()).toBe('slice-2')                               // Clear all left the answer (QA F7: held directly)
     await boot()
-    await list()
-    await act(async () => { await new Promise((r) => setTimeout(r, 50)) })
+    await decided()
     expect(whatsNew()).toBeNull()
   })
 })

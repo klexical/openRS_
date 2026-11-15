@@ -317,7 +317,7 @@ describe('the compared drives (pins, Drive library commit 1)', () => {
     gate.failLoad.add('b')
     const err = vi.spyOn(console, 'error').mockImplementation(() => {})
     await compareOf(['a', 'b'], useStore)
-    await settle()
+    await waitFor(() => expect(useStore.getState().compareFailedIds).toEqual(['b']))           // the read has failed (QA F6b)
     err.mockRestore()
     expect(useStore.getState().compareSessions.map((s) => s.id)).toEqual(['a', 'b'])
   })
@@ -331,12 +331,12 @@ describe('the compared drives (pins, Drive library commit 1)', () => {
     gate.failLoad.add('c')
     const err = vi.spyOn(console, 'error').mockImplementation(() => {})
     await compareOf(['c', 'd'], useStore)
-    await settle()
+    const alert = await screen.findByRole('alert', {}, { timeout: 3000 })                    // the line appears once the read fails (QA F6b)
     err.mockRestore()
+    expect(alert.textContent).toBe("Couldn't open Invented c.")                               // the line (#407)
     expect(useStore.getState().compareSessionIds).toEqual(['c', 'd'])
     expect(useStore.getState().compareSessions.map((s) => s.id)).toEqual(['a', 'b'])      // the old copies, not shown
     expect(document.body.textContent).not.toMatch(/ vs /)                                    // no figures
-    expect(screen.getByRole('alert').textContent).toBe("Couldn't open Invented c.")           // the line (#407)
   })
 
   it('K11 kept: a session-only entry can be ticked for Compare, which then says it needs drives with trip data', async () => {
@@ -396,9 +396,8 @@ describe('Import and the library (pins, Drive library commit 1)', () => {
     await act(async () => { useStore.getState().setCompare(['x', 'y']) })
     await waitFor(() => expect(useStore.getState().compareSessions).toHaveLength(2))
     await act(async () => { await startImport([await withLogZip(4)]) })
-    await settle()
+    await waitFor(() => expect(useStore.getState().compareSessions[0].diagnostics?.sessionEvents).toHaveLength(3))  // and Compare's copy
     expect(useStore.getState().drives.find((d) => d.id === 'x')?.hasSession).toBe(true)       // the list was re-read
-    expect(useStore.getState().compareSessions[0].diagnostics?.sessionEvents).toHaveLength(3)  // and Compare's copy
   })
 
   it('#406: an Import\'s re-read of Compare is dropped when other drives were picked for Compare meanwhile', async () => {

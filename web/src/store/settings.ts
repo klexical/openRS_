@@ -34,6 +34,16 @@ const defaults: Settings = {
 
 const PALETTES: readonly PaletteChoice[] = ['match', 'night', 'day', 'ultra']
 
+function hasRecord(): boolean {
+  try { return localStorage.getItem(STORAGE_KEY) !== null } catch { return false }
+}
+/**
+ * No settings record at load: is this a first visit, or a returning user who never changed a setting (main wrote the
+ * record only on a change)? Not known until the storage opens (QA G2). Until then the palette is Night, the only look
+ * there was, so a returning user never sees a frame of Day; [decideFirstVisitPalette] then settles it, once.
+ */
+let paletteUndecided = !hasRecord()
+
 function loadSettings(): Settings {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
@@ -49,7 +59,18 @@ function loadSettings(): Settings {
       return s
     }
   } catch { /* ignore */ }
-  return defaults
+  return { ...defaults, palette: 'night' }        // no record: Night until the first visit is known (above)
+}
+
+/**
+ * Once Sapphire's storage has opened: with no settings record, a visit that created the storage is a first visit and
+ * takes Match device; anyone with earlier data keeps Night (owner, 2026-11-15, Q8). Stored, so the next visit knows at
+ * once. Does nothing when there was a record, or when a palette was chosen meanwhile.
+ */
+export function decideFirstVisitPalette(storageCreatedNow: boolean): void {
+  if (!paletteUndecided) return
+  paletteUndecided = false
+  useSettings.getState().setPalette(storageCreatedNow ? 'match' : 'night')
 }
 
 function persist(partial: Partial<Settings>) {
@@ -66,10 +87,11 @@ export const useSettings = create<SettingsState>((set) => ({
   setBoostUnit: (boostUnit) => { persist({ boostUnit }); set({ boostUnit }) },
   setTirePressUnit: (tirePressUnit) => { persist({ tirePressUnit }); set({ tirePressUnit }) },
   setThemeId: (themeId) => { persist({ themeId }); set({ themeId }) },
-  setPalette: (palette) => { persist({ palette }); set({ palette }) },
+  setPalette: (palette) => { paletteUndecided = false; persist({ palette }); set({ palette }) },
 
   resetDefaults: () => {
-    localStorage.removeItem(STORAGE_KEY)
+    // a record with the defaults, not none: no record would read as "returning, keep Night" on the next visit (QA G2)
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(defaults)) } catch { /* ignore */ }
     set(defaults)
   },
 }))

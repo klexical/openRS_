@@ -5,6 +5,8 @@ import { useSettings } from './store/settings'
 import { onStorageStatus, storageStatus } from './lib/storage'
 import { attach, loadList, showDrive } from './lib/driveLibrary'
 import { showWhatsNewNow } from './lib/whatsNew'
+import { storageCreatedNow } from './lib/storage'
+import { decideFirstVisitPalette } from './store/settings'
 import { go, useAddress } from './lib/address'
 import { rsThemes, shadeHex, printAccent } from './styles/tokens'
 import { oldViewTokens, paintAccent } from './styles/lookA'
@@ -26,7 +28,14 @@ export default function App() {
   // Load every drive's small record on mount (no points). Nothing is opened by itself: the address names what is shown
   // (#384 ticket 03; the remembered view is retired).
   // Then "What's new", once after the update (ticket 09): only once the storage has opened, so a fresh install is known.
-  useEffect(() => { void loadList().then(() => { if (showWhatsNewNow()) useStore.getState().setWhatsNewOpen(true) }) }, [])
+  // The palette of a visit with no settings record is settled then too: a first visit takes Match device, a returning
+  // user keeps Night (QA G2).
+  useEffect(() => {
+    void loadList().then(() => {
+      decideFirstVisitPalette(storageCreatedNow())
+      if (showWhatsNewNow()) useStore.getState().setWhatsNewOpen(true)
+    })
+  }, [])
 
   // The Drive library reads the Current drive and the compared drives as the store names them (#384). An address that
   // names a drive not stored here (deleted, or another browser's link): the list, with a plain message; the address is
