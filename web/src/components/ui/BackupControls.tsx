@@ -8,9 +8,10 @@ import { makeBackup } from '../../lib/backup'
 const drivesText = (n: number) => `${n} drive${n === 1 ? '' : 's'}`
 /**
  * The status line's classes: the old palette's (the failed-upgrade notice, outside look A's frame; its warning in the
- * palette's warning text, QA F12), or look A's on the new screens (QA F10).
+ * palette's warning text, QA F12, and its line in the palette's muted text, QA F13), or look A's on the new screens
+ * (QA F10).
  */
-const OLD_TEXT = { line: 'text-xs font-mono text-dim', warn: 'text-warn-text' }
+const OLD_TEXT = { line: 'text-xs font-mono text-dim-text', warn: 'text-warn-text' }
 const LOOK_A_TEXT = { line: 'a-meta', warn: 'a-failed' }
 const button = `px-3 py-2 rounded-md text-xs font-mono uppercase tracking-wider border border-brd text-frost
   hover:bg-surf3 transition-colors disabled:opacity-30 disabled:cursor-not-allowed`

@@ -224,6 +224,28 @@ describe('#384 ticket 02, review round: the backup button', () => {
     const line = await screen.findByText("Close Sapphire's other tabs: the backup continues once they are closed.")
     expect(line).toHaveClass('text-warn-text')
   }, 15_000)
+
+  it('in the storage bar, "Building the backup…" reads at AA in Night, Day and Ultra (QA F13)', async () => {
+    // the class the line takes, and that class's colour as the root holds it per palette, on the bar's surface (jsdom has
+    // no stylesheet: the class is held here, the colour measured in a browser by the AA audit and QA's notice-aa.mjs)
+    const { contrastRatio } = await import('./styles/tokens')
+    const rootVar = (name: string) => document.documentElement.style.getPropertyValue(name).trim()
+    for (const palette of ['night', 'day', 'ultra']) {
+      cleanup()
+      vi.stubGlobal('Worker', HeldWorker)
+      ;(globalThis as { indexedDB: IDBFactory }).indexedDB = new IDBFactory()
+      localStorage.setItem('sapphire_settings', JSON.stringify({ palette }))
+      await writeV1([{ ...session('bad'), trip: { ...session('bad').trip!, points: 'not an array' } }, session('good')])
+      const { App } = await modules()
+      render(<App />)
+      const button = await screen.findByText('Back up the old drives', {}, { timeout: 5000 })
+      await act(async () => { fireEvent.click(button) })
+      const line = await screen.findByText(/Building the backup/)
+      expect(line, palette).toHaveClass('text-dim-text')
+      const fg = rootVar('--color-dim-text'), bg = rootVar('--color-surf2')
+      expect(contrastRatio(fg, bg), `${palette}: ${fg} on ${bg}`).toBeGreaterThanOrEqual(4.5)
+    }
+  }, 30_000)
 })
 
 describe('#384 ticket 02: the controls\' chunk cannot load (a tab left open across a deploy)', () => {

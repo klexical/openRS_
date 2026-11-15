@@ -23,6 +23,7 @@
   --color-ok: #00FF88;
   --color-warn: #FFCC00;
   --color-warn-text: #FFCC00;     /* the palette's warning text (App.tsx writes it; Night's until then) */
+  --color-dim-text: #7A9AB8;      /* the palette's muted text for the same lines (App.tsx writes it; Night's until then) */
   --color-orange: #FF4D00;
 
   --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
