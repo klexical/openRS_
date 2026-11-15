@@ -2,8 +2,8 @@
 // first shown (LazyBackupControls), not on the first visit.
 import { useEffect, useRef, useState } from 'react'
 import { useStore } from '../../store'
-import { listDrives } from '../../lib/storage'
-import { makeBackup, restoreBackup } from '../../lib/backup'
+import { restore as restoreLibrary } from '../../lib/driveLibrary'
+import { makeBackup } from '../../lib/backup'
 
 const drivesText = (n: number) => `${n} drive${n === 1 ? '' : 's'}`
 const button = `px-3 py-2 rounded-md text-xs font-mono uppercase tracking-wider border border-brd text-frost
@@ -69,7 +69,6 @@ export function BackupButton({ label, afterFailedUpgrade = false }: { label: str
 
 /** Choose a backup file and restore it: adds what is missing, skips what is here, never overwrites. */
 export function RestoreInput() {
-  const setDrives = useStore((st) => st.setDrives)
   const [text, setText] = useState<{ message: string; warn: boolean } | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -78,8 +77,7 @@ export function RestoreInput() {
     setBusy(true)
     setText({ message: 'Restoring…', warn: false })
     try {
-      const out = await restoreBackup(file)
-      setDrives(await listDrives())
+      const out = await restoreLibrary(file)      // the Drive library restores, then reads the list again
       const parts = [`Restored ${drivesText(out.added)}.`]
       if (out.skipped > 0) parts.push(`${drivesText(out.skipped)} already here, left as they are.`)   // the same id, or the same drive
       if (out.notRestorable.length > 0) parts.push(`Could not convert: ${out.notRestorable.join(', ')}.`)

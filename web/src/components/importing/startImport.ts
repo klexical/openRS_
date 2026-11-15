@@ -2,7 +2,8 @@
 // One import at a time. The parser and JSZip load on first use. One drive stored lands on that drive; several land on
 // the list, with the new rows marked (and its search and filters cleared, so none of them is hidden).
 import { useStore, type ImportJob } from '../../store'
-import { listDrives, loadDrive } from '../../lib/storage'
+import { ImportCodeUnavailable, importDrives } from '../../lib/driveLibrary'
+import type { FileResult } from '../../lib/importFiles'
 import { go } from '../../lib/address'
 
 export async function startImport(files: File[]): Promise<void> {
@@ -18,33 +19,23 @@ export async function startImport(files: File[]): Promise<void> {
   st.setNewIds([])
   let job: ImportJob = { running: true, progress: { done: 0, total: files.length, file: files[0].name, stage: 'reading' }, results: [], storedCount: 0 }
   st.setImportJob(job)
-  let importFiles: typeof import('../../lib/importFiles').importFiles
+  // the Drive library loads the reading code, stores each file's drives and mirrors once at the end (the list, a
+  // filled-in Current drive); the store's copy of the job is read again on each step: a note added meanwhile is kept
+  let results: FileResult[]
   try {
-    ({ importFiles } = await import('../../lib/importFiles'))
+    results = await importDrives(files, (progress) => {
+      job = { ...(useStore.getState().importJob ?? job), progress }; useStore.getState().setImportJob(job)
+    })
   } catch (err) {
-    console.warn('[Sapphire] The import could not load:', err)
+    if (!(err instanceof ImportCodeUnavailable)) throw err
+    console.warn('[Sapphire] The import could not load:', err.cause)
     st.setImportJob({ running: false, progress: null, storedCount: 0,
       results: files.map((f) => ({ file: f.name, stored: [], already: [], error: 'Sapphire was updated: reload this tab to import' })) })
     return
   }
-  // the store's copy is read again on each step: a note added meanwhile (a drop while this runs) is kept
-  const results = await importFiles(files, (progress) => { job = { ...(useStore.getState().importJob ?? job), progress }; useStore.getState().setImportJob(job) })
 
   const stored = results.flatMap((r) => r.stored)
-  const filled = results.flatMap((r) => r.already.filter((a) => a.filled.length > 0).map((a) => a.existingId))
   const s = useStore.getState()
-  if (stored.length > 0) s.addDrives(stored)
-  if (filled.length > 0) {
-    // a stored drive was filled in: its small record, and the open drive if it is that one, are read again
-    try {
-      s.setDrives(await listDrives())
-      const open = useStore.getState().activeSessionId
-      if (open && filled.includes(open)) {
-        const fresh = await loadDrive(open)
-        if (fresh && useStore.getState().activeSessionId === open) useStore.getState().setActiveSession(fresh)
-      }
-    } catch (err) { console.warn('[Sapphire] Could not read the filled-in drives again:', err) }
-  }
   s.setNewIds(stored.map((d) => d.id))
   s.setImportJob({ running: false, progress: null, results, storedCount: stored.length, notes: useStore.getState().importJob?.notes })
   if (stored.length === 1) go({ place: 'drive', id: stored[0].id })
