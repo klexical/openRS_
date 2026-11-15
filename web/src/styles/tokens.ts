@@ -7,15 +7,25 @@
  * (categorical legends, GPS map buckets, threshold bands) — a Race Red accent would otherwise read as a
  * warning next to `orange` / `red`.
  */
+/** The old views' surfaces and text in the Night palette (index.css's @theme defaults); the others: lookA.ts. */
+export const nightTokens = {
+  bg: '#05070A', surf: '#0A0D12', surf2: '#0F141C', surf3: '#141B26',
+  frost: '#E8F4FF', dim: '#3D5A72', mid: '#7A9AB8', brd: '#162030',
+} as const
+
+/**
+ * Surfaces and text (bg … brd) resolve to CSS custom properties too, so the old views take the palette chosen (#384
+ * ticket 08; App.tsx writes them). Meaning and data colours (cyan, orange, ok, warn, red) stay fixed hex.
+ */
 export const colors = {
-  bg: '#05070A',
-  surf: '#0A0D12',
-  surf2: '#0F141C',
-  surf3: '#141B26',
-  frost: '#E8F4FF',
-  dim: '#3D5A72',
-  mid: '#7A9AB8',
-  brd: '#162030',
+  bg: 'var(--color-bg)',
+  surf: 'var(--color-surf)',
+  surf2: 'var(--color-surf2)',
+  surf3: 'var(--color-surf3)',
+  frost: 'var(--color-frost)',
+  dim: 'var(--color-dim)',
+  mid: 'var(--color-mid)',
+  brd: 'var(--color-brd)',
   accent: 'var(--color-accent)',
   accentD: 'var(--color-accent-d)',
   cyan: '#0091EA',

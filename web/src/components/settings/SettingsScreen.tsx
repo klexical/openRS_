@@ -1,9 +1,9 @@
 // Settings at `#/settings` (#384 ticket 07; the owner's pick, mock-up B): panels with a section index (a row of chips
-// on a phone, a rail on a desktop), your drives first as a summary. Look A. Ticket 08 adds the Palette beside the
-// paint colour; ticket 09 adds "What's new".
+// on a phone, a rail on a desktop), your drives first as a summary. Look A. The Palette sits beside the paint colour
+// (ticket 08); ticket 09 adds "What's new".
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useStore } from '../../store'
-import { useSettings, type ThemeId } from '../../store/settings'
+import { useSettings, type PaletteChoice, type ThemeId } from '../../store/settings'
 import { rsThemes } from '../../styles/tokens'
 import { aboutSize, keepStatus, type KeepStatus } from '../../lib/keepData'
 import type { UnitSystem, BoostUnit, TirePressUnit } from '../../lib/units'
@@ -16,7 +16,7 @@ const PAINTS: { id: ThemeId; label: string }[] = [
   { id: 'cyan', label: 'Nitrous Blue' }, { id: 'red', label: 'Race Red' }, { id: 'orange', label: 'Deep Orange' },
   { id: 'grey', label: 'Stealth Grey' }, { id: 'black', label: 'Shadow Black' }, { id: 'white', label: 'Frozen White' },
 ]
-const SECTIONS = [['drives', 'Your drives'], ['units', 'Units'], ['paint', 'Paint colour'], ['map', 'The map']] as const
+const SECTIONS = [['drives', 'Your drives'], ['units', 'Units'], ['paint', 'Palette and paint colour'], ['map', 'The map']] as const
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 /** Below this (0.05 MB) the space is "almost none": rounding it up to a figure would say more than the browser does. */
@@ -36,7 +36,7 @@ export function SettingsScreen() {
         <div className="a-panels">
           <DrivesPanel />
           <Panel id="units" title="Units"><Units /></Panel>
-          <Panel id="paint" title="Paint colour"><Paint /></Panel>
+          <Panel id="paint" title="Palette and paint colour"><Palette /><Paint /></Panel>
           <Panel id="map" title="The map"><p>{MAP_SENTENCE}</p></Panel>
           <ResetLine />
         </div>
@@ -134,10 +134,34 @@ function Units() {
   </>
 }
 
+const PALETTES: { value: PaletteChoice; label: string }[] = [
+  { value: 'match', label: 'Match device' }, { value: 'night', label: 'Night' }, { value: 'day', label: 'Day' }, { value: 'ultra', label: 'Ultra' },
+]
+/**
+ * The palette (#384 ticket 08; owner, 2026-11-15): the set of colours Sapphire is drawn in. Match device picks Night or
+ * Day from the device's setting; Ultra is chosen here only. Never named "Auto", "Theme", "Mode" or "Look".
+ */
+function Palette() {
+  const { palette, setPalette } = useSettings()
+  return (
+    <div className="a-field">
+      <span className="a-label" id="palette-label">Palette</span>
+      <div className="a-buttons" role="radiogroup" aria-labelledby="palette-label">
+        {PALETTES.map((p) => (
+          <button key={p.value} type="button" role="radio" aria-checked={palette === p.value} className="a-btn a-choice"
+            onClick={() => setPalette(p.value)}>{p.label}</button>
+        ))}
+      </div>
+      <p className="a-meta">Match device picks Night or Day from this device's setting. Ultra is pure black, for OLED screens.</p>
+    </div>
+  )
+}
+
 /** The paint colour: the RS paint the accent comes from, on buttons, tabs and highlights only (owner, 2026-11-15). */
 function Paint() {
   const { themeId, setThemeId } = useSettings()
-  return <>
+  return <div className="a-field">
+    <span className="a-label">Paint colour</span>
     <div className="a-buttons" role="radiogroup" aria-label="Paint colour">
       {PAINTS.map((p) => (
         <button key={p.id} type="button" role="radio" aria-checked={themeId === p.id} className="a-btn a-paint" onClick={() => setThemeId(p.id)}>
@@ -145,10 +169,10 @@ function Paint() {
       ))}
     </div>
     <p className="a-meta">On buttons, tabs and highlights only; never on data or the route.</p>
-  </>
+  </div>
 }
 
 function ResetLine() {
   const resetDefaults = useSettings((s) => s.resetDefaults)
-  return <p className="a-reset"><button type="button" className="a-btn" onClick={resetDefaults}>Reset units and paint colour</button></p>
+  return <p className="a-reset"><button type="button" className="a-btn" onClick={resetDefaults}>Reset units, palette and paint colour</button></p>
 }

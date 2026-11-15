@@ -106,7 +106,7 @@ export function TripPanel() {
       <SectionLabel>RPM</SectionLabel>
       <TimeSeriesChart
         data={rows}
-        series={[{ key: 'rpm', label: 'RPM', color: colors.accent }]}
+        series={[{ key: 'rpm', label: 'RPM', color: colors.cyan }]}   // data: fixed, never the paint (#384 ticket 08)
         xFormatter={fmtTime}
         syncId={syncId}
         peakEvents={peakEvents}
@@ -297,7 +297,7 @@ export function TripPanel() {
       <Histogram
         values={points.map((p) => p.rpm)}
         bins={14}
-        color={colors.accent}
+        color={colors.cyan}
         xLabel="RPM"
         yLabel="Samples"
       />

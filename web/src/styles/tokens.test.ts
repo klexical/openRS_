@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { colors, rsThemes, shadeHex, contrastRatio, printAccent } from './tokens'
+import { colors, nightTokens, rsThemes, shadeHex, contrastRatio, printAccent } from './tokens'
 
-// Sapphire has one (dark) screen palette; print is its only light surface.
-const SCREEN_SURFACES = { bg: colors.bg, surf: colors.surf, surf2: colors.surf2, surf3: colors.surf3 }
+// The paint on the old views' Night surfaces (ticket 08 moved them to CSS variables: their Night values are nightTokens;
+// Day's paint shades are lookA.ts's paintAccent, held by App.palette.test.tsx)
+const SCREEN_SURFACES = { bg: nightTokens.bg, surf: nightTokens.surf, surf2: nightTokens.surf2, surf3: nightTokens.surf3 }
 
 describe('RS paint accents', () => {
   it('colors.accent follows the paint through a CSS variable; categorical cyan stays fixed', () => {
@@ -17,7 +18,7 @@ describe('RS paint accents', () => {
       for (const surface of Object.values(others)) expect(contrastRatio(paint, surface)).toBeGreaterThanOrEqual(4.5)
       // Race Red on the raised surface is 4.49:1 — the same band as the default Nitrous Blue on its tinted chips
       expect(contrastRatio(paint, surf3)).toBeGreaterThanOrEqual(4.4)
-      expect(contrastRatio(colors.bg, paint)).toBeGreaterThanOrEqual(4.5)
+      expect(contrastRatio(nightTokens.bg, paint)).toBeGreaterThanOrEqual(4.5)
     })
 
     it(`${id}: print accent is the same paint darkened to ≥ 4.5:1 on white`, () => {

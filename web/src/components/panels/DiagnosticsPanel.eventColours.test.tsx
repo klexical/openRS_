@@ -18,8 +18,8 @@ const APP_EVENT_TYPES = ['AUTO_DTC_SCAN', 'BATCH_EXPORT_ERROR', 'BLE_WRITE', 'BO
   'LINK_PREV', 'LINK_PREV_EXIT', 'LINK_START_REFUSED', 'LINK_STOP', 'LINK_STOP_IDLE', 'LINK_TASK_REMOVED', 'NOTE',
   'NRC_RECOVER', 'NRC_SUPPRESS', 'NRC_UNATTRIBUTED', 'PROBE', 'REC', 'REC_GAP', 'SESSION', 'SHARE', 'SLCAN', 'STATE']
 
-/** The neutral style's text colour (frost, #E8F4FF) as the browser computes it. */
-const NEUTRAL = 'rgb(232, 244, 255)'
+/** The neutral style's text colour: the palette's text colour (frost), a CSS variable since #384 ticket 08. */
+const NEUTRAL = 'var(--color-frost)'
 
 function show(types: string[]): HTMLElement {
   const diagnostics: DiagnosticData = {

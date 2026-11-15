@@ -2,12 +2,15 @@ import { create } from 'zustand'
 import type { UnitSystem, BoostUnit, TirePressUnit } from '../lib/units'
 
 export type ThemeId = 'cyan' | 'red' | 'orange' | 'grey' | 'black' | 'white'
+/** The palette chosen in Settings (#384 ticket 08): Match device follows the device's light / dark setting. */
+export type PaletteChoice = 'match' | 'night' | 'day' | 'ultra'
 
 interface Settings {
   unitSystem: UnitSystem
   boostUnit: BoostUnit
   tirePressUnit: TirePressUnit
   themeId: ThemeId
+  palette: PaletteChoice
 }
 
 interface SettingsState extends Settings {
@@ -15,6 +18,7 @@ interface SettingsState extends Settings {
   setBoostUnit: (unit: BoostUnit) => void
   setTirePressUnit: (unit: TirePressUnit) => void
   setThemeId: (id: ThemeId) => void
+  setPalette: (palette: PaletteChoice) => void
   resetDefaults: () => void
 }
 
@@ -25,6 +29,7 @@ const defaults: Settings = {
   boostUnit: 'PSI',
   tirePressUnit: 'PSI',
   themeId: 'cyan',
+  palette: 'match',               // a first visit follows the device (owner, 2026-11-14)
 }
 
 function loadSettings(): Settings {
@@ -49,6 +54,7 @@ export const useSettings = create<SettingsState>((set) => ({
   setBoostUnit: (boostUnit) => { persist({ boostUnit }); set({ boostUnit }) },
   setTirePressUnit: (tirePressUnit) => { persist({ tirePressUnit }); set({ tirePressUnit }) },
   setThemeId: (themeId) => { persist({ themeId }); set({ themeId }) },
+  setPalette: (palette) => { persist({ palette }); set({ palette }) },
 
   resetDefaults: () => {
     localStorage.removeItem(STORAGE_KEY)

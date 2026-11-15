@@ -6,12 +6,15 @@ import { onStorageStatus, storageStatus } from './lib/storage'
 import { attach, loadList, showDrive } from './lib/driveLibrary'
 import { go, useAddress } from './lib/address'
 import { rsThemes, shadeHex, printAccent } from './styles/tokens'
+import { oldViewTokens, paintAccent } from './styles/lookA'
+import { useResolvedPalette } from './lib/devicePalette'
 import { colors } from './styles/tokens'
 import { BackupButton } from './components/ui/LazyBackupControls'
 
 export default function App() {
   const setStorage = useStore((s) => s.setStorage)
   const themeId = useSettings((s) => s.themeId)
+  const palette = useResolvedPalette(useSettings((s) => s.palette))
 
   // Storage state → the store, for the messages below (#384)
   useEffect(() => {
@@ -46,14 +49,19 @@ export default function App() {
   }, [address.place, addressedId])
 
   // RS paint accent → CSS custom properties on the document root. Tailwind utilities (`text-accent`,
-  // `bg-accent/10`, …) and `colors.accent` (a var()) resolve them at runtime, so this repaints everything.
+  // `bg-accent/10`, …) and `colors.accent` (a var()) resolve them at runtime, so this repaints everything. The accent
+  // is the paint's shade for the palette (Day: darker, #384 ticket 08); the old views' surfaces and text follow the
+  // palette too (their layout does not change). Print keeps the paint itself, darkened for paper.
   useEffect(() => {
-    const accent = rsThemes[themeId] ?? rsThemes.cyan
+    const paint = rsThemes[themeId] ?? rsThemes.cyan
+    const accent = paintAccent(themeId, palette)
     const root = document.documentElement.style
     root.setProperty('--color-accent', accent)
     root.setProperty('--color-accent-d', shadeHex(accent, -0.25))
-    root.setProperty('--color-accent-print', printAccent(accent))
-  }, [themeId])
+    root.setProperty('--color-accent-print', printAccent(paint))
+    for (const [k, v] of Object.entries(oldViewTokens(palette))) root.setProperty(k, v)
+    root.colorScheme = palette === 'day' ? 'light' : 'dark'
+  }, [themeId, palette])
 
   return (
     <>

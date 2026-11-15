@@ -22,8 +22,8 @@
 
 @layer base {
   html {
-    background-color: #05070A;
-    color: #E8F4FF;
+    background-color: var(--color-bg);       /* the palette's (#384 ticket 08) */
+    color: var(--color-frost);
     font-family: var(--font-sans);
   }
 
@@ -54,7 +54,8 @@
    Colours come from styles/lookA.ts as --a-* properties on .look-a (Night only until ticket 08); the accent is the paint.
    Below 768 px the places are a bar at the bottom; from 768 px a narrow rail on the left. Every rule names a class of
    the new screens: the old views inside a drive (.old-view) keep their own look until tickets 07 and 08. */
-.look-a { background: var(--a-bg); color: var(--a-ink); min-height: 100dvh; color-scheme: dark; }   /* Night: native controls dark too */
+.look-a { background: var(--a-bg); color: var(--a-ink); min-height: 100dvh; color-scheme: dark; }   /* Night, Ultra: native controls dark too */
+.look-a[data-palette='day'] { color-scheme: light; }
 .look-a .a-place:focus-visible, .look-a .a-name:focus-visible, .look-a .a-btn:focus-visible, .look-a .a-crumb:focus-visible {
   outline: 2px solid var(--color-accent); outline-offset: 2px; }
 .look-a .num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
@@ -76,7 +77,7 @@
 .look-a .a-btn.primary { background: var(--color-accent); color: var(--a-on-accent); border-color: var(--color-accent); font-weight: 700; }
 .look-a .a-btn[aria-pressed='true'] { color: var(--a-ink); font-weight: 700; border-color: var(--color-accent); }
 .look-a .a-toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
-.look-a .a-notice { color: var(--a-warn); border: 1px solid var(--a-brd2); border-radius: 8px; padding: 8px 12px; background: var(--a-card); }
+.look-a .a-notice { color: var(--a-warn-text); border: 1px solid var(--a-brd2); border-radius: 8px; padding: 8px 12px; background: var(--a-card); }
 .look-a .a-month h2 { color: var(--a-mid); font-size: 15px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 10px; }
 .look-a .a-rows { display: grid; gap: 10px; list-style: none; margin: 0; padding: 0; }
 .look-a .a-row { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; background: var(--a-card);
@@ -100,7 +101,7 @@
 .look-a .a-chip[aria-pressed='true']::before { content: '■ '; }
 .look-a .a-markers { display: inline-flex; flex-wrap: wrap; gap: 6px; margin-left: 8px; vertical-align: middle; font-size: 0.88em; }
 .look-a .a-marker { border: 1px solid var(--a-brd2); border-radius: 8px; padding: 0 7px; color: var(--a-mid); white-space: nowrap; }
-.look-a .a-marker.warn { color: var(--a-warn); font-weight: 700; border-color: var(--a-warn); }
+.look-a .a-marker.warn { color: var(--a-warn-text); font-weight: 700; border-color: var(--a-warn); }   /* the marker's line keeps the warn colour; its word, the text shade */
 .look-a .a-row.is-warning { border-left: 4px solid var(--a-warn); }
 /* ticket 05: ticks, the row menu, the editors, the confirmation */
 .look-a .a-rowhead { display: flex; align-items: center; gap: 10px; }
@@ -117,7 +118,7 @@
   padding: 8px 10px; cursor: pointer; }
 .look-a .a-menu [role='menuitem']:hover, .look-a .a-menu [role='menuitem']:focus-visible { background: var(--a-button);
   outline: 2px solid var(--color-accent); outline-offset: -2px; }
-.look-a .a-menu .danger, .look-a .a-btn.danger { color: var(--a-warn); }
+.look-a .a-menu .danger, .look-a .a-btn.danger { color: var(--a-warn-text); }
 .look-a .a-btn:disabled { opacity: 0.55; cursor: not-allowed; }
 .look-a .a-editor { grid-column: 1 / -1; display: grid; gap: 8px; }
 .look-a .a-editor label { display: grid; gap: 4px; color: var(--a-mid); font-size: 0.9em; }
@@ -144,7 +145,7 @@
 .look-a .a-import [data-import-stage], .look-a .a-import [role='status'] { color: var(--a-mid); }
 .look-a .a-import-lines { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; color: var(--a-mid); font-size: 0.9em; }
 .look-a .a-import-lines a { color: var(--a-ink); }
-.look-a .a-failed { color: var(--a-warn); }
+.look-a .a-failed { color: var(--a-warn-text); }
 .look-a .a-marker.new { color: var(--a-ink); border-color: var(--color-accent); }
 .look-a .a-dropzone { position: fixed; inset: 12px; z-index: 60; border: 3px dashed var(--color-accent); border-radius: 16px;
   background: rgba(5, 7, 10, 0.75); display: flex; align-items: center; justify-content: center; pointer-events: none;
@@ -174,7 +175,7 @@
 .look-a .a-label { font-weight: 700; }
 .look-a .a-buttons { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .look-a .a-paint { display: inline-flex; align-items: center; gap: 8px; }
-.look-a .a-paint[aria-checked='true'] { font-weight: 700; border-color: var(--color-accent); }
+.look-a .a-paint[aria-checked='true'], .look-a .a-choice[aria-checked='true'] { font-weight: 700; border-color: var(--color-accent); }
 .look-a .a-dot { width: 14px; height: 14px; border-radius: 50%; border: 1px solid var(--a-brd2); }
 .look-a .a-under { border-top: 1px dashed var(--a-brd2); padding-top: 12px; }
 .look-a .a-under > * + * { margin-top: 8px; }

@@ -7,7 +7,7 @@ interface MetricCardProps {
   color?: string
 }
 
-export function MetricCard({ label, value, sub, color = colors.accent }: MetricCardProps) {
+export function MetricCard({ label, value, sub, color = colors.cyan }: MetricCardProps) {   // a figure: data, never the paint (#384 ticket 08)
   return (
     <div className="rounded-lg border border-brd bg-surf2 p-4 flex flex-col gap-1 min-w-[140px]">
       <span className="text-xs font-mono uppercase tracking-widest text-dim">{label}</span>

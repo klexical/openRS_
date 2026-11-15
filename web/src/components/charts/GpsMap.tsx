@@ -270,7 +270,7 @@ export function GpsMap({ points, peakEvents, bookmarks, height = '55vh' }: GpsMa
           flexWrap: 'wrap',
           justifyContent: 'flex-end',
           gap: 2,
-          background: `${colors.bg}cc`,
+          background: `color-mix(in srgb, ${colors.bg} 80%, transparent)`,   // the palette's background, 80 %
           borderRadius: 8,
           padding: 3,
           backdropFilter: 'blur(8px)',
@@ -311,7 +311,7 @@ export function GpsMap({ points, peakEvents, bookmarks, height = '55vh' }: GpsMa
           display: 'flex',
           flexWrap: 'wrap',
           gap: 10,
-          background: `${colors.bg}cc`,
+          background: `color-mix(in srgb, ${colors.bg} 80%, transparent)`,   // the palette's background, 80 %
           borderRadius: 8,
           padding: '5px 10px',
           backdropFilter: 'blur(8px)',

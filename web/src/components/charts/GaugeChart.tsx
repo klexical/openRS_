@@ -13,7 +13,7 @@ interface GaugeChartProps {
  * Semi-circular SVG gauge for peak values.
  * Shows value as a percentage of max (e.g., peak RPM as % of redline).
  */
-export function GaugeChart({ value, max, label, unit = '', color = colors.accent, size = 100 }: GaugeChartProps) {
+export function GaugeChart({ value, max, label, unit = '', color = colors.cyan, size = 100 }: GaugeChartProps) {
   const pct = Math.min(Math.max(value / max, 0), 1)
   const r = (size - 12) / 2
   const cx = size / 2
