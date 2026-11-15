@@ -110,7 +110,7 @@ export function ComparePanel() {
       )}
 
       {/* A compared drive that could not be read (#407), named as the list calls it now */}
-      {failedIds.filter((id) => compareIds.includes(id)).map((id) => (
+      {failedIds.map((id) => (
         <p key={id} role="alert" className="text-sm font-mono" style={{ color: colors.warn }}>
           Couldn't open {sessions.find((d) => d.id === id)?.name ?? 'a compared drive'}.
         </p>
