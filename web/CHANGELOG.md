@@ -21,6 +21,7 @@ Sections, in this order: Added, Fixed, Changed, Removed. Every entry ends with i
 - **What's new** — shown once after this update to anyone who had Sapphire before, never on a fresh install, and always reachable from Settings, under About (`components/whatsnew/`). ([#384](https://github.com/klexical/openRS_/issues/384))
 - **Map background unavailable** — when the map server cannot be reached, a drive's route is drawn on a plain background with the line "Map background unavailable", and every chart still works (`GpsMap.tsx`). ([#384](https://github.com/klexical/openRS_/issues/384))
 - **The openRS_ icon in the browser tab** — the favicon is the openRS_ app's launcher icon, in place of the build tool's stock one (`public/favicon.png`). ([#384](https://github.com/klexical/openRS_/issues/384))
+- **The fonts ship inside Sapphire** — Barlow, JetBrains Mono and Orbitron (for headings, served as "Sapphire Display") come from Sapphire itself, with their licences, so no font server is asked and the page looks the same with no network; the map background is the one request to another server (`public/fonts/`). ([#384](https://github.com/klexical/openRS_/issues/384))
 
 ### Fixed
 - **Leaving a route map at once no longer throws a page error** — the map's zoom-to-fit no longer animates, so a drive closed within moments of opening leaves no Leaflet "_leaflet_pos" error behind; the map opens at the fitted view at once (`GpsMap.tsx`). ([#401](https://github.com/klexical/openRS_/issues/401))

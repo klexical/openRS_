@@ -1,0 +1,10 @@
+Sapphire's fonts, served from Sapphire itself (#384 ticket 09): no request to a font server.
+
+Source: Fontsource 5.3.0 packages from the npm registry (@fontsource/barlow, @fontsource/jetbrains-mono,
+@fontsource/orbitron), Latin subset, the files unchanged. Each family's licence is beside it (SIL Open Font License 1.1);
+none of the three names a Reserved Font Name.
+
+  barlow-latin-400.woff2, barlow-latin-600.woff2              Barlow                 OFL-Barlow.txt
+  jetbrains-mono-latin-400.woff2, jetbrains-mono-latin-700.woff2  JetBrains Mono     OFL-JetBrains-Mono.txt
+  sapphire-display-latin-700.woff2                            Orbitron Bold, served   OFL-Orbitron.txt
+                                                              as "Sapphire Display", for headings only

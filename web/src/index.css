@@ -1,5 +1,14 @@
 @import "tailwindcss";
 
+/* Sapphire's fonts ship inside it (#384 ticket 09; owner, 2026-11-14): public/fonts/, Latin, with their licences. The
+   fewest weights that keep the look: Barlow 400 and 600 (bold text has always drawn as 600), JetBrains Mono 400 and 700,
+   and Orbitron Bold for headings only, under the name "Sapphire Display". */
+@font-face { font-family: 'Barlow'; font-style: normal; font-weight: 400; font-display: swap; src: url('/fonts/barlow-latin-400.woff2') format('woff2'); }
+@font-face { font-family: 'Barlow'; font-style: normal; font-weight: 600; font-display: swap; src: url('/fonts/barlow-latin-600.woff2') format('woff2'); }
+@font-face { font-family: 'JetBrains Mono'; font-style: normal; font-weight: 400; font-display: swap; src: url('/fonts/jetbrains-mono-latin-400.woff2') format('woff2'); }
+@font-face { font-family: 'JetBrains Mono'; font-style: normal; font-weight: 700; font-display: swap; src: url('/fonts/jetbrains-mono-latin-700.woff2') format('woff2'); }
+@font-face { font-family: 'Sapphire Display'; font-style: normal; font-weight: 700; font-display: swap; src: url('/fonts/sapphire-display-latin-700.woff2') format('woff2'); }
+
 @theme {
   --color-bg: #05070A;
   --color-surf: #0A0D12;
@@ -16,7 +25,7 @@
   --color-orange: #FF4D00;
 
   --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
-  --font-display: 'Orbitron', 'SF Mono', monospace;
+  --font-display: 'Sapphire Display', 'SF Mono', monospace;
   --font-sans: 'Barlow', 'Inter', system-ui, sans-serif;
 }
 

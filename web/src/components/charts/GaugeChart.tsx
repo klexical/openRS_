@@ -67,7 +67,7 @@ export function GaugeChart({ value, max, label, unit = '', color = colors.cyan, 
           x={cx}
           y={cy - 4}
           textAnchor="middle"
-          style={{ fill: colors.frost, fontSize: 14, fontFamily: 'Orbitron, sans-serif', fontWeight: 700 }}
+          style={{ fill: colors.frost, fontSize: 14, fontFamily: "'Sapphire Display', sans-serif", fontWeight: 700 }}
         >
           {value >= 1000 ? `${(value / 1000).toFixed(1)}k` : value.toFixed(value < 10 ? 1 : 0)}
         </text>
