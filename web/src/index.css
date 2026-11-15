@@ -1,4 +1,11 @@
 @import "tailwindcss";
+/* Only the app's own sources make CSS: a class name inside a test, a fixture, the test setup or a browser check must
+   never add a rule to the production stylesheet (QA, fix round 5: a test's "not text-warn" once put that class back) */
+@source not "./**/*.test.ts";
+@source not "./**/*.test.tsx";
+@source not "./**/__fixtures__/**";
+@source not "./test/**";
+@source not "../scripts/**";
 
 /* Sapphire's fonts ship inside it (#384 ticket 09; owner, 2026-11-14): public/fonts/, Latin, with their licences. The
    fewest weights that keep the look: Barlow 400 and 600 (bold text has always drawn as 600), JetBrains Mono 400 and 700,
