@@ -212,6 +212,18 @@ describe('#384 ticket 02, review round: the backup button', () => {
     await waitFor(() => expect(document.body.textContent).toMatch(/Close Sapphire's other tabs/))
     expect(document.body.textContent).not.toMatch(/Building the backup/)
   }, 15_000)
+
+  it('in the storage bar, that line takes the palette\'s warning text (QA F12; a class check, measured in a browser)', async () => {
+    vi.stubGlobal('Worker', HeldWorker)
+    const { useStore } = await modules()
+    const { BackupButton } = await import('./components/ui/LazyBackupControls')
+    render(<BackupButton label="Back up the old drives" afterFailedUpgrade />)          // as the bar draws it (App.tsx)
+    const button = await screen.findByText('Back up the old drives', {}, { timeout: 5000 })
+    act(() => useStore.setState({ storage: { state: 'blocked' } }))
+    await act(async () => { fireEvent.click(button) })
+    const line = await screen.findByText("Close Sapphire's other tabs: the backup continues once they are closed.")
+    expect(line).toHaveClass('text-warn-text')
+  }, 15_000)
 })
 
 describe('#384 ticket 02: the controls\' chunk cannot load (a tab left open across a deploy)', () => {
