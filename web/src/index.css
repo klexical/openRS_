@@ -183,6 +183,10 @@
 .look-a .a-sheet-scrim { align-items: flex-end; padding: 0; }
 .look-a .a-sheet { width: 100%; max-width: 520px; border-radius: 16px 16px 0 0; padding-bottom: 28px; }
 .look-a .a-sheet > * + * { margin-top: 12px; }
+.look-a .a-whatsnew { max-width: 480px; width: calc(100% - 32px); }
+.look-a .a-whatsnew > * + * { margin-top: 12px; }
+.look-a .a-whatsnew h3 { color: var(--a-mid); font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; }
+.look-a .a-whatsnew-list { margin: 0; padding-left: 20px; list-style: disc; display: grid; gap: 6px; color: var(--a-ink); }
 /* the sheet sits inside its panel: its heading is a dialog's, not the panel's label */
 .look-a .a-panel .a-sheet h2 { color: var(--a-ink); font-size: 20px; font-weight: 700; text-transform: none; letter-spacing: 0; }
 .look-a .a-steps { display: flex; gap: 8px; list-style: none; margin: 0; padding: 0; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; }

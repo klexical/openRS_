@@ -1,6 +1,6 @@
 // Settings at `#/settings` (#384 ticket 07; the owner's pick, mock-up B): panels with a section index (a row of chips
 // on a phone, a rail on a desktop), your drives first as a summary. Look A. The Palette sits beside the paint colour
-// (ticket 08); ticket 09 adds "What's new".
+// (ticket 08); About holds "What's new" (ticket 09).
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useStore } from '../../store'
 import { useSettings, type PaletteChoice, type ThemeId } from '../../store/settings'
@@ -16,7 +16,7 @@ const PAINTS: { id: ThemeId; label: string }[] = [
   { id: 'cyan', label: 'Nitrous Blue' }, { id: 'red', label: 'Race Red' }, { id: 'orange', label: 'Deep Orange' },
   { id: 'grey', label: 'Stealth Grey' }, { id: 'black', label: 'Shadow Black' }, { id: 'white', label: 'Frozen White' },
 ]
-const SECTIONS = [['drives', 'Your drives'], ['units', 'Units'], ['paint', 'Palette and paint colour'], ['map', 'The map']] as const
+const SECTIONS = [['drives', 'Your drives'], ['units', 'Units'], ['paint', 'Palette and paint colour'], ['map', 'The map'], ['about', 'About']] as const
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 /** Below this (0.05 MB) the space is "almost none": rounding it up to a figure would say more than the browser does. */
@@ -38,6 +38,7 @@ export function SettingsScreen() {
           <Panel id="units" title="Units"><Units /></Panel>
           <Panel id="paint" title="Palette and paint colour"><Palette /><Paint /></Panel>
           <Panel id="map" title="The map"><p>{MAP_SENTENCE}</p></Panel>
+          <Panel id="about" title="About"><About /></Panel>
           <ResetLine />
         </div>
       </div>
@@ -170,6 +171,15 @@ function Paint() {
     </div>
     <p className="a-meta">On buttons, tabs and highlights only; never on data or the route.</p>
   </div>
+}
+
+/** About (#384 ticket 09): "What's new" is always reachable here. */
+function About() {
+  const open = () => useStore.getState().setWhatsNewOpen(true)
+  return <>
+    <p>Sapphire is openRS_'s web dashboard: it reads the drives the app exports, in this browser only.</p>
+    <p><button type="button" className="a-btn" onClick={open}>What's new</button></p>
+  </>
 }
 
 function ResetLine() {

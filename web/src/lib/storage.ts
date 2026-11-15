@@ -118,6 +118,13 @@ export function onStorageStatus(cb: (s: StorageStatus) => void): () => void {
 
 let dbPromise: Promise<IDBPDatabase> | null = null
 let openDb: IDBPDatabase | null = null
+let createdNow = false
+
+/**
+ * True when this visit created Sapphire's storage (there was none in this browser before); false when it was there
+ * already, or was upgraded from version 1. "What's new" is not shown on a fresh install (#384 ticket 09).
+ */
+export function storageCreatedNow(): boolean { return createdNow }
 
 /** The open database (upgraded). Exported for storageBackup.ts, the backup's half of this module (#384 ticket 02). */
 export function getDb(): Promise<IDBPDatabase> {
@@ -130,6 +137,7 @@ export function getDb(): Promise<IDBPDatabase> {
   dbPromise = Promise.resolve().then(() => openDB(DB_NAME, DB_VERSION, {
     async upgrade(db, oldVersion, _newVersion, tx) {
       upgrading = true
+      if (oldVersion === 0) createdNow = true
       // An error the transaction itself hits (a full disk) aborts it outside the try below; openDB then rejects
       tx.done.catch((e: unknown) => console.warn('[Sapphire] Storage update stopped:', e instanceof Error ? e.name : e))
       try {

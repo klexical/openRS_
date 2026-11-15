@@ -8,11 +8,18 @@ import { SettingsPage } from './SettingsPage'
 import { DrivesPage } from '../drives/DrivesPage'
 import { DriveFrame } from '../drive/DriveFrame'
 import { DropToImport, ImportStatus } from '../importing/ImportStatus'
+import { useStore } from '../../store'
+import { markWhatsNewSeen } from '../../lib/whatsNew'
+import { lazyChunk } from '../ui/lazyChunk'
+
+// "What's new" loads only when shown (#384 ticket 09): its text is not part of the first visit
+const WhatsNew = lazyChunk(() => import('../whatsnew/WhatsNewDialog').then((m) => m.WhatsNewDialog), "What's new")
 
 /** Sapphire's frame (#384 ticket 03): the two places and the page the address names, in look A's palette (ticket 08). */
 export function Shell() {
   const address = useAddress()
   const palette = useResolvedPalette(useSettings((s) => s.palette))
+  const whatsNewOpen = useStore((s) => s.whatsNewOpen)
   const page = address.place === 'drive' ? `drive-${address.id}` : address.place
   return (
     <div className="look-a" data-palette={palette} style={lookAVars(LOOK_A[palette])}>
@@ -27,6 +34,7 @@ export function Shell() {
           </ErrorBoundary>
         </main>
       </div>
+      {whatsNewOpen && <WhatsNew onClose={() => { markWhatsNewSeen(); useStore.getState().setWhatsNewOpen(false) }} />}
     </div>
   )
 }
