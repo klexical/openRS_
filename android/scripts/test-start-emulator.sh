@@ -50,6 +50,7 @@ cat > "$SDK/emulator/emulator" <<'STUB'
 echo "emulator $*" >> "$WORK/calls"
 [ "$*" = -version ] && { printf 'Android emulator version 37.2.13.0 (build_id 1) (CL:N/A)\nCopyright (C) fake\n'; exit 0; }
 echo $$ > "$WORK/emu.pid"
+[ -z "${FAKE_GLES_FIRST-}" ] || echo "INFO         | emuglConfig_init: vulkan_mode_selected:swiftshader gles_mode_selected:$FAKE_GLES_FIRST"
 i=1; while [ "$i" -le "${FAKE_EMU_LINES:-0}" ]; do echo "emulator log line $i"; i=$((i + 1)); done
 name="$2"; found=""
 for d in ${ANDROID_AVD_HOME:+"$ANDROID_AVD_HOME"} ${ANDROID_SDK_HOME:+"$ANDROID_SDK_HOME/avd"} "$HOME/.android/avd"; do
@@ -60,7 +61,7 @@ if [ -z "$found" ] || [ "${FAKE_EMU-}" = exit ]; then
   echo "ERROR | Unknown AVD name [$name], use -list-avds to see valid list. (fake)"; exit 1
 fi
 echo "INFO | starting (fake, AVD in $found)"
-[ "${FAKE_GLES-swangle}" = none ] || echo "INFO         | emuglConfig_init: vulkan_mode_selected:swiftshader gles_mode_selected:${FAKE_GLES-swangle}"
+[ "${FAKE_GLES-swangle}" = none ] || [ -n "${FAKE_GLES_FIRST-}" ] || echo "INFO         | emuglConfig_init: vulkan_mode_selected:swiftshader gles_mode_selected:${FAKE_GLES-swangle}"
 [ "${FAKE_EMU-}" = hang ] || { sleep 1; : > "$WORK/booted"; }
 while :; do sleep 1; done
 STUB
@@ -189,7 +190,28 @@ WHY=""; run 10 FAKE_GLES=none
 [ "$CODE" -ne 0 ] || why "exit 0"
 has "::error::the emulator's log has no gles_mode_selected line, so its renderer is unknown"
 [ ! -s "$WORK/github_path" ] || why "adb's folder went on GITHUB_PATH without a renderer line"
-check "a log without the renderer line fails the start: the renderer is the night's proof (#363)"
+pid=$(cat "$WORK/emu.pid" 2>/dev/null); sleep 0.3
+[ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null || why "the emulator ($pid) was left running"
+check "a log without the renderer line fails the start and stops the emulator: the renderer is the night's proof (#363)"
+
+# QA's Q2: only [A-Za-z0-9_] of the value is read, so log text cannot become a workflow command
+WHY=""; run 10 FAKE_GLES='swan::warning file=x::injected'
+[ "$CODE" -ne 0 ] || why "exit 0"
+has "::error::the emulator selected the GLES renderer 'swan', not swangle"
+[[ "$OUT" != *"renderer 'swan::"* ]] || why "the value was read past [A-Za-z0-9_]"
+check "the renderer value is read as [A-Za-z0-9_] only (QA's Q2) (#363)"
+
+# QA's S1: a boot that fails still says which renderer the emulator chose: the log's first line, past the 60-line tail
+for mode in exit hang; do
+  WHY=""; run 3 FAKE_EMU=$mode FAKE_EMU_LINES=70 FAKE_GLES_FIRST=swangle
+  [ "$CODE" -ne 0 ] || why "exit 0"
+  has "The emulator's renderer: GLES swangle (the log's first gles_mode_selected line)"
+  check "a boot that $( [ $mode = exit ] && echo ends early || echo never completes ) still prints the renderer the log names (QA's S1) (#363)"
+done
+WHY=""; run 3 FAKE_EMU=exit
+[ "$CODE" -ne 0 ] || why "exit 0"
+has "The emulator's renderer: unknown (no gles_mode_selected line in its log)"
+check "a boot that ends before the renderer line says so (QA's S1) (#363)"
 
 # ── An emulator that never boots: fail at the limit, with its log ──────────────────────────────────────────────────────
 WHY=""; run 4 FAKE_EMU=hang

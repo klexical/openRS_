@@ -52,8 +52,8 @@ paths:
     crashed on its host render thread, #363) under a wrapper that writes its exit status to
     `emulator.exit`, prints its version (from `emulator/source.properties`) and process id, writes `emulator.pid` beside
     `emulator.log`, records its first start time and image (`emulator.started`, `emulator.args`), asks the kernel to
-    print fatal signals and, after the boot, stops (the emulator with it) unless the log's `gles_mode_selected:` names
-    swangle; then `scripts/launch-check.sh`: Play Store disabled, a `free -m` baseline, log
+    print fatal signals, prints the GLES renderer the log's first `gles_mode_selected:` names (on a failed boot too) and,
+    after the boot, stops (the emulator with it) unless it is swangle; then `scripts/launch-check.sh`: Play Store disabled, a `free -m` baseline, log
     cleared before the cold start, same process after 10 s, no verifier rejection, fatal exception or ANR; every adb
     call named and limited to 60 s; a failure prints `adb devices`, the emulator processes, whether the `emulator.pid`
     process is alive and named by the kernel's kill lines, the device log's process and crash lines and its events
@@ -68,7 +68,7 @@ paths:
     address, register or object name), and through `scripts/crash-facts.py` the crash database the emulator's log names
     (a count, and per file its kind, size and time after the cold start, no names) and the newest dump written after
     that attempt's cold start (its age, then signal, thread name, module + offset, fault address class: never a raw
-    address, a register or the dump, the owner's rule), and a liveness trace every 2 s (the emulator's CPU % and resident kB in each line); the check is repeated once in the same step only for a vanished emulator (a lost adb connection, the
+    address, a register or the dump, the owner's rule), and a liveness trace every 2 s (the emulator's CPU % over each interval from `/proc`, and its resident kB); the check is repeated once in the same step only for a vanished emulator (a lost adb connection, the
     `emulator.pid` process gone, no emulator process left, the app's process unchanged at the trace's last answer; fail
     closed without a trace, and only on the decision's explicit OK) when the job's 15 minutes leave a second boot (`JOB_LIMIT_S`, pinned against the job's
     `timeout-minutes`), with each attempt headed and a summary line for any end but a plain pass, an argument

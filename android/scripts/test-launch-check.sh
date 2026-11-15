@@ -133,7 +133,9 @@ for i in $(seq 1 3); do echo "second emulator log line $i"; done > "$PWD/emulato
 echo "Emulator booted (fake restart)"
 STUB
 printf '#!/usr/bin/env bash\n[ -f "$WORK/date-broken" ] && exit 1\nexec /bin/date "$@"\n' > "$WORK/bin/date"
-chmod +x "$WORK/bin/adb" "$WORK/bin/timeout" "$WORK/bin/pgrep" "$WORK/bin/start-emulator" "$WORK/bin/date"
+# ps: the real one, unless FAKE_PS_TEXT asks for text where the trace reads its numbers (QA's Q4)
+printf '#!/usr/bin/env bash\n[ -n "${FAKE_PS_TEXT-}" ] && [ "$1 $2" = "-o rss=" ] && { echo "$FAKE_PS_TEXT"; exit 0; }\nexec /bin/ps "$@"\n' > "$WORK/bin/ps"
+chmod +x "$WORK/bin/adb" "$WORK/bin/timeout" "$WORK/bin/pgrep" "$WORK/bin/start-emulator" "$WORK/bin/date" "$WORK/bin/ps"
 # start-emulator.sh's log, in the working directory both steps share: 250 numbered lines
 for i in $(seq 1 250); do
   case $i in
@@ -641,13 +643,31 @@ t=$(section "the liveness trace")
 grep -qE '^\+[0-9]+s emulator=gone cpu=- rss_kb=- app=4242 load=[^ ]+ after=1$' <<<"$t" || why "no answered trace line after the start"
 check "the liveness trace shows the app's process id after the start, and no CPU or memory for a gone emulator (#363)"
 
-# The emulator's own CPU % and resident memory in every trace line: numbers only, from ps under timeout 5 (#363)
+# The emulator's CPU % over each trace interval (utime + stime in /proc/<pid>/stat against /proc/uptime, QA's S4) and its
+# resident memory (ps, under timeout 5): numbers only. A fake /proc where the process uses one CPU fully: 100 %.
 WHY=""; sleep 60 & LIVE=$!; echo "$LIVE" > "$WORK/cwd/emulator.pid"
-run 1 "" FAKE_CLOSED_AT=logcat-d; kill "$LIVE" 2>/dev/null; wait "$LIVE" 2>/dev/null; echo "$DEAD_PID" > "$WORK/cwd/emulator.pid"
+P="$WORK/proc"; mkdir -p "$P/$LIVE"; HZ=$(getconf CLK_TCK)
+( up=10000; ut=0; while :; do up=$((up + 10)); ut=$((ut + HZ / 10))
+    printf '%s (qemu-system-x86) S 1 1 1 0 -1 0 0 0 0 0 %s 0 0 0\n' "$LIVE" "$ut" > "$P/$LIVE/stat.new"; mv "$P/$LIVE/stat.new" "$P/$LIVE/stat"
+    printf '%s.%02d 0.00\n' "$((up / 100))" "$((up % 100))" > "$P/uptime.new"; mv "$P/uptime.new" "$P/uptime"; sleep 0.1; done ) & FEED=$!
+sleep 0.3
+run 1 "" FAKE_CLOSED_AT=logcat-d LAUNCH_PROC_ROOT="$P"; kill "$LIVE" "$FEED" 2>/dev/null; wait "$LIVE" "$FEED" 2>/dev/null
+echo "$DEAD_PID" > "$WORK/cwd/emulator.pid"
 t=$(section "the liveness trace")
-grep -qE '^\+[0-9]+s emulator=alive cpu=[0-9]+([.,][0-9]+)? rss_kb=[0-9]+ app=4242 load=[^ ]+ after=1$' <<<"$t" || why "no trace line with the live emulator's CPU and memory: '$(head -n 3 <<<"$t")'"
+head -n 1 <<<"$t" | grep -qE ' emulator=alive cpu=- rss_kb=[0-9]+ ' || why "the first sample has no interval, so cpu=-: '$(head -n 1 <<<"$t")'"
+cpus=$(sed -n 's/.* emulator=alive cpu=\([0-9][0-9]*\) rss_kb=[0-9][0-9]* app=.*/\1/p' <<<"$t")
+[ -n "$cpus" ] || why "no trace line with a CPU % for the live emulator: '$(head -n 3 <<<"$t")'"
+for c in $cpus; do [ "$c" -ge 50 ] && [ "$c" -le 150 ] || why "CPU $c % for a process using one CPU fully"; done
 [ "$(grep -c -x '5 ps' "$WORK/timeouts")" -ge 1 ] || why "the trace's ps did not run under timeout 5"
-check "the liveness trace records the emulator's CPU % and resident memory while it lives (#363)"
+check "the liveness trace records the emulator's CPU % over each interval and its resident memory (QA's S4) (#363)"
+
+WHY=""; sleep 60 & LIVE=$!; echo "$LIVE" > "$WORK/cwd/emulator.pid"
+run 1 "" FAKE_CLOSED_AT=logcat-d FAKE_PS_TEXT="lots of text"; kill "$LIVE" 2>/dev/null; wait "$LIVE" 2>/dev/null
+echo "$DEAD_PID" > "$WORK/cwd/emulator.pid"
+t=$(section "the liveness trace")
+grep -qE ' emulator=alive cpu=- rss_kb=- app=' <<<"$t" || why "text from ps or no /proc did not read '-': '$(head -n 2 <<<"$t")'"
+[[ "$t" != *"lots of text"* ]] || why "ps's text reached the trace"
+check "the trace holds numbers only: text from ps, or no /proc, reads '-' (QA's Q4) (#363)"
 
 WHY=""; r=$(python3 -I "$DIR/test-crash-facts.py" 2>&1); [ $? -eq 0 ] || why "$r"
 check "crash-facts.py prints only the four facts (test-crash-facts.py) (#363)"
