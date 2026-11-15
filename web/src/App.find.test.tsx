@@ -314,7 +314,6 @@ describe('#384 ticket 04: the best lap of a drive stored before the record held 
       for (const id of ['track', 'bare']) {
         await act(async () => { window.location.hash = `#/drive/${id}` })
         await waitFor(() => expect(useStore.getState().activeSession?.id).toBe(id))
-        await act(async () => { await new Promise((r) => setTimeout(r, 30)) })
       }
     } finally { proto.transaction = tx }
     expect(modes.filter((m) => m === 'readwrite')).toEqual([])
