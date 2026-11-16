@@ -151,11 +151,13 @@ class BleGattCore(
      */
     fun onNotify(characteristic: UUID, bytes: ByteArray) {
         if (characteristic != profile?.notify) return
+        var completed = 0                                      // SLCAN lines this notification ended (#421)
         for (b in bytes) {
             if (b.toInt() and 0xFF == 0x0D) {
                 val line = lineBuffer.toString(); lineBuffer.clear()
                 if (discardingLine) { discardingLine = false; continue }
                 if (line.isNotEmpty()) {
+                    completed++
                     val sent = lines.trySend(line)
                     if (sent.isFailure && !sent.isClosed) DiagnosticLogger.countLineDropped()   // full; closed = link gone
                 }
@@ -169,6 +171,7 @@ class BleGattCore(
                 DiagnosticLogger.countOverlongLine()
             }
         }
+        delivery.notified(completed)
     }
 
     // ── Transport ────────────────────────────────────────────────────────────
