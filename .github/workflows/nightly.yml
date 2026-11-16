@@ -1,6 +1,6 @@
 name: Nightly
 
-# One build a night from staging's tip (#363; the spec: evidence of the nightly pipeline, "What a run does" 1–8). DRY-RUN
+# One build a night from staging's tip (#363). DRY-RUN
 # MODE while PUBLISH is false: every run stops after the attestation, and the two jobs that hold a token able to write
 # contents (publish, cleanup) are skipped, so no release or tag is made. They run only when PUBLISH is true AND the run
 # is on main (a manual run on another ref runs that ref's copy of this file); T7 flips PUBLISH after two green dry-run

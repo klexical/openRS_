@@ -47,7 +47,8 @@ if [ -n "$STATE" ]; then summary "Nothing published: $TAG already has a release 
 EXISTING=$(tag_ref "$TAG")
 if [ -n "$EXISTING" ]; then summary "Nothing published: $TAG already has a tag (at $EXISTING) with no release; nothing created or deleted."; exit 0; fi
 
-# 2. Notes: the generated list, then the SHA-256 line, then the changelog link (the spec's order; gh's --notes would come first)
+# 2. Notes: the generated list, then the SHA-256 line, then the changelog link, in that order (gh's --notes text would come
+#    before the generated list, so the notes are composed here)
 NOTES=$(mktemp)
 GENERATED=$(gh api --method POST "repos/$R/releases/generate-notes" -f tag_name="$TAG" -f target_commitish="$SHA" \
   -f previous_tag_name="$BASE_TAG" --jq .body) || fail "the release notes could not be generated"
