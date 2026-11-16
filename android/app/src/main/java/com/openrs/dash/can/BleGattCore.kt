@@ -74,6 +74,8 @@ class BleGattCore(
         private set
     /** This attempt's MTU request and its answer, for the export (#253); the core only writes to it. */
     val mtuTrace = BleMtuTrace()
+    /** This attempt's notifications and SLCAN lines, for the export's UI timing (#421); the core only writes to it. */
+    val delivery = BleDeliveryCounts()
     private var writeType = WRITE_TYPE_DEFAULT
     private var link: GattLink? = null
 

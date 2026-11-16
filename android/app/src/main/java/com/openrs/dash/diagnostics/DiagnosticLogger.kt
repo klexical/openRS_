@@ -260,6 +260,17 @@ object DiagnosticLogger {
     fun countDidNrc(responseId: Int, did: Int) = synchronized(lock) { didStatLocked(responseId, did)?.let { it.nrcAttributed++ } }
     val didInventory: DidInventory get() = synchronized(lock) { DidInventory(didInventoryLive.values.map { it.copy() }, didInventoryOverflow) }
     private var linkIntegrityLive = LinkIntegrity()
+    // ── UI timing (#421) ──────────────────────────────────────────────────────
+    /** Main-thread lateness, fed by CanDataService's Main ticker while a connection runs. */
+    val mainThreadLag = MainThreadLag(System::nanoTime)
+    /** Screen frames by tab, fed by MainActivity's frame-metrics listener while [uiTimingCounting]. */
+    val frameTimes = FrameTimes()
+    /** The OBD merges' wait for the link lock, fed at CanDataService's merge call site. */
+    val linkLockWait = LinkLockWait()
+    /** True from [sessionStart] to [sessionEnd]: frames are counted only while a connection's session runs. */
+    @Volatile var uiTimingCounting = false
+        private set
+
     /** A consistent copy of this session's counters. */
     val linkIntegrity: LinkIntegrity get() = synchronized(lock) { linkIntegrityLive.copy() }
 
@@ -267,12 +278,15 @@ object DiagnosticLogger {
     class ExportCounters(val integrity: LinkIntegrity, val nrcUnattributed: Int, val limits: LogLimits,
                          val dids: DidInventory = DidInventory(emptyList(), 0),
                          val bleMtu: BleMtuAttempt? = null,
-                         val capture: RequestCaptureRecord = RequestCaptureRecord(emptyList(), 0, 0, 0, 0))
+                         val capture: RequestCaptureRecord = RequestCaptureRecord(emptyList(), 0, 0, 0, 0),
+                         /** UI timing (#421): null before the first connection of this app run. */
+                         val uiTiming: UiTimingRecord? = null)
     val exportCounters: ExportCounters get() = synchronized(lock) {
         ExportCounters(linkIntegrityLive.copy(), nrcUnattributedTotal, logLimits,
             DidInventory(didInventoryLive.values.map { it.copy() }, didInventoryOverflow),
             attemptMtuTrace?.let { BleMtuAttempt(connectionAttempts, it.read()) },
-            RequestCaptureRecord(captureSpans.toList(), captureSpansDropped, captureTimeouts, captureLateInWindow, captureLateAfterWindow))
+            RequestCaptureRecord(captureSpans.toList(), captureSpansDropped, captureTimeouts, captureLateInWindow, captureLateAfterWindow),
+            if (sessionStartMs > 0) UiTimingRecord(mainThreadLag.read(), frameTimes.read(), linkLockWait.read(), null) else null)
     }
 
     /** The current connection attempt's MTU context: [attempt] counts this session's attempts from 1 (#253). */
@@ -285,7 +299,8 @@ object DiagnosticLogger {
      * previous attempt's context is replaced either way, so an export never shows an older link's MTU. The trace is read
      * at export time, so a callback that arrives after the setup stopped waiting is still reported.
      */
-    fun connectionAttempt(bleMtu: com.openrs.dash.can.BleMtuTrace?) = synchronized(lock) {
+    fun connectionAttempt(bleMtu: com.openrs.dash.can.BleMtuTrace?,
+                          bleDelivery: com.openrs.dash.can.BleDeliveryCounts? = null) = synchronized(lock) {
         connectionAttempts++
         attemptMtuTrace = bleMtu
     }
