@@ -331,6 +331,15 @@ refused "$PUBLISH" "a file that does not match the digest" "$TAG" "$TITLE" "$SHA
 refused "$PUBLISH" "five arguments" "$TAG" "$TITLE" "$SHA" "$PREV" "$FILE"
 check "publish: an RC or stable tag, a bad base, commit or digest, a missing or different file is refused before any call"
 
+for unset in GITHUB_RUN_ID GITHUB_RUN_ATTEMPT; do   # the draft's run line needs both: refused before any gh call
+  WHY=""; state "[$EXISTING]" '{}'; rm -f "$WORK/calls"
+  OUT=$(env PATH="$WORK/bin:$PATH" WORK="$WORK" GITHUB_REPOSITORY=$REPO GITHUB_RUN_ID=$RUN_ID GITHUB_RUN_ATTEMPT=$RUN_ATT \
+        bash -c 'unset '"$unset"'; exec bash "$0" "$@"' "$PUBLISH" "$TAG" "$TITLE" "$SHA" "$PREV" "$FILE" "$DIGEST" 2>&1); CODE=$?
+  fail_closed "$unset"
+  [ -s "$WORK/calls" ] && why "gh was called without $unset"
+  check "publish: without $unset it is refused before any call"
+done
+
 # ── nightly-cleanup.sh ──────────────────────────────────────────────────────────────────────────────────────────────
 WHY=""; state "[$EXISTING,$(rel_json "$TAG" true true "$SHA" "$(printf 'notes\n%s' "$(mark)")")]" "{\"$TAG\": \"$SHA\"}"; run_cleanup
 [ "$CODE" -eq 0 ] || why "exit $CODE"
