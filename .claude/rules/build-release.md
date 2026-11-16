@@ -73,11 +73,24 @@ paths:
     closed without a trace, and only on the decision's explicit OK) when the job's 15 minutes leave a second boot (`JOB_LIMIT_S`, pinned against the job's
     `timeout-minutes`), with each attempt headed and a summary line for any end but a plain pass, an argument
     failure included),
-    `attest`.
-    Dry-run mode: `PUBLISH` is `'false'`, no job can write contents, and the run stops after the attestation; nothing is
-    published, so every night builds and leaves a one-day release-signed artifact and a public attestation.
+    `attest`, then `publish` and `cleanup` (#363), the only jobs with `contents: write`, each only when the mode's
+    publish output is `'true'`, the run is on main and the gate said build. `publish` (`scripts/nightly-publish.sh`)
+    stops quietly only when today's tag is already published and checks out as its last step checks it; a draft for
+    today's tag (its token is shown drafts), a release that does not check out, or a tag with no release fails the step
+    and deletes nothing, so "Re-run failed jobs" stays red ("Re-run all jobs" re-runs the gate, which skips quietly when
+    today already has a nightly or a tag); else notes
+    from the generate-notes API from the gate's `base_tag` (the list, the SHA-256 line, the changelog link), a draft
+    pre-release at the commit whose notes end with a line naming the run and attempt (`GITHUB_RUN_ID`, `GITHUB_RUN_ATTEMPT`;
+    the published notes do not carry it), one upload, exactly one asset whose bytes match the digest, then a pre-release with Latest
+    off, its tag at the commit. `cleanup` runs after `publish` failed or was cancelled (`scripts/nightly-cleanup.sh`): it
+    deletes only this run attempt's draft (at the recorded commit, its notes holding that line) and a tag only at the
+    recorded commit, checked before anything is deleted, then requires the ref's 404; any other draft, and a published
+    release, is never deleted (the step fails). Both scripts refuse any tag but a nightly's or the throwaway trial's
+    (`test-nightly-cleanup-<date>`). A dry run (`PUBLISH` is `'false'`): the run stops after the attestation and nothing
+    is published, so every night builds and leaves a one-day release-signed artifact and a public attestation.
     `scripts/test-nightly-gate.sh`, `scripts/test-launch-check.sh` (it also runs `scripts/test-crash-facts.py`),
-    `scripts/test-start-emulator.sh` and `test-release-workflows.rb` pin it; CI's build job runs them.
+    `scripts/test-start-emulator.sh`, `scripts/test-nightly-publish.sh` and `test-release-workflows.rb` pin it; CI's
+    build job runs them.
   - `verify-release.sh` checks tag = versionName = filename, versionCode above every
     earlier tag, release signer (CI's keystore secrets sign with the published APKs' certificate, `c99b6f26…`). A nightly
     tag's code is the rule applied to the date in its name, for the tag under check and for earlier tags (their build file

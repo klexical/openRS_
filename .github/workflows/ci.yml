@@ -86,6 +86,7 @@ jobs:
           bash scripts/test-nightly-gate.sh
           bash scripts/test-launch-check.sh
           bash scripts/test-start-emulator.sh
+          bash scripts/test-nightly-publish.sh
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4

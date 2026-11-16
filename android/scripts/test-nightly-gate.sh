@@ -58,7 +58,7 @@ expect_run() {
   [ "$CODE" -eq 0 ] || why "exit $CODE"
   is run true; is sha "$2"; is date "$D"; is name "$NAME"; is tag "$TAG"
   [[ "$OUT" == *"(base $3,"* ]] || why "the log does not name the base $3"
-  [ -z "$(out base_tag)" ] || why "a base_tag output was written (T6 adds it when it needs it)"
+  is base_tag "$3"                         # the publish step's notes start from it (#363)
   check "$1"
 }
 # expect_skip <case> <sha> <reason text>: the gate says skip (a quiet success) and why

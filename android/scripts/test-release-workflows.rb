@@ -3,10 +3,11 @@
 # permissions; the shared recipe .github/workflows/release-apk.yml is only called (workflow_call), builds the commit it
 # is given through android/scripts/release-apk.sh, and is the only builder; publish-release re-checks the recipe's file
 # name and SHA-256 before it attests and attaches; no run line holds an expression; CI's build job runs the release
-# script tests; nightly.yml (T5) runs only on its schedule and by hand, in one group, in dry-run mode (PUBLISH false, no job
-# able to write contents), builds only staging's tip through the recipe, and re-checks the digest before the launch check
-# and the attestation; its launch job starts the emulator only through android/scripts/start-emulator.sh, and no workflow
-# runs the SDK's emulator tools inline. Reads the YAML only; GitHub's own run of the workflows is the evidence for what they do. Ruby's standard library only (YAML 1.1: the key `on` reads as true).
+# script tests; nightly.yml runs only on its schedule and by hand, in one group, builds only staging's tip through the
+# recipe, and re-checks the digest before the launch check, the attestation and the publish; its launch job starts the
+# emulator only through android/scripts/start-emulator.sh, and no workflow runs the SDK's emulator tools inline; only its
+# publish and cleanup jobs can write contents, each only when PUBLISH is true and the run is on main (PUBLISH is false: a
+# dry run), and the scripts that write releases or tags run only there. Reads the YAML only; GitHub's own run of the workflows is the evidence for what they do. Ruby's standard library only (YAML 1.1: the key `on` reads as true).
 # Runs on Ruby 2.6 (macOS) and 3.x (CI's Ubuntu). Run from anywhere: ruby android/scripts/test-release-workflows.rb
 require 'yaml'
 
@@ -53,7 +54,7 @@ end
 
 RECIPE = './.github/workflows/release-apk.yml'
 # One artifact per run, named by the run id only: "Re-run failed jobs" keeps the run id and moves the attempt number,
-# so a re-run downloader still finds the recipe's artifact; a full re-run's recipe overwrites it (#363 T5 review C7)
+# so a re-run downloader still finds the recipe's artifact; a full re-run's recipe overwrites it (#363)
 ARTIFACT = 'release-apk-${{ github.run_id }}'
 # The one condition of every job on CI's tag path: an android-v tag that is not a nightly — compared whole, never as a part
 TAG_IF = "startsWith(github.ref, 'refs/tags/android-v') && !contains(github.ref_name, '-nightly.')"
@@ -230,17 +231,25 @@ check('in every workflow, a secret-holding job outputs nothing but the digest') 
   end
 end
 
-# ── nightly.yml (#363 T5): the nightly in dry-run mode ────────────────────────────────────────────────────────────────
+# ── nightly.yml (#363): the nightly in dry-run mode ───────────────────────────────────────────────────────────────────
 GATE_IF = "needs.gate.outputs.run == 'true'"
-NIGHTLY_JOBS = {   # job => [condition, permissions, needs, timeout-minutes], exactly; while PUBLISH is false no job writes contents
+# The publishing jobs' condition (#363): PUBLISH true (from the mode job) AND the run on main, whose copy of this file is
+# the reviewed one (a manual run on another ref runs that ref's copy), AND the gate said build
+PUBLISH_IF = "needs.mode.outputs.publish == 'true' && github.ref == 'refs/heads/main' && needs.gate.outputs.run == 'true'"
+# The clean-up's: the same, after publish failed, was cancelled or timed out (always() lets it run then)
+CLEANUP_IF = "always() && #{PUBLISH_IF} && (needs.publish.result == 'failure' || needs.publish.result == 'cancelled')"
+WRITE_JOBS = %w[publish cleanup].freeze
+NIGHTLY_JOBS = {   # job => [condition, permissions, needs, timeout-minutes], exactly; only WRITE_JOBS write contents
   'mode' => ['', {}, [], 5],
   'gate' => ['', { 'contents' => 'read' }, [], 10],
   'checks' => [GATE_IF, { 'contents' => 'read' }, %w[gate], 45],
   'release' => [GATE_IF, { 'contents' => 'read' }, %w[gate checks], nil],   # a workflow call: the recipe's own job has 45
   'launch' => [GATE_IF, { 'contents' => 'read' }, %w[gate release], 15],
-  'attest' => [GATE_IF, { 'contents' => 'read', 'id-token' => 'write', 'attestations' => 'write' }, %w[gate release launch], 10]
+  'attest' => [GATE_IF, { 'contents' => 'read', 'id-token' => 'write', 'attestations' => 'write' }, %w[gate release launch], 10],
+  'publish' => [PUBLISH_IF, { 'contents' => 'write' }, %w[mode gate release attest], 10],
+  'cleanup' => [CLEANUP_IF, { 'contents' => 'write' }, %w[mode gate publish], 5]
 }.freeze
-# The only actions a release workflow may use: nothing else can reach the releases API by an action (#363 T5 review C2)
+# The only actions a release workflow may use: nothing else can reach the releases API by an action (#363)
 ALLOWED_USES = {
   'nightly.yml' => %w[actions/checkout@v4 actions/setup-java@v4 actions/download-artifact@v4 actions/attest-build-provenance@v2] + [RECIPE],
   'release-apk.yml' => %w[actions/checkout@v4 actions/setup-java@v4 actions/upload-artifact@v4]
@@ -255,7 +264,7 @@ SH
 VERIFY_RUN = <<~'SH'
   gh attestation verify "release-apk/openRS_v${NAME}.apk" --repo "$GITHUB_REPOSITORY" \
     --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/nightly.yml"
-  echo "Dry run (PUBLISH is $PUBLISH): stopped after the attestation, before any draft." >> "$GITHUB_STEP_SUMMARY"
+  echo "Attested. PUBLISH is $PUBLISH: the draft and publish run only when it is true and the run is on main." >> "$GITHUB_STEP_SUMMARY"
 SH
 nightly = nil
 check('nightly.yml parses') { nightly = load('nightly.yml'); nil }
@@ -270,7 +279,7 @@ check('nightly.yml runs at 08:17 UTC and by hand, nothing else, in one never-can
   why
 end
 
-check('nightly.yml is in dry-run mode: PUBLISH is false and no job can write contents') do
+check('nightly.yml is in dry-run mode: PUBLISH is false, and only publish and cleanup can write contents, under the publishing condition') do
   why = []
   why << "PUBLISH is #{nightly.dig('env', 'PUBLISH').inspect}, expected 'false'" unless nightly.dig('env', 'PUBLISH') == 'false'
   why << "top-level permissions #{nightly['permissions'].inspect}, expected none" unless nightly['permissions'] == {}
@@ -279,7 +288,9 @@ check('nightly.yml is in dry-run mode: PUBLISH is false and no job can write con
     job = jobs(nightly)[id] or next
     why << "job #{id} runs under #{cond(job).inspect}, expected #{c.inspect}" unless cond(job) == c
     why << "job #{id} has permissions #{job['permissions'].inspect}, expected #{perms.inspect}" unless job['permissions'] == perms
-    why << "job #{id} writes contents" if job['permissions'].is_a?(Hash) && job['permissions']['contents'] == 'write'
+    writes = job['permissions'].is_a?(Hash) && job['permissions']['contents'] == 'write'
+    why << "job #{id} writes contents" if writes && !WRITE_JOBS.include?(id)
+    why << "job #{id} writes contents without the publishing condition" if writes && !cond(job).include?(PUBLISH_IF)
   end
   why
 end
@@ -292,7 +303,7 @@ check('no step can publish: only allowed actions, and no call to the releases AP
       (used - allowed).each { |u| why << "#{f} job #{id} uses #{u}" }
       steps(job).each do |x|
         r = x['run'].to_s
-        why << "#{f} job #{id} reaches the releases API: #{r.lines.first.strip}" if r =~ /\b(curl|wget|gh\s+api|gh\s+release)\b|\/releases\b|\bgit\s+(push|tag)\b/
+        why << "#{f} job #{id} reaches the releases API: #{r.lines.first.strip}" if r =~ /\b(curl|wget|gh\s+api|gh\s+release)\b|\/releases\b|\bgit\s+push\b|\bgit\s+tag\b(?!\s+(-l|--list)\b)/
       end
     end
   end
@@ -341,7 +352,7 @@ check("the gate takes today's UTC date once, first, records staging's tip, and o
   why << "the gate step runs #{g && g['run'].inspect}" unless g && g['run'].to_s.strip == 'bash android/scripts/nightly-gate.sh "$SHA" "$TODAY"'
   want = { 'GH_TOKEN' => '${{ github.token }}', 'SHA' => '${{ steps.head.outputs.sha }}', 'TODAY' => '${{ steps.today.outputs.date }}' }
   why << "the gate step's env #{g && g['env'].inspect}" unless g && g['env'] == want
-  outs = %w[run reason sha date name tag].map { |k| [k, "${{ steps.gate.outputs.#{k} }}"] }.to_h
+  outs = %w[run reason sha date name tag base_tag].map { |k| [k, "${{ steps.gate.outputs.#{k} }}"] }.to_h
   why << "gate outputs #{gate['outputs'].inspect}" unless gate['outputs'] == outs
   why << "the gate has #{st.size} steps, expected 4" unless st.size == 4
   why
@@ -355,7 +366,9 @@ check("every other checkout is the gate's commit; no build reads the run's own r
       why << "job #{id} checks out #{x['with'].inspect}" unless x['with'] == { 'ref' => '${{ needs.gate.outputs.sha }}', 'persist-credentials' => false }
     end
   end
-  why << 'nightly.yml reads github.sha or github.ref' if File.read(File.join(WF, 'nightly.yml'), encoding: 'UTF-8') =~ /github\.(sha|ref)\b/
+  # github.ref only inside the publishing jobs' exact conditions; github.sha nowhere
+  text = File.read(File.join(WF, 'nightly.yml'), encoding: 'UTF-8').gsub("if: #{CLEANUP_IF}\n", '').gsub("if: #{PUBLISH_IF}\n", '')
+  why << 'nightly.yml reads github.sha, or github.ref outside the publishing condition' if text =~ /github\.(sha|ref)\b/
   why
 end
 
@@ -453,15 +466,75 @@ check('no artifact name carries the attempt number, and every upload overwrites 
   why
 end
 
+# ── nightly.yml's publishing jobs (#363) ────────────────────────────────────────────────────────────────────────────
+PUBLISH_RUN = 'bash android/scripts/nightly-publish.sh "$TAG" "openRS_ v$NAME" "$SHA" "$BASE_TAG" "release-apk/openRS_v${NAME}.apk" "$SHA256"'
+PUBLISH_ENV = { 'GH_TOKEN' => '${{ github.token }}', 'TAG' => '${{ needs.gate.outputs.tag }}', 'NAME' => '${{ needs.gate.outputs.name }}',
+                'SHA' => '${{ needs.gate.outputs.sha }}', 'BASE_TAG' => '${{ needs.gate.outputs.base_tag }}',
+                'SHA256' => '${{ needs.release.outputs.sha256 }}' }.freeze
+CLEANUP_RUN = 'bash android/scripts/nightly-cleanup.sh "$TAG" "$SHA"'
+CLEANUP_ENV = { 'GH_TOKEN' => '${{ github.token }}', 'TAG' => '${{ needs.gate.outputs.tag }}', 'SHA' => '${{ needs.gate.outputs.sha }}' }.freeze
+GATE_CHECKOUT = { 'ref' => '${{ needs.gate.outputs.sha }}', 'persist-credentials' => false }.freeze
+# The scripts that write a release or a tag, and the calls that do it
+WRITE_SCRIPTS = %w[nightly-publish.sh nightly-cleanup.sh].freeze
+WRITE_CALL = /\bgh\s+release\s+(create|edit|upload|delete)\b|\bgh\s+api\b[^\n]*(--method|-X)\s*(POST|PATCH|PUT|DELETE)\b|\bgit\s+push\b|\bgit\s+tag\b(?!\s+(-l|--list)\b)/
+
+check('publish checks out the gate\'s commit, takes the one artifact, re-checks its digest, then runs only nightly-publish.sh, base_tag by env') do
+  st = steps(jobs(nightly)['publish'] || {})
+  got = st.map { |x| x['uses'] || x['run'] }
+  want = ['actions/checkout@v4', 'actions/download-artifact@v4', DIGEST_RUN, PUBLISH_RUN]
+  next "publish's steps are #{got.inspect}" unless got.size == 4 && got[0..2] == want[0..2] && got[3].to_s.strip == PUBLISH_RUN
+  why = []
+  why << "publish checks out #{st[0]['with'].inspect}" unless st[0]['with'] == GATE_CHECKOUT
+  why << "publish downloads #{st[1].dig('with', 'name').inspect}" unless st[1]['with'] == { 'name' => ARTIFACT, 'path' => 'release-apk' }
+  why << "publish's digest check env #{st[2]['env'].inspect}" unless st[2]['env'] == { 'SHA256' => '${{ needs.release.outputs.sha256 }}', 'NAME' => '${{ needs.gate.outputs.name }}' }
+  why << "publish's step env #{st[3]['env'].inspect}, expected #{PUBLISH_ENV.inspect} (base_tag through env only)" unless st[3]['env'] == PUBLISH_ENV
+  why << 'a run line in nightly.yml names base_tag (it reaches the shell through env only)' if run_lines(nightly).any? { |l| l.include?('base_tag') }
+  why
+end
+
+check('cleanup checks out the gate\'s commit and runs only nightly-cleanup.sh for the gate\'s tag and commit') do
+  st = steps(jobs(nightly)['cleanup'] || {})
+  next "cleanup's steps are #{st.map { |x| x['uses'] || x['run'] }.inspect}" unless st.size == 2 && st[0]['uses'] == 'actions/checkout@v4' && st[1]['run'].to_s.strip == CLEANUP_RUN
+  why = []
+  why << "cleanup checks out #{st[0]['with'].inspect}" unless st[0]['with'] == GATE_CHECKOUT
+  why << "cleanup's step env #{st[1]['env'].inspect}" unless st[1]['env'] == CLEANUP_ENV
+  why
+end
+
+check('only nightly-publish.sh and nightly-cleanup.sh write releases or tags, and only the publishing jobs run them') do
+  why = []
+  Dir[File.join(ROOT, 'android', 'scripts', '*.sh')].reject { |f| File.basename(f).start_with?('test-') }.sort.each do |f|
+    next if WRITE_SCRIPTS.include?(File.basename(f))
+    File.read(f, encoding: 'UTF-8').lines.each_with_index do |l, i|
+      why << "#{File.basename(f)}:#{i + 1} writes a release or tag: #{l.strip}" if l.sub(/(^|\s)#.*$/, '') =~ WRITE_CALL
+    end
+  end
+  WRITE_SCRIPTS.each do |s|
+    why << "#{s} writes no release (the check reads nothing)" unless File.read(File.join(ROOT, 'android', 'scripts', s), encoding: 'UTF-8') =~ WRITE_CALL
+  end
+  all.each do |f|
+    jobs(YAML.safe_load(File.read(f, encoding: 'UTF-8'))).each do |id, job|
+      steps(job).each do |x|
+        WRITE_SCRIPTS.each do |s|
+          next unless x['run'].to_s =~ %r{(^|[\s/])#{Regexp.escape(s)}\b}   # the script itself, not test-<script>
+          ok = File.basename(f) == 'nightly.yml' && id == (s == 'nightly-publish.sh' ? 'publish' : 'cleanup')
+          why << "#{File.basename(f)} job #{id} runs #{s}" unless ok
+        end
+      end
+    end
+  end
+  why
+end
+
 # Under `set -o pipefail` a pipeline fails when its producer is killed by SIGPIPE: `yes` always is once its reader exits,
 # and anything feeding `head` can be when the reader stops early. Workflow run lines and the release scripts that set
-# pipefail may pipe `yes` only as `(yes || true) |` and may not end a pipeline in `head` (#363 T5).
+# pipefail may pipe `yes` only as `(yes || true) |` and may not end a pipeline in `head` (#363).
 def sigpipe_risks(text, where)
   return [] unless text.include?('pipefail')
   text.lines.each_with_index.flat_map do |l, i|
     code = l.sub(/(^|\s)#.*$/, '')       # a comment, at the start of a line or after a space (not $#)
     r = []
-    r << "#{where}:#{i + 1} pipes yes without || true: #{l.strip}" if code =~ /(^|[^(|])\byes\s*\|/ && code !~ /\(yes \|\| true\) \|/
+    r << "#{where}:#{i + 1} pipes yes without || true: #{l.strip}" if code =~ /(^|[^(|-])\byes\s*\|(?!\|)/ && code !~ /\(yes \|\| true\) \|/
     r << "#{where}:#{i + 1} ends a pipeline in head: #{l.strip}" if code =~ /\|\s*head\b/ && code !~ /\|\|\s*true/
     r
   end

@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
-# nightly-gate.sh <sha> <today YYYYMMDD> — the nightly workflow's gate (#363; SPEC "When it runs" 3). Run in a checkout of
-# the commit with full history and tags. Writes run=, reason=, sha=, date=, name=, tag= to $GITHUB_OUTPUT (the base it
-# compared with is in the log; T6 adds it as an output when it needs it):
+# nightly-gate.sh <sha> <today YYYYMMDD> — the nightly workflow's gate (#363). Run in a checkout of
+# the commit with full history and tags. Writes run=, reason=, sha=, date=, name=, tag=, base_tag= to $GITHUB_OUTPUT
+# (base_tag: the tag it compared with, which the publish step's notes start from; empty when today already has a nightly):
 #   - name <releaseBase>-nightly.<today> (releaseBase read from the commit's app/build.gradle.kts), tag android-v<name>;
 #   - run=false (a quiet success) when today's UTC date already has a nightly: a release the token can see, or a tag;
 #   - run=false when no file under android/ differs between the commit and base_tag: the newest PUBLISHED nightly's tag
 #     (a draft or a leftover tag without a release is not one), else android-v2.2.7-rc.8 for the first nightly;
 #   - else run=true.
 # With a read-only token GitHub lists no draft releases ("Only users with push access will receive listings for draft
-# releases"), so in dry-run mode a draft for today is not seen; T6, which creates drafts, owns that check.
+# releases"), so a draft for today is not seen here; the publish step, whose token is shown drafts, checks again before
+# it creates one (nightly-publish.sh).
 # Fails the run (no decision written) on bad input, a failed release lookup or output that is not a JSON list (an empty
 # answer must not read as "no nightly yet"), an unreadable base or a missing base tag. The list is read up to 1000
 # releases and sorted here by the date in each tag, so nothing depends on the order GitHub returns.
@@ -16,7 +17,7 @@ set -euo pipefail
 fail() { echo "::error::$*"; exit 1; }
 [ $# -eq 2 ] || fail "usage: nightly-gate.sh <sha> <today YYYYMMDD>"
 SHA="$1"; TODAY="$2"
-FIRST_BASE_TAG=android-v2.2.7-rc.8            # the first nightly is compared with rc.8 (SPEC "When it runs" 3)
+FIRST_BASE_TAG=android-v2.2.7-rc.8            # the first nightly is compared with rc.8 (#363)
 NIGHTLY_TAG='^android-v[0-9]+\.[0-9]+\.[0-9]+-nightly\.[0-9]{8}$'
 
 [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || fail "'$SHA' is not a full commit SHA (40 lower-case hex characters)"
@@ -30,7 +31,8 @@ jq -e 'type == "array"' >/dev/null 2>&1 <<<"$RELEASES" || fail "the release list
 echo "Releases read: $(jq length <<<"$RELEASES") (a read-only token is shown no draft releases)"
 
 decide() {   # decide <run> <reason> <base tag>
-  printf 'run=%s\nreason=%s\nsha=%s\ndate=%s\nname=%s\ntag=%s\n' "$1" "$2" "$SHA" "$TODAY" "$NAME" "$TAG" >> "$GITHUB_OUTPUT"
+  local base="$3"; [ "$base" != "-" ] || base=""
+  printf 'run=%s\nreason=%s\nsha=%s\ndate=%s\nname=%s\ntag=%s\nbase_tag=%s\n' "$1" "$2" "$SHA" "$TODAY" "$NAME" "$TAG" "$base" >> "$GITHUB_OUTPUT"
   echo "Gate: run=$1${2:+ — $2} (base $3, commit $SHA, $NAME)"
 }
 
