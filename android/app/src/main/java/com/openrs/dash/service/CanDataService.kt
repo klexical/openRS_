@@ -894,13 +894,28 @@ class CanDataService : Service() {
                 OpenRSDashApp.instance.vehicleState.collect { vs -> session.onVehicleState(vs) { currentSessionId } }
             }
 
+            // UI timing (#421): while this connection runs, Main is asked to wake every 100 ms and the export counts how
+            // late each wake came. Ends with the job.
+            launch(Dispatchers.Main) {
+                val lag = DiagnosticLogger.mainThreadLag
+                while (true) { lag.asking(); delay(com.openrs.dash.diagnostics.MainThreadLag.PERIOD_MS); lag.woke() }
+            }
+
             conn.connectHybrid(
                 onObdUpdate = { obdState ->
                     // Hop OBD state merges to Main.immediate: inline when already on
                     // Main, otherwise posts — keeps Compose collectors off the IO
                     // frame thread so no collector can block frame reads. Applied only if this
                     // job still owns the link when the merge runs (a posted merge can outlive it).
-                    scope.launch(Dispatchers.Main.immediate) { link.deliver(gen) { mergeObdState(obdState) } }
+                    // UI timing (#421): this merge's wait for the link lock, from before deliver to its block's first line.
+                    // The post's own delay to Main is not counted: the 100 ms Main ticker measures that queue.
+                    scope.launch(Dispatchers.Main.immediate) {
+                        val beforeNanos = System.nanoTime()
+                        link.deliver(gen) {
+                            DiagnosticLogger.linkLockWait.waited(beforeNanos, System.nanoTime())
+                            mergeObdState(obdState)
+                        }
+                    }
                 },
                 getCurrentState = { OpenRSDashApp.instance.vehicleState.value }
             ).collect { (canId, data) ->
