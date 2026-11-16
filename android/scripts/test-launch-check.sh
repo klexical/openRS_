@@ -58,7 +58,19 @@ case "$*" in
                                    [ -z "$p" ] || printf '%s\r\n' "$p"
                                    [ -n "$p" ] || [[ "$*" == *"|| true" ]] || exit 1 ;;
   "shell pm disable-user"*)        hit pm; exit "${FAKE_PM_EXIT:-0}" ;;
-  "shell p="*)                     gone && { echo "error: no devices/emulators found" >&2; exit 1; }   # the liveness trace
+  "shell p="*)                     # the liveness trace. FAKE_PROC=<dir>:<pid>: each trace sample advances that fake
+                                   # /proc by one step (0.1 s of uptime, 0.1 s of CPU: half user, half system time)
+                                   # before the trace reads it, so every read sees one consistent snapshot (a timed feeder
+                                   # raced the reads on the runner: PR 417's CI); also with the device gone, as the
+                                   # host's /proc goes on while adb fails
+                                   if [ -n "${FAKE_PROC-}" ]; then
+                                     pd=${FAKE_PROC%:*}; pp=${FAKE_PROC##*:}; hz=$(getconf CLK_TCK)
+                                     k=$(cat "$pd/steps" 2>/dev/null || echo 0); k=$((k + 1)); echo "$k" > "$pd/steps"
+                                     printf '%s (qemu-system-x86) S 1 1 1 0 -1 0 0 0 0 0 %s %s 0 0\n' "$pp" "$((k * hz / 20))" "$((k * hz / 20))" > "$pd/$pp/stat"
+                                     [ -z "${FAKE_PROC_GAP-}" ] || sleep "$FAKE_PROC_GAP"     # a slow runner, for the stress run
+                                     up=$((10000 + k * 10)); printf '%s.%02d 0.00\n' "$((up / 100))" "$((up % 100))" > "$pd/uptime"
+                                   fi
+                                   gone && { echo "error: no devices/emulators found" >&2; exit 1; }
                                    printf 'pid:%s\r\n' "${FAKE_TRACE_PID-${FAKE_PID1-}}" ;;
   "kill-server")                   : ;;
   *)                               echo "fake adb: unexpected $*" >&2; exit 2 ;;
@@ -644,20 +656,18 @@ grep -qE '^\+[0-9]+s emulator=gone cpu=- rss_kb=- app=4242 load=[^ ]+ after=1$' 
 check "the liveness trace shows the app's process id after the start, and no CPU or memory for a gone emulator (#363)"
 
 # The emulator's CPU % over each trace interval (utime + stime in /proc/<pid>/stat against /proc/uptime, QA's S4) and its
-# resident memory (ps, under timeout 5): numbers only. A fake /proc where the process uses one CPU fully: 100 %.
+# resident memory (ps, under timeout 5): numbers only. A fake /proc where the process uses one CPU fully: 100 %, exactly.
+# The fake adb advances it one step per trace sample (FAKE_PROC), so the figure does not depend on the runner's speed;
+# FAKE_PROC_GAP (a pause between the two files' writes) is the stress run's slow runner.
 WHY=""; sleep 60 & LIVE=$!; echo "$LIVE" > "$WORK/cwd/emulator.pid"
-P="$WORK/proc"; mkdir -p "$P/$LIVE"; HZ=$(getconf CLK_TCK)
-( up=10000; ut=0; while :; do up=$((up + 10)); ut=$((ut + HZ / 10))
-    printf '%s (qemu-system-x86) S 1 1 1 0 -1 0 0 0 0 0 %s 0 0 0\n' "$LIVE" "$ut" > "$P/$LIVE/stat.new"; mv "$P/$LIVE/stat.new" "$P/$LIVE/stat"
-    printf '%s.%02d 0.00\n' "$((up / 100))" "$((up % 100))" > "$P/uptime.new"; mv "$P/uptime.new" "$P/uptime"; sleep 0.1; done ) & FEED=$!
-sleep 0.3
-run 1 "" FAKE_CLOSED_AT=logcat-d LAUNCH_PROC_ROOT="$P"; kill "$LIVE" "$FEED" 2>/dev/null; wait "$LIVE" "$FEED" 2>/dev/null
+P="$WORK/proc"; rm -rf "$P"; mkdir -p "$P/$LIVE"
+run 1 "" FAKE_CLOSED_AT=logcat-d LAUNCH_PROC_ROOT="$P" FAKE_PROC="$P:$LIVE"; kill "$LIVE" 2>/dev/null; wait "$LIVE" 2>/dev/null
 echo "$DEAD_PID" > "$WORK/cwd/emulator.pid"
 t=$(section "the liveness trace")
 head -n 1 <<<"$t" | grep -qE ' emulator=alive cpu=- rss_kb=[0-9]+ ' || why "the first sample has no interval, so cpu=-: '$(head -n 1 <<<"$t")'"
 cpus=$(sed -n 's/.* emulator=alive cpu=\([0-9][0-9]*\) rss_kb=[0-9][0-9]* app=.*/\1/p' <<<"$t")
 [ -n "$cpus" ] || why "no trace line with a CPU % for the live emulator: '$(head -n 3 <<<"$t")'"
-for c in $cpus; do [ "$c" -ge 50 ] && [ "$c" -le 150 ] || why "CPU $c % for a process using one CPU fully"; done
+for c in $cpus; do [ "$c" -eq 100 ] || why "CPU $c % for a process using one CPU fully"; done
 [ "$(grep -c -x '5 ps' "$WORK/timeouts")" -ge 1 ] || why "the trace's ps did not run under timeout 5"
 check "the liveness trace records the emulator's CPU % over each interval and its resident memory (QA's S4) (#363)"
 
