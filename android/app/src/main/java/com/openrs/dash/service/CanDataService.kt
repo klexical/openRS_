@@ -895,10 +895,15 @@ class CanDataService : Service() {
             }
 
             // UI timing (#421): while this connection runs, Main is asked to wake every 100 ms and the export counts how
-            // late each wake came. Ends with the job.
+            // late each wake came. Ends with the job; a wake after this job lost the link records nothing (#212's rule
+            // for a delayed write from a connection job: teardown ends ownership before the session)
             launch(Dispatchers.Main) {
                 val lag = DiagnosticLogger.mainThreadLag
-                while (true) { lag.asking(); delay(com.openrs.dash.diagnostics.MainThreadLag.PERIOD_MS); lag.woke() }
+                while (link.owns(gen)) {
+                    lag.asking()
+                    delay(com.openrs.dash.diagnostics.MainThreadLag.PERIOD_MS)
+                    if (link.owns(gen)) lag.woke()
+                }
             }
 
             conn.connectHybrid(
