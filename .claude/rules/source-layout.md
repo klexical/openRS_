@@ -36,6 +36,9 @@ can/
                             properties (write type, notify vs indicate); bonds once; every wait bounded (write callback 2 s).
                             A write timeout closes the link (the callback names no write — a late one would ack the next)
                             BleTransportTest drives it with a fake GATT (JVM only)
+  BleDelivery.kt          — Bluetooth delivery counts for the export's UI timing (#421): per attempt, written by
+                            BleGattCore.onNotify (notifications, SLCAN lines completed, most in one), summed per session
+                            by DiagnosticLogger.connectionAttempt
   BleDeviceScanner.kt     — BLE device discovery filtered to FFF0 / FEE0 / FFE0 (BleAdapterProfile.SCAN_SERVICES)
                             WARNING: 0xFFE0 is shared by many cheap BLE devices (LED controllers, HM-10 clones)
   SlcanConnection.kt      — Shared connection: retry, SLCAN init, firmware probe, OBD pollers,
@@ -143,7 +146,11 @@ diagnostics/
                             to DiagnosticReportBuilder and DriveExportBuilder; rc.6 adds drive_knock_session_*.csv (KnockSessionLog)
   DiagnosticReportBuilder.kt — Diagnostic summary text + JSON detail (JSONObject/JSONArray, no hand-rolled strings);
                             `buildSummaryAndDetail` takes one `ExportCounters` snapshot (linkIntegrity / logLimits /
-                            nrcUnattributedTotal agree between summary and detail on a live export)
+                            nrcUnattributedTotal agree between summary and detail on a live export); UI TIMING / `uiTiming` (#421)
+  UiTiming.kt             — UI timing for the export (#421): MainThreadLag (lateness of CanDataService's 100 ms Main ticker),
+                            FrameTimes (frame durations by MainActivity's settled tab), LinkLockWait (an OBD merge's wait for
+                            the link lock); count, strictly-over edges, longest; pure, each locks itself; DiagnosticLogger
+                            holds one of each, reset at sessionStart (UiTimingTest, UiTimingExportTest)
   DriveExportBuilder.kt   — Pure-function builders: GPX track, CSV telemetry, drive summary, DTC report
   DtcDatabase.kt          — 873-code bundled Ford DTC lookup (from res/raw/dtc_database.json)
   CrashReporter.kt        — Installs UncaughtExceptionHandler; persists CrashTelemetryBuffer to disk

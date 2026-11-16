@@ -148,6 +148,7 @@ class BleGattCore(
     /**
      * Notification bytes on [characteristic]; a frame may span notifications, a notification may hold several. A line past
      * [MAX_SLCAN_LINE_CHARS] is refused whole and counted; with the line queue full the newest line is dropped and counted.
+     * Each notification and the non-empty lines it completes go to [delivery] for the export's UI timing (#421).
      */
     fun onNotify(characteristic: UUID, bytes: ByteArray) {
         if (characteristic != profile?.notify) return
