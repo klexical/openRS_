@@ -189,10 +189,12 @@ describe('#384 ticket 03: home is the list of drives', () => {
     const { App, useStore } = await boot()
     render(<App />)
     await waitFor(() => expect(useStore.getState().drives).toHaveLength(50), { timeout: 3000 })
-    await act(async () => { await new Promise((r) => setTimeout(r, 50)) })   // anything that would open a drive by itself
-    expect(pointReads).toEqual([])
-    const root = await list()
+    const root = await list()                                       // the list is drawn from its records
     expect(within(root).getAllByRole('listitem')).toHaveLength(50)
+    // nothing asked for a drive's points (a point read starts only from these): no Current drive, nothing compared
+    expect(useStore.getState().activeSessionId).toBeNull()
+    expect(useStore.getState().compareSessionIds).toEqual([])
+    expect(pointReads).toEqual([])
   })
 
   it('with no drives stored: a plain empty state with the Import button and where the ZIP comes from', async () => {
@@ -285,11 +287,10 @@ describe('#384 ticket 03: places and addresses', () => {
     const { App, useStore } = await boot()
     render(<App />)
     await waitFor(() => expect(useStore.getState().drives).toHaveLength(1), { timeout: 3000 })
-    await act(async () => { await new Promise((r) => setTimeout(r, 50)) })
+    await list()                                                    // the list is drawn: the app has settled on it
     expect(useStore.getState().activeSessionId).toBeNull()
     expect(pointReads).toEqual([])
     expect(window.location.hash).toBe('')
-    await list()
   })
 
   it('back and forward follow the address (hash changes)', async () => {

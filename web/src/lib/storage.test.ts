@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto'
 import { IDBFactory } from 'fake-indexeddb'
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { openDB } from 'idb'
 import JSZip from 'jszip'
 import {
@@ -609,8 +609,7 @@ describe('#384 two tabs', () => {
     await writeV1([session('held')])
     const oldTab = await openDB('sapphire', 1)                   // an old Sapphire that does not close on request
     const listing = listDrives()
-    await new Promise((r) => setTimeout(r, 50))
-    expect(storageStatus().state).toBe('blocked')
+    await vi.waitFor(() => expect(storageStatus().state).toBe('blocked'))
     oldTab.close()
     expect((await listing).map((d) => d.id)).toEqual(['held'])
     expect(storageStatus().state).toBe('ready')

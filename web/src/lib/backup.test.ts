@@ -246,7 +246,7 @@ class StubWorker {
 }
 
 describe('#384 ticket 02, review round', () => {
-  afterEach(() => { vi.unstubAllGlobals(); StubWorker.made = []; StubWorker.act = () => {} })
+  afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); StubWorker.made = []; StubWorker.act = () => {} })
 
   it('finding 1: every entry of the file carries one fixed date (1980-01-01 UTC), never the time it was built', async () => {
     await storeImported([drive('d1', 120), drive('d2', 121)])
@@ -300,32 +300,47 @@ describe('#384 ticket 02, review round', () => {
     expect(after.drives).toEqual([])
   })
 
-  it('findings 2 and 3: a worker that cannot load, sends a message that cannot be read, or stays silent → built on the page', async () => {
+  // error and messageerror come after "started" (the watchdog no longer waits), so only their own handling ends them
+  const started = (w: StubWorker) => w.onmessage?.({ data: { type: 'started' } })
+  // each case is its own test, so one that keeps building fails by its own name at the test's limit (no deadline
+  // promise); the watchdog's allowance is far beyond that limit, so only the worker's own error ends them
+  it.each<[string, (w: StubWorker) => void]>([
+    ['error', (w) => setTimeout(() => { started(w); w.onerror?.({ preventDefault() {} }) })],
+    ['messageerror', (w) => setTimeout(() => { started(w); w.onmessageerror?.({}) })],
+  ])('finding 2: a worker that sends %s → built on the page', async (label, act) => {
     await storeImported([drive('w1', 170)])
     vi.stubGlobal('Worker', StubWorker)
-    // error and messageerror come after "started" (the watchdog no longer waits), so only their own handling ends them
-    const started = (w: StubWorker) => w.onmessage?.({ data: { type: 'started' } })
-    const cases: [string, (w: StubWorker) => void, number][] = [
-      ['error', (w) => setTimeout(() => { started(w); w.onerror?.({ preventDefault() {} }) }), 60_000],
-      ['messageerror', (w) => setTimeout(() => { started(w); w.onmessageerror?.({}) }), 60_000],
-      ['silent', () => {}, 50],
-    ]
-    for (const [label, act, silenceMs] of cases) {
-      StubWorker.act = act
-      const file = await Promise.race([makeBackupWith(undefined, { silenceMs }),
-        new Promise<never>((_, no) => setTimeout(() => no(new Error(`${label}: still building after 2 s`)), 2000))])
-      expect([label, file.builtIn, file.drives]).toEqual([label, 'page', 1])
-      expect([label, StubWorker.made.at(-1)!.terminated]).toEqual([label, true])
-    }
+    StubWorker.act = act
+    const file = await makeBackupWith(undefined, { silenceMs: 60_000 })
+    expect([label, file.builtIn, file.drives]).toEqual([label, 'page', 1])
+    expect([label, StubWorker.made.at(-1)!.terminated]).toEqual([label, true])
+  })
+
+  it('finding 3: a worker that stays silent is ended when its allowance runs out, not before, and the page builds the file', async () => {
+    await storeImported([drive('w1', 170)])
+    vi.stubGlobal('Worker', StubWorker)                           // a worker that never answers
+    // the code's own timer is under test, so the clock is a fake one (owner, Q57); only setTimeout and clearTimeout:
+    // the database stand-in schedules its work with setImmediate, which stays real
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const pending = makeBackupWith(undefined, { silenceMs: 1000 })
+    vi.advanceTimersByTime(999)
+    expect(StubWorker.made).toHaveLength(1)
+    expect(StubWorker.made[0].terminated).toBe(false)              // still waiting for its first word
+    vi.advanceTimersByTime(1)
+    expect(StubWorker.made[0].terminated).toBe(true)               // silent for the whole allowance: ended
+    vi.useRealTimers()                                              // the page build yields between drives (a zero-delay timer)
+    const file = await pending
+    expect([file.builtIn, file.drives]).toEqual(['page', 1])
   })
 
   it('finding 6: an aborted backup ends the worker; on the page it stops between drives', async () => {
     await storeImported([drive('a1', 180), drive('a2', 181), drive('a3', 182)])
     vi.stubGlobal('Worker', StubWorker)
-    StubWorker.act = (w) => setTimeout(() => w.onmessage?.({ data: { type: 'started' } }))
+    let startedSent = false                                     // a test double answering later; the test waits on the flag
+    StubWorker.act = (w) => setTimeout(() => { w.onmessage?.({ data: { type: 'started' } }); startedSent = true })
     const inWorker = new AbortController()
     const pending = makeBackupWith(undefined, { signal: inWorker.signal })
-    await new Promise((r) => setTimeout(r, 20))
+    await vi.waitFor(() => expect(startedSent).toBe(true))      // the worker is building
     inWorker.abort()
     await expect(pending).rejects.toThrow()
     expect(StubWorker.made[0].terminated).toBe(true)

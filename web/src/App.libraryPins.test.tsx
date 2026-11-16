@@ -25,6 +25,10 @@ const gate = vi.hoisted(() => ({
   answered: [] as string[],
   /** Each held read that has started, by id: a test waits for it before it moves on. */
   started: [] as string[],
+  /** "Clear all" reached the database (and is held there while clearHold is set). */
+  clearStarted: false,
+  /** Renames that have answered, after the caller's own handling of the answer. */
+  renamesAnswered: 0,
 }))
 vi.mock('./lib/storage', async (importOriginal) => {
   const real = await importOriginal<typeof import('./lib/storage')>()
@@ -49,8 +53,12 @@ vi.mock('./lib/storage', async (importOriginal) => {
       return real.listDrives()
     },
     clearAllDrives: async () => {
+      gate.clearStarted = true
       if (gate.clearHold) await gate.clearHold
       return real.clearAllDrives()
+    },
+    renameDrive: async (...a: Parameters<typeof real.renameDrive>) => {
+      try { return await real.renameDrive(...a) } finally { setTimeout(() => { gate.renamesAnswered++ }, 0) }   // after the caller's own .then
     },
   }
 })
@@ -126,7 +134,6 @@ async function raw<T>(fn: (db: Awaited<ReturnType<typeof openDB>>) => Promise<T>
   try { return await fn(db) } finally { db.close() }
 }
 const go = async (hash: string) => { await act(async () => { window.location.hash = hash }) }
-const settle = () => act(async () => { await new Promise((r) => setTimeout(r, 30)) })
 
 function memoryStorage(): Storage {
   const m = new Map<string, string>()
@@ -143,6 +150,7 @@ beforeEach(async () => {
   localStorage.setItem('sapphire_whats_new_seen', 'slice-2')
   ;(globalThis as { indexedDB: IDBFactory }).indexedDB = new IDBFactory()
   gate.hold.clear(); gate.failLoad.clear(); gate.listHold = null; gate.failList = false; gate.clearHold = null; gate.answered = []; gate.started = []
+  gate.clearStarted = false; gate.renamesAnswered = 0
 })
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); window.history.replaceState(null, '', '/') })
 
@@ -159,7 +167,6 @@ describe('the Current drive (pins, Drive library commit 1)', () => {
     await waitFor(() => expect(useStore.getState().activeSession?.id).toBe('b'))
     release()
     await waitFor(() => expect(gate.answered).toContain('a'))
-    await settle()
     expect(useStore.getState().activeSession?.id).toBe('b')
   })
 
@@ -189,7 +196,6 @@ describe('the Current drive (pins, Drive library commit 1)', () => {
     await waitFor(() => expect(useStore.getState().activeSession?.id).toBe('b'))
     release()
     await waitFor(() => expect(gate.answered).toContain('a'))
-    await settle()
     err.mockRestore()
     expect(useStore.getState().openFailedId).toBeNull()
   })
@@ -198,7 +204,7 @@ describe('the Current drive (pins, Drive library commit 1)', () => {
     gate.failList = true
     const err = vi.spyOn(console, 'error').mockImplementation(() => {})
     const { useStore } = await boot()
-    await settle()
+    await waitFor(() => expect(err).toHaveBeenCalledWith('[Sapphire] Failed to load drives from IndexedDB:', expect.anything()))
     err.mockRestore()
     expect(useStore.getState().drivesLoaded).toBe(false)
     expect(document.body.textContent).not.toMatch(/No drives stored/)
@@ -213,7 +219,6 @@ describe('the Current drive (pins, Drive library commit 1)', () => {
     gate.listHold = hold
     const { useStore } = await boot('#/drive/l')
     await waitFor(() => expect(useStore.getState().activeSession?.id).toBe('l'))
-    await settle()
     expect(await raw((db) => db.get('drives', 'l'))).not.toHaveProperty('bestLapMs')
     release()
     await waitFor(() => expect(useStore.getState().drivesLoaded).toBe(true))
@@ -226,9 +231,10 @@ describe('the Current drive (pins, Drive library commit 1)', () => {
     gate.hold.set('a', Promise.resolve())
     const { useStore } = await boot('#/drive/a')
     await waitFor(() => expect(useStore.getState().activeSession?.id).toBe('a'))
-    await settle(); await settle()
+    await waitFor(() => expect(gate.answered).toEqual(['a']), { timeout: 5000 })   // its answer, and the app's handling of it, are done
+    await act(async () => {})                                     // and the render that follows
     expect(gate.started).toEqual(['a'])
-  })
+  }, 15_000)   // the 5 s wait above fails by its own message before the test's limit (F2)
 
   it('a drive opened from the list is read once', async () => {
     await seed([drive('a', 1), drive('b', 2)])
@@ -237,9 +243,10 @@ describe('the Current drive (pins, Drive library commit 1)', () => {
     await waitFor(() => expect(useStore.getState().drives).toHaveLength(2))
     await go('#/drive/b')
     await waitFor(() => expect(useStore.getState().activeSession?.id).toBe('b'))
-    await settle(); await settle()
+    await waitFor(() => expect(gate.answered).toEqual(['b']), { timeout: 5000 })   // its answer, and the app's handling of it, are done
+    await act(async () => {})                                     // and the render that follows
     expect(gate.started).toEqual(['b'])
-  })
+  }, 15_000)   // the 5 s wait above fails by its own message before the test's limit (F2)
 })
 
 describe('the compared drives (pins, Drive library commit 1)', () => {
@@ -260,7 +267,6 @@ describe('the compared drives (pins, Drive library commit 1)', () => {
     await waitFor(() => expect(useStore.getState().compareSessions.map((s) => s.id)).toEqual(['b', 'c']))
     release()
     await waitFor(() => expect(gate.answered).toContain('a'))
-    await settle()
     expect(useStore.getState().compareSessions.map((s) => s.id)).toEqual(['b', 'c'])
   })
 
@@ -399,7 +405,6 @@ describe('Import and the library (pins, Drive library commit 1)', () => {
     release()
     await act(async () => { await importing })
     await waitFor(() => expect(gate.answered).toContain('x'))
-    await settle()
     expect(useStore.getState().activeSession?.id).toBe('y')
   })
 
@@ -430,7 +435,6 @@ describe('Import and the library (pins, Drive library commit 1)', () => {
     release()
     await act(async () => { await importing })
     await waitFor(() => expect(gate.answered).toContain('y'))
-    await settle()
     expect(useStore.getState().compareSessions.map((s) => s.id)).toEqual(['z', 'x'])
   })
 })
@@ -503,7 +507,6 @@ describe('Compare when a compared drive cannot be read (#407)', () => {
     await waitFor(() => expect(screen.getByText('Invented b vs Invented a')).toBeInTheDocument())
     release()
     await waitFor(() => expect(gate.answered).toContain('c'))
-    await settle()
     expect(lines()).toEqual([])
     expect(screen.getByText('Invented b vs Invented a')).toBeInTheDocument()
   })
@@ -527,7 +530,7 @@ describe('list writes and their failures (pins, Drive library commit 1)', () => 
     fireEvent.click(await screen.findByRole('button', { name: 'Clear all' }, { timeout: 5000 }))   // ticket 07: two steps
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Skip the backup' }))
     await act(async () => { fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Clear all' })) })
-    await settle()
+    await waitFor(() => expect(gate.clearStarted).toBe(true))                                  // the write reached the database
     expect(useStore.getState().drives).toHaveLength(2)                                          // the write has not finished
     release()
     await waitFor(() => expect(useStore.getState().drives).toEqual([]))
@@ -573,7 +576,7 @@ describe('list writes and their failures (pins, Drive library commit 1)', () => 
     const input = within(row).getByRole('textbox', { name: 'Name' })
     fireEvent.change(input, { target: { value: 'Never stored' } })
     await act(async () => { fireEvent.keyDown(input, { key: 'Enter' }) })
-    await settle()
+    await waitFor(() => expect(gate.renamesAnswered).toBe(1))                                   // the write answered, and was handled
     expect(useStore.getState().drives.map((d) => d.name).sort()).toEqual(['Invented a', 'Invented b'])
     expect(within(root).queryByRole('alert')).toBeNull()                                         // and says nothing (REPORT-07)
   })

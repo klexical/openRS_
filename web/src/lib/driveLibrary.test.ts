@@ -316,15 +316,23 @@ describe('Drive library: an Import', () => {
   })
 })
 
-describe('Drive library: the Current drive', () => {
-  /** Let every read and its answer land. */
-  const settle = () => new Promise((r) => setTimeout(r, 30))
+/**
+ * Every drive read the library has started has answered, and the library's own handling of each answer has run: it
+ * attaches its handler when it starts the read, before this does, and a promise's handlers run in that order. Each place
+ * that uses it has started a read, so no read at all means the spy is not the one the library calls: it says so.
+ */
+const answered = (load: { mock: { results: { value: unknown }[] } }) => {
+  if (load.mock.results.length === 0) throw new Error('answered(): no drive read was started through this spy')
+  return Promise.allSettled(load.mock.results.map((r) => r.value))
+}
 
+describe('Drive library: the Current drive', () => {
   it('reaches each state: none, being read, shown, not stored here (once), read failed', async () => {
     const env = await fresh([drive('a', 1)])
     const { library, st } = env
     const states = () => library.currentDriveState(st())
     let notStored = 0
+    const load = vi.spyOn(env.storage, 'loadDrive')
     const detach = library.attach({ onNotStored: () => { notStored++ } })
     expect(states()).toBe('none')
     library.showDrive('a')
@@ -332,7 +340,7 @@ describe('Drive library: the Current drive', () => {
     await vi.waitFor(() => expect(states()).toBe('shown'))
     library.showDrive('gone')
     await vi.waitFor(() => expect(notStored).toBe(1))                           // the event; the app shell then goes to the list
-    await settle()
+    await answered(load)                                                         // every read started so far has been handled
     expect(notStored).toBe(1)                                                    // once
     failOn('get', 'points')
     library.showDrive('a')
@@ -357,8 +365,7 @@ describe('Drive library: the Current drive', () => {
     env.library.showDrive('b')                                                   // a's read is still on its way
     await vi.waitFor(() => expect(env.st().activeSession?.id).toBe('b'))
     release()
-    await vi.waitFor(() => expect(aAnswered).toBe(true))
-    await settle()
+    await vi.waitFor(() => expect(aAnswered).toBe(true))                        // set after the library's own handling of it
     expect(env.st().activeSession?.id).toBe('b')
     expect(env.library.currentDriveState(env.st())).toBe('shown')
     detach()
@@ -383,12 +390,12 @@ describe('Drive library: the Current drive', () => {
     load.mockClear()
     env.library.showDrive('a')
     await vi.waitFor(() => expect(env.st().activeSession?.id).toBe('a'))
-    await settle()                                                               // and no second read after it
+    await answered(load)                                                         // and no second read after it
     calls.push(...load.mock.calls.map((c) => String(c[0])))
     expect(calls).toEqual(['a'])
     env.library.showDrive('gone')
     await vi.waitFor(() => expect(notStored).toBeGreaterThan(0))
-    await settle()
+    await answered(load)                                                         // every read started has been handled
     expect(notStored).toBe(1)
     one(); one()                                                                  // a detach called twice counts once
     load.mockClear()
@@ -398,14 +405,13 @@ describe('Drive library: the Current drive', () => {
     load.mockClear()
     env.useStore.getState().setActiveSessionId(null)
     env.useStore.getState().setActiveSessionId('a')                              // detached: nothing follows the store
-    await settle()
+    // eslint-disable-next-line no-restricted-syntax -- a check that nothing happens has no condition to wait on: one task proves a subscription left behind, even one put off by a task, would have read by now (F8, Q57)
+    await new Promise((r) => setTimeout(r, 0))
     expect(load).not.toHaveBeenCalled()
   })
 })
 
 describe('Drive library: Compare', () => {
-  const settle = () => new Promise((r) => setTimeout(r, 30))
-
   it('compareDrives reads the drives in order, at most four; toggleCompared and clearCompared keep them in step', async () => {
     const env = await fresh([drive('a', 1), drive('b', 2), drive('c', 3), drive('d', 4), drive('e', 5)])
     const detach = env.library.attach()
@@ -420,11 +426,12 @@ describe('Drive library: Compare', () => {
 
   it('kept (K10): the same drives picked again are read again; a late answer never replaces a newer pick', async () => {
     const env = await fresh([drive('a', 1), drive('b', 2), drive('c', 3)])
+    const load = vi.spyOn(env.storage, 'loadDrive')
     const detach = env.library.attach()
     env.library.compareDrives(['a', 'b'])
     env.library.compareDrives(['b', 'c'])                                        // the first pick's reads are still on their way
     await vi.waitFor(() => expect(env.st().compareSessions.map((s) => s.id)).toEqual(['b', 'c']))
-    await settle()                                                               // and no late answer replaces it
+    await answered(load)                                                         // and no late answer replaces it
     expect(env.st().compareSessions.map((s) => s.id)).toEqual(['b', 'c'])
     await env.storage.renameDrive('b', 'Renamed behind the page')
     env.library.compareDrives(['b', 'c'])

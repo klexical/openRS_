@@ -193,10 +193,11 @@ describe('#384 ticket 08: Settings offers Match device, Night, Day and Ultra, na
     const { useStore } = await boot()
     seen.push(shown())                                           // the first frame
     await waitFor(() => expect(useStore.getState().drivesLoaded).toBe(true))
-    await act(async () => { await new Promise((r) => setTimeout(r, 30)) })
+    // the first-visit decision has been made and stored (known at once next time)
+    await waitFor(() => expect(JSON.parse(localStorage.getItem('sapphire_settings') ?? '{}').palette).toBe('night'))
+    await act(async () => {})                                     // and drawn
     seen.push(shown())
     expect(seen).toEqual(['night', 'night'])
-    expect(JSON.parse(localStorage.getItem('sapphire_settings') ?? '{}').palette).toBe('night')   // known at once next time
   })
 
   it('a true first visit (no earlier data) gets Match device, and keeps it', async () => {

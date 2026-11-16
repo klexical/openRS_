@@ -157,8 +157,10 @@ describe('#384 ticket 02, review round: the backup button', () => {
     onmessage: ((e: { data: unknown }) => void) | null = null
     onerror: unknown = null; onmessageerror: unknown = null
     terminated = false
+    /** "started" has reached the page (a test double answering later: a timer for its behaviour, not a wait). */
+    startedSent = false
     constructor() { HeldWorker.made.push(this) }
-    postMessage() { setTimeout(() => this.onmessage?.({ data: { type: 'started' } })) }
+    postMessage() { setTimeout(() => { this.onmessage?.({ data: { type: 'started' } }); this.startedSent = true }) }
     terminate() { this.terminated = true }
   }
   afterEach(() => { HeldWorker.made = [] })
@@ -174,12 +176,12 @@ describe('#384 ticket 02, review round: the backup button', () => {
     const button = await screen.findByText('Back up all drives', {}, { timeout: 5000 })
     await act(async () => { fireEvent.click(button) })
     await waitFor(() => expect(HeldWorker.made).toHaveLength(1))
-    await new Promise((r) => setTimeout(r, 30))                // the worker has started and is still building
+    await waitFor(() => expect(HeldWorker.made[0].startedSent).toBe(true))   // the worker has started and is still building
     expect(document.body.textContent).toMatch(/Building the backup/)
     unmount()
     HeldWorker.made[0].onmessage?.({ data: { type: 'done', blob: new Blob(['x']), name: 'sapphire-backup-2096-01-01.zip', drives: 1 } })
-    await new Promise((r) => setTimeout(r, 50))
-    expect(HeldWorker.made[0].terminated).toBe(true)
+    await waitFor(() => expect(HeldWorker.made[0].terminated).toBe(true))
+    await act(async () => {})                                  // anything the page does with the late file is done
     expect(created).toEqual([])
   }, 15_000)
 
@@ -197,7 +199,11 @@ describe('#384 ticket 02, review round: the backup button', () => {
     // in one go: the worker's file arrives, and Settings is left before the page acts on it
     HeldWorker.made[0].onmessage?.({ data: { type: 'done', blob: new Blob(['x']), name: 'sapphire-backup-2096-01-01.zip', drives: 1 } })
     unmount()
-    await new Promise((r) => setTimeout(r, 50))
+    await act(async () => {})                                  // anything the page does with the file at once is done
+    await act(async () => {
+      // eslint-disable-next-line no-restricted-syntax -- a check that nothing happens has no condition to wait on: one task proves the page did not give the file an address even one task later (F8, Q57)
+      await new Promise((r) => setTimeout(r, 0))
+    })
     expect(created).toEqual([])
   }, 15_000)
 
