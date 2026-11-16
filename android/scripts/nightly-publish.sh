@@ -5,12 +5,14 @@
 #      is shown drafts, the gate's read-only one is not) or a tag ref;
 #   2. notes: GitHub's generated list of merged pull requests since <base tag> (the newest published nightly, rc.8 for the
 #      first), then the SHA-256 line, then the changelog link at <sha>; on the first nightly the rc.8 line;
-#   3. a DRAFT pre-release for <tag> at <sha>, Latest off; the tag ref is read and logged (when GitHub creates a draft's tag
-#      is not documented: open fact 1);
+#   3. a DRAFT pre-release for <tag> at <sha>, Latest off, whose notes end with a line naming this run and attempt
+#      (GITHUB_RUN_ID, GITHUB_RUN_ATTEMPT): the clean-up deletes only a draft that holds it; the tag ref is read and logged
+#      (when GitHub creates a draft's tag is not documented);
 #   4. the one upload; then the release must hold exactly one asset, named like <file>, whose downloaded bytes match <sha256>;
-#   5. publish it as a pre-release, Latest off; then its tag must point at <sha> and it must not be the release marked Latest.
-# Any failure exits non-zero. It deletes nothing: the workflow's clean-up job (nightly-cleanup.sh) deletes this run's
-# draft when this step fails, is cancelled or times out. A failure after step 5 leaves a published release in place.
+#   5. publish it as a pre-release, Latest off, with the notes of step 2 (without the run line); then its tag must point at
+#      <sha> and it must not be the release marked Latest.
+# Any failure exits non-zero. It deletes nothing: the workflow's clean-up job (nightly-cleanup.sh) deletes this run
+# attempt's draft when this step fails, is cancelled or times out. A failure after step 5 leaves a published release in place.
 set -euo pipefail
 fail() { echo "::error::$*"; exit 1; }
 [ $# -eq 6 ] || fail "usage: nightly-publish.sh <tag> <title> <sha> <base tag> <file> <sha256>"
@@ -25,6 +27,11 @@ FIRST_BASE_TAG=android-v2.2.7-rc.8            # the first nightly's base (nightl
 [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || fail "'$SHA' is not a full commit SHA (40 lower-case hex characters)"
 [[ "$SHA256" =~ ^[0-9a-f]{64}$ ]] || fail "'$SHA256' is not a SHA-256 (64 lower-case hex characters)"
 [ -f "$FILE" ] || fail "$FILE does not exist"
+RUN_ID="${GITHUB_RUN_ID:-}"; RUN_ATTEMPT="${GITHUB_RUN_ATTEMPT:-}"   # set by Actions in every job; no token scope needed
+[[ "$RUN_ID" =~ ^[0-9]+$ ]] || fail "GITHUB_RUN_ID is not a number ('$RUN_ID')"
+[[ "$RUN_ATTEMPT" =~ ^[0-9]+$ ]] || fail "GITHUB_RUN_ATTEMPT is not a number ('$RUN_ATTEMPT')"
+# The line that marks a draft as this run attempt's, on a line of its own in the draft's notes only (#363)
+MARK="<!-- nightly draft of run $RUN_ID attempt $RUN_ATTEMPT at $SHA -->"
 sha256() { if command -v sha256sum >/dev/null; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -d' ' -f1; }
 [ "$(sha256 "$FILE")" = "$SHA256" ] || fail "$FILE does not match the digest $SHA256"
 ASSET=$(basename "$FILE")
@@ -60,10 +67,12 @@ GENERATED=$(gh api --method POST "repos/$R/releases/generate-notes" -f tag_name=
 } > "$NOTES"
 
 # 3. The draft
+DRAFT_NOTES=$(mktemp)
+{ cat "$NOTES"; printf '\n%s\n' "$MARK"; } > "$DRAFT_NOTES"
 gh release create "$TAG" --repo "$R" --draft --prerelease --latest=false --target "$SHA" --title "$TITLE" \
-  --notes-file "$NOTES" >/dev/null || fail "the draft for $TAG could not be created"
+  --notes-file "$DRAFT_NOTES" >/dev/null || fail "the draft for $TAG could not be created"
 AT_DRAFT=$(tag_ref "$TAG")
-summary "Draft created for $TAG at $SHA; the tag ref after the draft: ${AT_DRAFT:-absent} (open fact 1)."
+summary "Draft created for $TAG at $SHA (run $RUN_ID, attempt $RUN_ATTEMPT); the tag ref after the draft: ${AT_DRAFT:-absent}."
 
 # 4. The one upload, and exactly that one asset with the right bytes
 gh release upload "$TAG" "$FILE" --repo "$R" || fail "the upload of $ASSET to the draft failed"
@@ -75,7 +84,8 @@ gh release download "$TAG" --repo "$R" --pattern "$ASSET" --dir "$CHECK" || fail
 [ "$(sha256 "$CHECK/$ASSET")" = "$SHA256" ] || fail "the uploaded $ASSET does not match the digest $SHA256"
 
 # 5. Publish: a pre-release, never Latest
-gh release edit "$TAG" --repo "$R" --draft=false --prerelease --latest=false >/dev/null || fail "the draft $TAG could not be published"
+gh release edit "$TAG" --repo "$R" --draft=false --prerelease --latest=false --notes-file "$NOTES" >/dev/null \
+  || fail "the draft $TAG could not be published"
 VIEW=$(gh release view "$TAG" --repo "$R" --json isDraft,isPrerelease,assets) || fail "the published $TAG could not be read"
 jq -e '.isDraft == false and .isPrerelease == true' >/dev/null <<<"$VIEW" || fail "$TAG is not a published pre-release after publishing"
 AT=$(tag_ref "$TAG")

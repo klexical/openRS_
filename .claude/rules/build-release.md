@@ -77,10 +77,12 @@ paths:
     publish output is `'true'`, the run is on main and the gate said build. `publish` (`scripts/nightly-publish.sh`)
     stops quietly when today's tag already has a release in any state (its token is shown drafts) or a tag; else notes
     from the generate-notes API from the gate's `base_tag` (the list, the SHA-256 line, the changelog link), a draft
-    pre-release at the commit, one upload, exactly one asset whose bytes match the digest, then a pre-release with Latest
+    pre-release at the commit whose notes end with a line naming the run and attempt (`GITHUB_RUN_ID`, `GITHUB_RUN_ATTEMPT`;
+    the published notes do not carry it), one upload, exactly one asset whose bytes match the digest, then a pre-release with Latest
     off, its tag at the commit. `cleanup` runs after `publish` failed or was cancelled (`scripts/nightly-cleanup.sh`): it
-    deletes the tag's release only while it is a draft and a leftover tag only at the recorded commit, then requires the
-    ref's 404; a published release is never deleted. Both scripts refuse any tag but a nightly's or the throwaway trial's
+    deletes only this run attempt's draft (at the recorded commit, its notes holding that line) and a tag only at the
+    recorded commit, checked before anything is deleted, then requires the ref's 404; any other draft, and a published
+    release, is never deleted (the step fails). Both scripts refuse any tag but a nightly's or the throwaway trial's
     (`test-nightly-cleanup-<date>`). A dry run (`PUBLISH` is `'false'`): the run stops after the attestation and nothing
     is published, so every night builds and leaves a one-day release-signed artifact and a public attestation.
     `scripts/test-nightly-gate.sh`, `scripts/test-launch-check.sh` (it also runs `scripts/test-crash-facts.py`),

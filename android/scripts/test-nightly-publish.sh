@@ -7,8 +7,10 @@
 #     changelog link; on the first nightly the rc.8 line), a draft pre-release at the recorded commit with Latest off, the
 #     one upload, exactly one asset of that name whose bytes match the digest, then published as a pre-release with Latest
 #     off, its tag at the recorded commit and not the release marked Latest;
-#   - clean-up deletes the tag's release only while it is a draft, and a leftover tag ref only when it points at the
-#     recorded commit, then confirms the ref is gone (only a 404 counts as gone); it never deletes a published release.
+#   - clean-up deletes a draft only when it is this run attempt's: at the recorded commit, its notes holding the line that
+#     names this run and attempt (GITHUB_RUN_ID, GITHUB_RUN_ATTEMPT); any tag ref must point at the recorded commit before
+#     anything is deleted; then the ref is confirmed gone (only a 404 counts as gone); it never deletes a published release;
+#   - the published notes do not carry that line: only the draft does.
 # A fake gh keeps the releases and tag refs in a JSON state file, records every call, and fails on request. Names, dates
 # and commits are invented test values. Run from anywhere: bash android/scripts/test-nightly-publish.sh
 set -uo pipefail
@@ -21,6 +23,8 @@ REPO=owner/repo
 TAG=android-v2.2.7-nightly.20261110; TITLE="openRS_ v2.2.7-nightly.20261110"
 SHA=1111111111111111111111111111111111111111; OTHER=2222222222222222222222222222222222222222
 RC8=android-v2.2.7-rc.8; PREV=android-v2.2.7-nightly.20261108
+RUN_ID=8642; RUN_ATT=1           # this run attempt (GITHUB_RUN_ID, GITHUB_RUN_ATTEMPT), set on every call: the runner's own never leak in
+mark() { echo "<!-- nightly draft of run ${1:-$RUN_ID} attempt ${2:-$RUN_ATT} at ${3:-$SHA} -->"; }
 mkdir -p "$WORK/apk"; FILE="$WORK/apk/openRS_v2.2.7-nightly.20261110.apk"; printf 'apk bytes\n' > "$FILE"
 DIGEST=$( (sha256sum "$FILE" 2>/dev/null || shasum -a 256 "$FILE") | cut -d' ' -f1)
 
@@ -77,7 +81,7 @@ elif a[:2] == ["release", "create"]:
     t = a[2]
     if rel(t): fail("a release with that tag exists", 1)
     r = {"tag": t, "draft": "--draft" in a, "prerelease": "--prerelease" in a, "latest_flag": "--latest=false" in a,
-         "target": opt("--target"), "title": opt("--title"), "assets": []}
+         "target": opt("--target"), "title": opt("--title"), "assets": [], "body": open(opt("--notes-file")).read()}
     shutil.copy(opt("--notes-file"), os.path.join(W, "notes-posted"))
     s["releases"].append(r)
     if os.environ.get("FAKE_TAG_ON_DRAFT") == "1": s["tags"][t] = r["target"]
@@ -92,7 +96,8 @@ elif a[:2] == ["release", "upload"]:
 elif a[:2] == ["release", "view"]:
     inject("view")
     r = rel(a[2]) or fail("release not found")
-    print(json.dumps({"isDraft": r["draft"], "isPrerelease": r["prerelease"], "assets": r["assets"]}))
+    print(json.dumps({"isDraft": r["draft"], "isPrerelease": r["prerelease"], "assets": r["assets"],
+                      "targetCommitish": r["target"], "body": r.get("body", "")}))
 elif a[:2] == ["release", "download"]:
     inject("download")
     r = rel(a[2]) or fail("release not found")
@@ -106,6 +111,8 @@ elif a[:2] == ["release", "edit"]:
     if "--draft=false" in a:
         r["draft"] = False
         s["tags"][r["tag"]] = os.environ.get("FAKE_EDIT_TAG_SHA") or r["target"]
+    if "--notes-file" in a:
+        r["body"] = open(opt("--notes-file")).read(); shutil.copy(opt("--notes-file"), os.path.join(W, "notes-edited"))
     r["prerelease"] = "--prerelease" in a or r["prerelease"]
     r["latest_flag"] = "--latest=false" in a
     if os.environ.get("FAKE_LATEST_SELF") == "1": s["latest"] = r["tag"]
@@ -127,8 +134,9 @@ state() {
   python3 -I -c 'import json,sys; json.dump({"releases": json.loads(sys.argv[1]), "tags": json.loads(sys.argv[2]), "latest": sys.argv[3] or None}, open(sys.argv[4], "w"))' \
     "$1" "$2" "${3:-android-v2.2.6}" "$WORK/state.json"
 }
-rel_json() {   # rel_json <tag> <draft true|false> <prerelease true|false> [target]
-  printf '{"tag":"%s","draft":%s,"prerelease":%s,"latest_flag":true,"target":"%s","title":"t","assets":[]}' "$1" "$2" "$3" "${4:-$SHA}"
+rel_json() {   # rel_json <tag> <draft true|false> <prerelease true|false> [target] [body]
+  python3 -I -c 'import json,sys; print(json.dumps({"tag": sys.argv[1], "draft": sys.argv[2] == "true", "prerelease": sys.argv[3] == "true",
+    "latest_flag": True, "target": sys.argv[4], "title": "t", "assets": [], "body": sys.argv[5]}))' "$1" "$2" "$3" "${4:-$SHA}" "${5:-notes}"
 }
 q() { python3 -I -c 'import json,sys; s=json.load(open(sys.argv[1])); print(eval(sys.argv[2], {"s": s}))' "$WORK/state.json" "$1"; }
 verbs() {   # the calls, one "verb" per call: "release create", "api GET …/git/ref/tags/…", and so on
@@ -153,12 +161,14 @@ called() { grep -F -- "$1" "$WORK/calls" >/dev/null 2>&1; }
 run_publish() {
   local base="${1:-$PREV}"; shift || true
   rm -f "$WORK/calls" "$WORK/notes-posted" "$WORK/notes-args"; : > "$WORK/summary"
-  OUT=$(env PATH="$WORK/bin:$PATH" WORK="$WORK" GITHUB_REPOSITORY=$REPO GITHUB_STEP_SUMMARY="$WORK/summary" "$@" \
+  OUT=$(env PATH="$WORK/bin:$PATH" WORK="$WORK" GITHUB_REPOSITORY=$REPO GITHUB_STEP_SUMMARY="$WORK/summary" \
+        GITHUB_RUN_ID=$RUN_ID GITHUB_RUN_ATTEMPT=$RUN_ATT "$@" \
         bash "$PUBLISH" "$TAG" "$TITLE" "$SHA" "$base" "$FILE" "$DIGEST" 2>&1); CODE=$?
 }
 run_cleanup() {
   rm -f "$WORK/calls"; : > "$WORK/summary"
-  OUT=$(env PATH="$WORK/bin:$PATH" WORK="$WORK" GITHUB_REPOSITORY=$REPO GITHUB_STEP_SUMMARY="$WORK/summary" CLEANUP_SLEEP=0 "$@" \
+  OUT=$(env PATH="$WORK/bin:$PATH" WORK="$WORK" GITHUB_REPOSITORY=$REPO GITHUB_STEP_SUMMARY="$WORK/summary" CLEANUP_SLEEP=0 \
+        GITHUB_RUN_ID=$RUN_ID GITHUB_RUN_ATTEMPT=$RUN_ATT "$@" \
         bash "$CLEANUP" "$TAG" "$SHA" 2>&1); CODE=$?
 }
 check() {
@@ -208,6 +218,13 @@ i_log=$(grep -n -F "https://github.com/$REPO/blob/$SHA/android/CHANGELOG.md" <<<
   || why "notes not in the order list, SHA-256, changelog: list $i_list, sha $i_sha, changelog $i_log"
 [[ "$notes" != *"Update to rc.8 first"* ]] || why "the rc.8 line appears on a later nightly"
 check "publish: notes from the base tag, in the order list, SHA-256 line, changelog link"
+
+WHY=""
+grep -qxF -- "$(mark)" "$WORK/notes-posted" 2>/dev/null || why "the draft's notes lack the line naming this run attempt: $(mark)"
+[ -f "$WORK/notes-edited" ] || why "publishing did not set the notes again"
+grep -qF -- "nightly draft of run" "$WORK/notes-edited" 2>/dev/null && why "the published notes still carry the draft's run line"
+[ "$(grep -vxF -- "$(mark)" "$WORK/notes-posted" 2>/dev/null)" = "$(cat "$WORK/notes-edited" 2>/dev/null)" ] || why "the published notes are not the draft's without the run line"
+check "publish: the draft's notes name this run attempt on a line of their own; the published notes do not"
 
 WHY=""; state "[$(rel_json $RC8 false true)]" '{}'; run_publish "$RC8"
 [ "$CODE" -eq 0 ] || why "exit $CODE"
@@ -276,7 +293,8 @@ check "publish: a nightly marked Latest fails the run and deletes nothing"
 refused() {
   local script="$1" c="$2" o code; shift 2
   rm -f "$WORK/calls"
-  o=$(env PATH="$WORK/bin:$PATH" WORK="$WORK" GITHUB_REPOSITORY=$REPO bash "$script" "$@" 2>&1); code=$?
+  o=$(env PATH="$WORK/bin:$PATH" WORK="$WORK" GITHUB_REPOSITORY=$REPO GITHUB_RUN_ID=$RUN_ID GITHUB_RUN_ATTEMPT=$RUN_ATT \
+      bash "$script" "$@" 2>&1); code=$?
   [ "$code" -ne 0 ] && [[ "$o" == *"::error::"* ]] || why "accepted: $c"
   [ -s "$WORK/calls" ] && why "gh was called for: $c"
   OUT="$OUT$c: $o"$'\n'
@@ -293,21 +311,22 @@ refused "$PUBLISH" "five arguments" "$TAG" "$TITLE" "$SHA" "$PREV" "$FILE"
 check "publish: an RC or stable tag, a bad base, commit or digest, a missing or different file is refused before any call"
 
 # ── nightly-cleanup.sh ──────────────────────────────────────────────────────────────────────────────────────────────
-WHY=""; state "[$EXISTING,$(rel_json "$TAG" true true)]" "{\"$TAG\": \"$SHA\"}"; run_cleanup
+WHY=""; state "[$EXISTING,$(rel_json "$TAG" true true "$SHA" "$(printf 'notes\n%s' "$(mark)")")]" "{\"$TAG\": \"$SHA\"}"; run_cleanup
 [ "$CODE" -eq 0 ] || why "exit $CODE"
-grep -F '"delete"' "$WORK/calls" | grep -q -F '"--cleanup-tag", "--yes"' || why "no release delete --cleanup-tag --yes"
+grep -F '"delete"' "$WORK/calls" | grep -q -F '"--yes"' || why "no release delete --yes"
+grep -F '"delete"' "$WORK/calls" | grep -q -F -- '--cleanup-tag' && why "the release delete still takes the tag with it (--cleanup-tag): the tag goes through the commit check"
 [ "$(q "[r['tag'] for r in s['releases'] if r['tag']=='$TAG']")" = "[]" ] || why "the draft remains"
 [ "$(q "s['tags'].get('$TAG')")" = "None" ] || why "the tag remains"
 [ "$(verbs | tr '|' '\n' | tail -1)" = "api GET git/ref/tags/*" ] || why "the tag ref is not read last: $(verbs)"
 [ "$(q "len(s['releases'])")" = "3" ] || why "other releases were touched"
-check "clean-up: the run's draft is deleted with its tag, and the ref is confirmed gone"
+check "clean-up: this run attempt's draft is deleted, its tag at the recorded commit too, and the ref is confirmed gone"
 
-WHY=""; state "[$EXISTING,$(rel_json "$TAG" true true)]" '{}'; run_cleanup
+WHY=""; state "[$EXISTING,$(rel_json "$TAG" true true "$SHA" "$(mark)")]" '{}'; run_cleanup
 [ "$CODE" -eq 0 ] || why "exit $CODE"
 [ "$(q "[r['tag'] for r in s['releases'] if r['tag']=='$TAG']")" = "[]" ] || why "the draft remains"
-check "clean-up: a draft whose tag GitHub has not created yet is deleted"
+check "clean-up: this run attempt's draft whose tag GitHub has not created yet is deleted"
 
-WHY=""; state "[$EXISTING,$(rel_json "$TAG" true true)]" "{\"$TAG\": \"$SHA\"}"; run_cleanup FAKE_DELETE_KEEPS_TAG=1
+WHY=""; state "[$EXISTING,$(rel_json "$TAG" true true "$SHA" "$(mark)")]" "{\"$TAG\": \"$SHA\"}"; run_cleanup FAKE_DELETE_KEEPS_TAG=1
 [ "$CODE" -eq 0 ] || why "exit $CODE"
 called '"DELETE"' || why "the leftover tag ref at the commit was not deleted"
 [ "$(q "s['tags'].get('$TAG')")" = "None" ] || why "the tag remains"
@@ -356,13 +375,42 @@ WHY=""; state "[$EXISTING]" "{\"$TAG\": \"$SHA\"}"; run_cleanup FAKE_TAGREF_502=
 fail_closed "tag"; nothing_written
 check "clean-up: a tag lookup failing with anything but 404 fails without deleting"
 
-WHY=""; state "[$EXISTING,$(rel_json "$TAG" true true)]" "{\"$TAG\": \"$SHA\"}"; run_cleanup FAKE_DELETE_KEEPS_TAG=1 FAKE_FAIL=deleteref
+WHY=""; state "[$EXISTING,$(rel_json "$TAG" true true "$SHA" "$(mark)")]" "{\"$TAG\": \"$SHA\"}"; run_cleanup FAKE_DELETE_KEEPS_TAG=1 FAKE_FAIL=deleteref
 fail_closed "still exists"
 check "clean-up: a tag that cannot be removed fails the clean-up"
 
 WHY=""; state "[$EXISTING]" "{\"$TAG\": \"$SHA\"}"; run_cleanup FAKE_DELETE_REF_NOOP=1
 fail_closed "still exists"
 check "clean-up: a tag still there after a delete that reported success fails the clean-up (the 404 is required)"
+
+# F1 (QA's FINAL on r4): only this run attempt's draft is deleted; anything else fails and deletes nothing
+for c in "an earlier run:$(mark 7531 1)" "an earlier attempt of this run:$(mark "$RUN_ID" 2)" "attempt 12 (a near miss for 1):$(mark "$RUN_ID" 12)" \
+         "another commit in its line:$(mark "$RUN_ID" "$RUN_ATT" "$OTHER")" "no run line:notes"; do
+  label=${c%%:*}; body=${c#*:}
+  WHY=""; state "[$EXISTING,$(rel_json "$TAG" true true "$SHA" "$body")]" "{\"$TAG\": \"$SHA\"}"; run_cleanup
+  fail_closed "not this run attempt's"; nothing_written
+  [ "$(q "[r['tag'] for r in s['releases'] if r['tag']=='$TAG']")" = "['$TAG']" ] || why "the draft was deleted"
+  [ "$(q "s['tags'].get('$TAG')")" = "$SHA" ] || why "the tag was deleted"
+  check "clean-up: a draft for today's tag from $label is never deleted, nor its tag"
+done
+
+WHY=""; state "[$EXISTING,$(rel_json "$TAG" true true "$OTHER" "$(mark)")]" '{}'; run_cleanup
+fail_closed "not this run attempt's"; nothing_written
+check "clean-up: a draft at another commit (its line names this attempt) is never deleted"
+
+WHY=""; state "[$EXISTING,$(rel_json "$TAG" true true "$SHA" "$(mark)")]" "{\"$TAG\": \"$OTHER\"}"; run_cleanup
+fail_closed "another commit"; nothing_written
+[ "$(q "[r['tag'] for r in s['releases'] if r['tag']=='$TAG']")" = "['$TAG']" ] || why "the draft was deleted before the tag check"
+check "clean-up: this attempt's draft whose tag points at another commit: nothing is deleted"
+
+for unset in GITHUB_RUN_ID GITHUB_RUN_ATTEMPT; do
+  WHY=""; state "[$EXISTING,$(rel_json "$TAG" true true "$SHA" "$(mark)")]" "{\"$TAG\": \"$SHA\"}"
+  rm -f "$WORK/calls"; : > "$WORK/summary"
+  OUT=$(env -u "$unset" PATH="$WORK/bin:$PATH" WORK="$WORK" GITHUB_REPOSITORY=$REPO CLEANUP_SLEEP=0 GITHUB_RUN_ID=$RUN_ID GITHUB_RUN_ATTEMPT=$RUN_ATT \
+        bash -c 'unset '"$unset"'; exec bash "$0" "$@"' "$CLEANUP" "$TAG" "$SHA" 2>&1); CODE=$?
+  fail_closed "$unset"; nothing_written
+  check "clean-up: without $unset it deletes nothing"
+done
 
 WHY=""; OUT=""
 refused "$CLEANUP" "an RC tag" "$RC8" "$SHA"
@@ -371,9 +419,10 @@ refused "$CLEANUP" "another name" x "$SHA"
 refused "$CLEANUP" "a short commit" "$TAG" abc
 check "clean-up: an RC or stable tag, another name or a short commit is refused before any call"
 
-WHY=""; T2=test-nightly-cleanup-20261110; state "[$EXISTING,$(rel_json $T2 true true)]" "{\"$T2\": \"$SHA\"}"
+WHY=""; T2=test-nightly-cleanup-20261110; state "[$EXISTING,$(rel_json $T2 true true "$SHA" "$(mark)")]" "{\"$T2\": \"$SHA\"}"
 rm -f "$WORK/calls"
-OUT=$(env PATH="$WORK/bin:$PATH" WORK="$WORK" GITHUB_REPOSITORY=$REPO CLEANUP_SLEEP=0 bash "$CLEANUP" "$T2" "$SHA" 2>&1); CODE=$?
+OUT=$(env PATH="$WORK/bin:$PATH" WORK="$WORK" GITHUB_REPOSITORY=$REPO CLEANUP_SLEEP=0 GITHUB_RUN_ID=$RUN_ID GITHUB_RUN_ATTEMPT=$RUN_ATT \
+      bash "$CLEANUP" "$T2" "$SHA" 2>&1); CODE=$?
 [ "$CODE" -eq 0 ] || why "exit $CODE"
 [ "$(q "[r['tag'] for r in s['releases'] if r['tag']=='$T2']")" = "[]" ] || why "the trial draft remains"
 check "clean-up: the throwaway trial's tag (test-nightly-cleanup-<date>) is accepted"
