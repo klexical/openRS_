@@ -3,8 +3,8 @@ name: Nightly
 # One build a night from staging's tip (#363). DRY-RUN
 # MODE while PUBLISH is false: every run stops after the attestation, and the two jobs that hold a token able to write
 # contents (publish, cleanup) are skipped, so no release or tag is made. They run only when PUBLISH is true AND the run
-# is on main (a manual run on another ref runs that ref's copy of this file); T7 flips PUBLISH after two green dry-run
-# nights.
+# is on main (a manual run on another ref runs that ref's copy of this file); PUBLISH is set to true in a change of its
+# own, after two green dry-run nights.
 #
 # GitHub runs the schedule (and offers "Run workflow") only from this file on the default branch, main, whose tree is
 # the 2.2.6 one. So every step that runs a repository script or Gradle runs in a checkout of staging's tip, the commit
@@ -26,7 +26,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  PUBLISH: 'false'            # dry-run mode (#363): flipping it is T7's one small change, after two green dry-run nights
+  PUBLISH: 'false'            # dry-run mode (#363): set to true in a change of its own, after two green dry-run nights
 
 jobs:
   # The publish output, from this file's PUBLISH alone: no checkout, no repository code, so nothing on staging can set it
