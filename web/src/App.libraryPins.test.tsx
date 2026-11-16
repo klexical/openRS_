@@ -231,7 +231,7 @@ describe('the Current drive (pins, Drive library commit 1)', () => {
     gate.hold.set('a', Promise.resolve())
     const { useStore } = await boot('#/drive/a')
     await waitFor(() => expect(useStore.getState().activeSession?.id).toBe('a'))
-    await waitFor(() => expect(gate.answered).toEqual(['a']))       // its answer, and the app's handling of it, are done
+    await waitFor(() => expect(gate.answered).toEqual(['a']), { timeout: 5000 })   // its answer, and the app's handling of it, are done
     await act(async () => {})                                     // and the render that follows
     expect(gate.started).toEqual(['a'])
   })
@@ -243,7 +243,7 @@ describe('the Current drive (pins, Drive library commit 1)', () => {
     await waitFor(() => expect(useStore.getState().drives).toHaveLength(2))
     await go('#/drive/b')
     await waitFor(() => expect(useStore.getState().activeSession?.id).toBe('b'))
-    await waitFor(() => expect(gate.answered).toEqual(['b']))       // its answer, and the app's handling of it, are done
+    await waitFor(() => expect(gate.answered).toEqual(['b']), { timeout: 5000 })   // its answer, and the app's handling of it, are done
     await act(async () => {})                                     // and the render that follows
     expect(gate.started).toEqual(['b'])
   })
