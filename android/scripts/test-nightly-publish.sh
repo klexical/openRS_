@@ -257,6 +257,7 @@ for c in "a draft:true:true:$SHA:" "a published release that is not a pre-releas
   if [ "$extra" = corrupt ]; then run_publish "$PREV" FAKE_CORRUPT=1; else run_publish; fi
   [ "$CODE" -ne 0 ] || why "exit 0: a re-run would turn green over it"
   [[ "$OUT" == *"::error::"* ]] || why "no ::error:: line"
+  [ "$d" = false ] || [[ "$OUT" == *"already has a draft"* ]] || why "the draft case does not say it found a draft"
   nothing_written
   [ "$(q "[r['tag'] for r in s['releases'] if r['tag']=='$TAG']")" = "['$TAG']" ] || why "the release was deleted"
   check "publish: today's tag already has $label: the step fails and deletes nothing"
@@ -405,7 +406,8 @@ check "clean-up: a tag still there after a delete that reported success fails th
 
 # F1 (QA's FINAL on r4): only this run attempt's draft is deleted; anything else fails and deletes nothing
 for c in "an earlier run:$(mark 7531 1)" "an earlier attempt of this run:$(mark "$RUN_ID" 2)" "attempt 12 (a near miss for 1):$(mark "$RUN_ID" 12)" \
-         "another commit in its line:$(mark "$RUN_ID" "$RUN_ATT" "$OTHER")" "no run line:notes"; do
+         "another commit in its line:$(mark "$RUN_ID" "$RUN_ATT" "$OTHER")" "no run line:notes" \
+         "the run line inside a longer line (a pull request's title):* Fix $(mark) by @someone in #1"; do
   label=${c%%:*}; body=${c#*:}
   WHY=""; state "[$EXISTING,$(rel_json "$TAG" true true "$SHA" "$body")]" "{\"$TAG\": \"$SHA\"}"; run_cleanup
   fail_closed "not this run attempt's"; nothing_written
