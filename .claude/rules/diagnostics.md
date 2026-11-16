@@ -152,6 +152,7 @@ paths:
   over Bluetooth, notifications / SLCAN lines / most lines in one, summed over the session's attempts. Edges are strictly
   over (50 / 200 / 700, 32 / 100 / 700, 5 / 50 / 200 ms); never a clock time. Every counter resets at `sessionStart` and
   is read in the one `ExportCounters` snapshot; the block is absent before the first connection and its Bluetooth part for
-  a session that is not Bluetooth. Additive: no schema bump; not in drives, Sapphire ignores it. Frames under an overlay
-  (Settings, Custom Dashboard) count to the tab beneath; a swipe's frames to the tab it left (`UiTimingTest`,
-  `UiTimingExportTest`, `BleTransportTest`, `BleMtuContextExportTest`)
+  a session that is not Bluetooth. Additive: no schema bump; not in drives, Sapphire ignores it. The listener sees the
+  activity's window only: a dialog window's own frames (Settings, the BLE picker) are not counted; the Custom Dashboard
+  overlay's count to the tab beneath; a swipe's frames to the tab it left (`UiTimingTest`, `UiTimingExportTest`,
+  `BleTransportTest`, `BleMtuContextExportTest`)
