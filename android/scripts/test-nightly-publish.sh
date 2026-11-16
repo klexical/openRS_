@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # test-nightly-publish.sh — checks nightly-publish.sh and nightly-cleanup.sh, the publishing half of the nightly (#363):
 #   - publish stops quietly, creating nothing, when today's tag is already published and checks out as step 5 checks it (a
-#     pre-release, its tag at the recorded commit, not Latest, one asset with the digest), or has a tag ref and no release;
-#     a draft for today's tag, or a published release that does not check out, fails and deletes nothing; it fails closed
+#     pre-release, its tag at the recorded commit, not Latest, one asset with the digest); a draft for today's tag, a
+#     published release that does not check out, or a tag ref with no release fails and deletes nothing; it fails closed
 #     on a release list that is not a JSON list and on a tag lookup that fails with anything but 404;
 #   - otherwise: notes from the generate-notes API from the gate's base tag (the list, then the SHA-256 line, then the
 #     changelog link; on the first nightly the rc.8 line), a draft pre-release at the recorded commit with Latest off, the
