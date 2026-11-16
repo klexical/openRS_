@@ -1,6 +1,7 @@
 package com.openrs.dash
 
 import com.openrs.dash.can.BleAdapterProfile
+import com.openrs.dash.can.BleDeliveryCounts
 import com.openrs.dash.can.BleGattCore
 import com.openrs.dash.can.BleMtuTrace
 import com.openrs.dash.can.BleSetupPolicy
@@ -166,6 +167,7 @@ class BleMtuContextExportTest {
         override val stockFirmwareLabel = "fake"
         override val kind = "Bluetooth"
         override val bleMtu: BleMtuTrace get() = core.mtuTrace
+        override val bleDelivery: BleDeliveryCounts get() = core.delivery   // as BleSlcanTransport (#421)
     }
 
     private class WifiFake(val scope: TestScope) : SlcanTransport {
@@ -209,6 +211,21 @@ class BleMtuContextExportTest {
         val (line, j) = export()
         assertEquals("attempt 2 · requested 247 · callback GATT 133, MTU 23 (not applied) · in use 23 (fallback), writes up to 20 bytes", line)
         assertEquals(2, j!!.getInt("attempt"))
+    }
+
+    @Test fun `#421 reconnect - the export's Bluetooth delivery is the session's, both attempts added`() = runTest {
+        val built = mutableListOf<BleFake>()
+        val conn = connect { BleFake(this, Mtu(mtu = 185)).also { built += it } }
+        waitFor("first link up") { conn.transport != null && built[0].core.delivery.read().notifications > 0 }
+        assertEquals(built[0].core.delivery.read(), DiagnosticLogger.exportCounters.uiTiming!!.bluetooth)
+
+        built[0].core.onDisconnected(8)
+        waitFor("second link up") { built.size == 2 && conn.transport != null && built[1].core.delivery.read().notifications > 0 }
+        val first = built[0].core.delivery.read(); val second = built[1].core.delivery.read()
+        val bt = JSONObject(DiagnosticReportBuilder.buildSummaryAndDetail("t").second).getJSONObject("uiTiming").getJSONObject("bluetooth")
+        assertEquals(first.notifications + second.notifications, bt.getLong("notifications"))
+        assertEquals(first.lines + second.lines, bt.getLong("slcanLines"))
+        assertEquals(1L, bt.getLong("mostLinesInOneNotification"))
     }
 
     @Test fun `Wi-Fi - the export has no MTU line and no bleMtu block`() = runTest {

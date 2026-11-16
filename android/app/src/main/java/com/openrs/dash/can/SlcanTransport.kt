@@ -57,6 +57,9 @@ interface SlcanTransport {
 
     /** This attempt's MTU request and answer; only a Bluetooth transport has one (#253). */
     val bleMtu: BleMtuTrace? get() = null
+
+    /** This attempt's notification and line counts for the export's UI timing; only a Bluetooth transport has them (#421). */
+    val bleDelivery: BleDeliveryCounts? get() = null
 }
 
 /**

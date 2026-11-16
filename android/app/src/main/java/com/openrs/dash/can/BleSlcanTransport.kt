@@ -47,6 +47,7 @@ class BleSlcanTransport(
     override val label: String get() = "BLE $deviceName ($macAddress)${core.profile?.let { " · ${it.name}" } ?: ""}"
     override val kind: String get() = "Bluetooth"
     override val bleMtu: BleMtuTrace get() = core.mtuTrace
+    override val bleDelivery: BleDeliveryCounts get() = core.delivery
     override val stockFirmwareLabel: String get() = "WiCAN (BLE)"
 
     private inner class AndroidLink(private val g: BluetoothGatt, private val device: BluetoothDevice) : GattLink {
