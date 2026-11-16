@@ -405,7 +405,9 @@ describe('Drive library: the Current drive', () => {
     load.mockClear()
     env.useStore.getState().setActiveSessionId(null)
     env.useStore.getState().setActiveSessionId('a')                              // detached: nothing follows the store
-    expect(load).not.toHaveBeenCalled()                                          // a subscription would have read at once
+    // eslint-disable-next-line no-restricted-syntax -- a check that nothing happens has no condition to wait on: one task proves a subscription left behind, even one put off by a task, would have read by now (F8, Q57)
+    await new Promise((r) => setTimeout(r, 0))
+    expect(load).not.toHaveBeenCalled()
   })
 })
 

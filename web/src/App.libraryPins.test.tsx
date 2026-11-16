@@ -234,7 +234,7 @@ describe('the Current drive (pins, Drive library commit 1)', () => {
     await waitFor(() => expect(gate.answered).toEqual(['a']), { timeout: 5000 })   // its answer, and the app's handling of it, are done
     await act(async () => {})                                     // and the render that follows
     expect(gate.started).toEqual(['a'])
-  })
+  }, 15_000)   // the 5 s wait above fails by its own message before the test's limit (F2)
 
   it('a drive opened from the list is read once', async () => {
     await seed([drive('a', 1), drive('b', 2)])
@@ -246,7 +246,7 @@ describe('the Current drive (pins, Drive library commit 1)', () => {
     await waitFor(() => expect(gate.answered).toEqual(['b']), { timeout: 5000 })   // its answer, and the app's handling of it, are done
     await act(async () => {})                                     // and the render that follows
     expect(gate.started).toEqual(['b'])
-  })
+  }, 15_000)   // the 5 s wait above fails by its own message before the test's limit (F2)
 })
 
 describe('the compared drives (pins, Drive library commit 1)', () => {

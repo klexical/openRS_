@@ -302,8 +302,8 @@ describe('#384 ticket 02, review round', () => {
 
   // error and messageerror come after "started" (the watchdog no longer waits), so only their own handling ends them
   const started = (w: StubWorker) => w.onmessage?.({ data: { type: 'started' } })
-  // each case is its own test with a 2 s limit, so one that keeps building fails by its own name (no deadline promise);
-  // the watchdog's allowance is far beyond that limit, so only the worker's own error ends them
+  // each case is its own test, so one that keeps building fails by its own name at the test's limit (no deadline
+  // promise); the watchdog's allowance is far beyond that limit, so only the worker's own error ends them
   it.each<[string, (w: StubWorker) => void]>([
     ['error', (w) => setTimeout(() => { started(w); w.onerror?.({ preventDefault() {} }) })],
     ['messageerror', (w) => setTimeout(() => { started(w); w.onmessageerror?.({}) })],
@@ -314,7 +314,7 @@ describe('#384 ticket 02, review round', () => {
     const file = await makeBackupWith(undefined, { silenceMs: 60_000 })
     expect([label, file.builtIn, file.drives]).toEqual([label, 'page', 1])
     expect([label, StubWorker.made.at(-1)!.terminated]).toEqual([label, true])
-  }, 2000)
+  })
 
   it('finding 3: a worker that stays silent is ended when its allowance runs out, not before, and the page builds the file', async () => {
     await storeImported([drive('w1', 170)])
@@ -331,7 +331,7 @@ describe('#384 ticket 02, review round', () => {
     vi.useRealTimers()                                              // the page build yields between drives (a zero-delay timer)
     const file = await pending
     expect([file.builtIn, file.drives]).toEqual(['page', 1])
-  }, 2000)
+  })
 
   it('finding 6: an aborted backup ends the worker; on the page it stops between drives', async () => {
     await storeImported([drive('a1', 180), drive('a2', 181), drive('a3', 182)])

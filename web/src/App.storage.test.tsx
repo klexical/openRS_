@@ -199,7 +199,11 @@ describe('#384 ticket 02, review round: the backup button', () => {
     // in one go: the worker's file arrives, and Settings is left before the page acts on it
     HeldWorker.made[0].onmessage?.({ data: { type: 'done', blob: new Blob(['x']), name: 'sapphire-backup-2096-01-01.zip', drives: 1 } })
     unmount()
-    await act(async () => {})                                  // anything the page does with the file is done
+    await act(async () => {})                                  // anything the page does with the file at once is done
+    await act(async () => {
+      // eslint-disable-next-line no-restricted-syntax -- a check that nothing happens has no condition to wait on: one task proves the page did not give the file an address even one task later (F8, Q57)
+      await new Promise((r) => setTimeout(r, 0))
+    })
     expect(created).toEqual([])
   }, 15_000)
 
