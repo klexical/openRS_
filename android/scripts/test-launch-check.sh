@@ -26,6 +26,10 @@ mkdir -p "$WORK/bin" "$WORK/cwd"
 #    after a closed call the device is gone (get-state and devices say so). ──
 cat > "$WORK/bin/adb" <<'STUB'
 #!/usr/bin/env bash
+# A fake started by an earlier case (a liveness-trace call still starting when that case ended) does nothing here: its
+# lines would land in this case's logs (PR 417's F1: under load, the first line of a case's calls was the last case's)
+{ read -r cur < "$WORK/run-id"; } 2>/dev/null || cur=""
+[ -z "${FAKE_RUN-}" ] || [ "$FAKE_RUN" = "$cur" ] || exit 1
 echo "$*" >> "$WORK/calls"
 gone() { [ -f "$WORK/gone" ]; }
 hit() {   # hit <name>: act on FAKE_CLOSED_AT / FAKE_HANG_AT for this call
@@ -54,6 +58,14 @@ case "$*" in
   "shell pidof com.openrs.dash"*)  perl -MTime::HiRes=time -e 'printf "%.3f\n", time' >> "$WORK/pidof-times"
                                    n=$(cat "$WORK/pidof-n" 2>/dev/null || echo 0); n=$((n + 1)); echo $n > "$WORK/pidof-n"
                                    hit "pidof$n"
+                                   # FAKE_PIDOF1_AFTER_TRACE: the check after the start answers only once the trace has
+                                   # written its first line (up to 1.5 s, under the fake timeout's 2 s), so a case can
+                                   # rely on that sample coming first (PR 417's F2; launch-check's folder is in TMPDIR)
+                                   if [ $n -eq 1 ] && [ -n "${FAKE_PIDOF1_AFTER_TRACE-}" ]; then
+                                     for i in $(seq 1 15); do
+                                       for f in "$TMPDIR"/launch-check.*/a1/trace; do [ -s "$f" ] && break 2; done; sleep 0.1
+                                     done
+                                   fi
                                    if [ $n -eq 1 ]; then p="${FAKE_PID1-}"; else p="${FAKE_PID2-}"; fi
                                    [ -z "$p" ] || printf '%s\r\n' "$p"
                                    [ -n "$p" ] || [[ "$*" == *"|| true" ]] || exit 1 ;;
@@ -80,6 +92,10 @@ STUB
 #    (default 2) with GNU timeout's status 124. ──
 cat > "$WORK/bin/timeout" <<'STUB'
 #!/usr/bin/env bash
+# A fake started by an earlier case (a liveness-trace call still starting when that case ended) does nothing here: its
+# lines would land in this case's logs (PR 417's F1: under load, the first line of a case's calls was the last case's)
+{ read -r cur < "$WORK/run-id"; } 2>/dev/null || cur=""
+[ -z "${FAKE_RUN-}" ] || [ "$FAKE_RUN" = "$cur" ] || exit 1
 echo "$1 $2" >> "$WORK/timeouts"; shift
 "$@" & child=$!
 # The timer marks the timeout BEFORE it kills, and the marker decides: asking whether the timer is still alive raced
@@ -164,12 +180,16 @@ printf '%s\n' "[  812.1] usb 1-1: new device" "[  901.5] Out of memory: Killed p
   "[  901.6] oom-kill:constraint=CONSTRAINT_NONE,task=qemu-system-x86,pid=$DEAD_PID,uid=1001" > "$WORK/dmesg-out"
 
 # run <wait seconds> <log text> [env...]  (from $WORK/cwd, where emulator.log is)
+# Each case that runs the check gets its own number (FAKE_RUN, and $WORK/run-id for the fakes): PR 417's F1
+RUN_N=0
+next_run() { RUN_N=$((RUN_N + 1)); echo "$RUN_N" > "$WORK/run-id"; }
 run() {
   local wait="$1" log="$2"; shift 2
+  next_run
   rm -f "$WORK/calls" "$WORK/log-cleared" "$WORK/pidof-n" "$WORK/pidof-times" "$WORK/gone" "$WORK/timeouts" "$WORK/restarted" "$WORK/date-broken"
   printf '%s' "$log" > "$WORK/log"
   rm -f "$WORK/summary" "$WORK/restarts"
-  OUT=$(cd "$WORK/cwd" && env PATH="$WORK/bin:$PATH" WORK="$WORK" FAKE_PID1=4242 FAKE_PID2=4242 \
+  OUT=$(cd "$WORK/cwd" && env PATH="$WORK/bin:$PATH" WORK="$WORK" FAKE_RUN="$RUN_N" FAKE_PID1=4242 FAKE_PID2=4242 \
         FAKE_EMULATOR_PS="2711 qemu-system-x86_64-headless -avd nightly" LAUNCH_TRACE_S=0.2 LAUNCH_HANDLER_WAIT_S=1 \
         LAUNCH_CRASH_DIR="$WORK/crash" LAUNCH_START_EMULATOR="$WORK/bin/start-emulator" GITHUB_STEP_SUMMARY="$WORK/summary" \
         "$@" bash "$SCRIPT" "$APK" "$wait" 2>&1); CODE=$?
@@ -234,7 +254,10 @@ WHY=""; run 0 ""
 n=$(grep -v -c '^shell p=' "$WORK/calls"); t=$(grep -c '^60 adb$' "$WORK/timeouts" 2>/dev/null || echo 0)
 [ "$t" -eq "$n" ] || why "$t of $n adb calls ran under timeout 60"
 [ -z "$(grep ' adb$' "$WORK/timeouts" | grep -v -E '^(60|3) adb$')" ] || why "an adb call under another limit: $(sort -u "$WORK/timeouts" | tr '\n' ' ')"
-[ "$(grep -c '^shell p=' "$WORK/calls")" -eq "$(grep -c '^3 adb$' "$WORK/timeouts")" ] || why "a liveness trace call not under timeout 3"
+# The trace makes one call at a time, and the fake timeout logs its limit before it starts adb: a trace stopped in
+# between leaves one "3 adb" more than its calls (PR 417's F1). A trace call outside timeout 3 makes the calls outnumber it.
+p3=$(grep -c '^shell p=' "$WORK/calls"); t3=$(grep -c '^3 adb$' "$WORK/timeouts")
+[ "$p3" -le "$t3" ] && [ "$t3" -le $((p3 + 1)) ] || why "a liveness trace call not under timeout 3 ($p3 trace calls, $t3 under timeout 3)"
 check "every adb call runs under timeout 60, the liveness trace's under timeout 3"
 
 WHY=""; run 1 ""
@@ -440,12 +463,12 @@ WHY=""; OUT=$(env PATH="$WORK/bin:$PATH" WORK="$WORK" bash "$SCRIPT" "$APK" ten 
 # run_vanish [env...]: the process check after the wait loses the device ("error: closed"), the emulator.pid process is
 # gone and no emulator process is left; the trace answers the app's process id; the job started just now
 run_vanish() {
-  local cwd="$WORK/rcwd"; rm -rf "$cwd"; mkdir -p "$cwd"
+  local cwd="$WORK/rcwd"; rm -rf "$cwd"; mkdir -p "$cwd"; next_run
   cp "$WORK/emulator.log.plain" "$cwd/emulator.log"; echo "$DEAD_PID" > "$cwd/emulator.pid"
   date +%s > "$cwd/emulator.started"; echo "system-images;android-36;google_apis;x86_64" > "$cwd/emulator.args"
   rm -f "$WORK/calls" "$WORK/log-cleared" "$WORK/pidof-n" "$WORK/gone" "$WORK/timeouts" "$WORK/restarted" "$WORK/summary" "$WORK/restarts" "$WORK/date-broken"
   printf '%s' "" > "$WORK/log"
-  OUT=$(cd "$cwd" && env PATH="$WORK/bin:$PATH" WORK="$WORK" FAKE_PID1=4242 FAKE_PID2=4242 FAKE_EMULATOR_PS= \
+  OUT=$(cd "$cwd" && env PATH="$WORK/bin:$PATH" WORK="$WORK" FAKE_RUN="$RUN_N" FAKE_PID1=4242 FAKE_PID2=4242 FAKE_EMULATOR_PS= \
         FAKE_CLOSED_AT=pidof2 LAUNCH_TRACE_S=0.2 LAUNCH_HANDLER_WAIT_S=1 LAUNCH_CRASH_DIR="$WORK/crash" \
         LAUNCH_START_EMULATOR="$WORK/bin/start-emulator" GITHUB_STEP_SUMMARY="$WORK/summary" "$@" \
         bash "$SCRIPT" "$APK" 1 2>&1); CODE=$?
@@ -483,7 +506,10 @@ for c in "FAKE_EMULATOR_PS=2711 qemu-system-x86_64-headless -avd nightly:an emul
          "FAKE_TRACE_PID=:no sample answered after the process check|the app's process was none" \
          "FAKE_TRACE_PID=5151:the app's process was 5151 at the last answer, not 4242" \
          "LAUNCH_TRACE_S=600:no sample answered after the process check"; do
-  WHY=""; run_vanish "${c%%:*}"
+  # LAUNCH_TRACE_S=600: one sample, and it must come before the check after the start (PR 417's F2: under load it came
+  # after it, and its answer then allowed a retry)
+  extra=(); [ "${c%%:*}" != LAUNCH_TRACE_S=600 ] || { mkdir -p "$WORK/tmpd"; extra=(FAKE_PIDOF1_AFTER_TRACE=1 TMPDIR="$WORK/tmpd"); }
+  WHY=""; run_vanish "${c%%:*}" ${extra[@]+"${extra[@]}"}
   [ "$CODE" -ne 0 ] || why "exit 0"
   [ ! -s "$WORK/restarts" ] || why "the emulator was started again"
   grep -qE "No retry: (${c#*:})" <<<"$OUT" || why "no 'No retry: ${c#*:}' line"
@@ -519,8 +545,8 @@ WHY=""; cwd="$WORK/rcwd"; run_vanish
 started_late=$(( $(date +%s) - 700 ))
 rm -rf "$cwd"; mkdir -p "$cwd"; cp "$WORK/emulator.log.plain" "$cwd/emulator.log"; echo "$DEAD_PID" > "$cwd/emulator.pid"
 echo "$started_late" > "$cwd/emulator.started"; echo "img" > "$cwd/emulator.args"
-rm -f "$WORK/calls" "$WORK/pidof-n" "$WORK/gone" "$WORK/restarted" "$WORK/summary" "$WORK/restarts"
-OUT=$(cd "$cwd" && env PATH="$WORK/bin:$PATH" WORK="$WORK" FAKE_PID1=4242 FAKE_PID2=4242 FAKE_EMULATOR_PS= FAKE_CLOSED_AT=pidof2 \
+rm -f "$WORK/calls" "$WORK/pidof-n" "$WORK/gone" "$WORK/restarted" "$WORK/summary" "$WORK/restarts"; next_run
+OUT=$(cd "$cwd" && env PATH="$WORK/bin:$PATH" WORK="$WORK" FAKE_RUN="$RUN_N" FAKE_PID1=4242 FAKE_PID2=4242 FAKE_EMULATOR_PS= FAKE_CLOSED_AT=pidof2 \
       LAUNCH_TRACE_S=0.2 LAUNCH_HANDLER_WAIT_S=1 LAUNCH_CRASH_DIR="$WORK/crash" LAUNCH_START_EMULATOR="$WORK/bin/start-emulator" \
       GITHUB_STEP_SUMMARY="$WORK/summary" bash "$SCRIPT" "$APK" 1 2>&1); CODE=$?
 [ ! -s "$WORK/restarts" ] || why "started again with too little time"
