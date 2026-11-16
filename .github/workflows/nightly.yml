@@ -276,7 +276,7 @@ jobs:
           SHA256: ${{ needs.release.outputs.sha256 }}
         run: bash android/scripts/nightly-publish.sh "$TAG" "openRS_ v$NAME" "$SHA" "$BASE_TAG" "release-apk/openRS_v${NAME}.apk" "$SHA256"
 
-  # When publish fails, is cancelled or times out: delete this run's draft and its tag, never a published release
+  # When publish fails, is cancelled or times out: delete this run attempt's draft and its tag, never a published release
   # (nightly-cleanup.sh). always() lets it run after a failure or a cancellation.
   cleanup:
     name: Delete a failed run's draft

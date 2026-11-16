@@ -2,9 +2,10 @@
 # nightly-publish.sh <tag> <title> <sha> <base tag> <file> <sha256> — the nightly's publishing step (#363). Needs
 # GH_TOKEN with contents: write and GITHUB_REPOSITORY. In order:
 #   1. when <tag> already has a release (this token is shown drafts, the gate's read-only one is not): a published one is
-#      checked as step 5 checks it, and a quiet stop (exit 0, nothing created) only if it checks out; a draft, or a
-#      release that does not check out, fails the step (a re-run then stays red until someone looks), and nothing is
-#      deleted. A tag ref with no release is a quiet stop;
+#      checked as step 5 checks it, and a quiet stop (exit 0, nothing created) only if it checks out; a draft, a
+#      release that does not check out, or a tag ref with no release fails the step, and nothing is deleted here
+#      ("Re-run failed jobs" then stays red until someone looks; "Re-run all jobs" re-runs the gate, which skips quietly
+#      when today already has a nightly or a tag);
 #   2. notes: GitHub's generated list of merged pull requests since <base tag> (the newest published nightly, rc.8 for the
 #      first), then the SHA-256 line, then the changelog link at <sha>; on the first nightly the rc.8 line;
 #   3. a DRAFT pre-release for <tag> at <sha>, Latest off, whose notes end with a line naming this run and attempt
@@ -66,7 +67,8 @@ check_published() {
   [ "$LATEST" != "$TAG" ] || fail "$TAG is marked Latest; a nightly never is"
 }
 
-# 1. Today's tag already taken: a published release that checks out is a quiet stop; a draft, or one that does not, fails
+# 1. Today's tag already taken: a published release that checks out is a quiet stop; a draft, one that does not, or a tag
+#    with no release fails (the gate skips a day with a tag, so it is a leftover or made by hand)
 RELEASES=$(gh release list --repo "$R" --limit 1000 --json tagName,isDraft,isPrerelease) || fail "the release list could not be read"
 jq -e 'type == "array"' >/dev/null 2>&1 <<<"$RELEASES" || fail "the release list is not a JSON list (empty, or an error), so nothing is created"
 STATE=$(jq -r --arg t "$TAG" '[.[] | select(.tagName == $t) | if .isDraft then "draft" elif .isPrerelease then "pre-release" else "published release" end] | first // empty' <<<"$RELEASES")
@@ -79,7 +81,7 @@ if [ -n "$STATE" ]; then
   exit 0
 fi
 EXISTING=$(tag_ref "$TAG")
-if [ -n "$EXISTING" ]; then summary "Nothing published: $TAG already has a tag (at $EXISTING) with no release; nothing created or deleted."; exit 0; fi
+[ -z "$EXISTING" ] || fail "$TAG already has a tag (at $EXISTING) with no release: a leftover or made by hand; nothing published or deleted (the clean-up deletes it only at $SHA)"
 
 # 2. Notes: the generated list, then the SHA-256 line, then the changelog link, in that order (gh's --notes text would come
 #    before the generated list, so the notes are composed here)

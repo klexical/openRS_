@@ -75,9 +75,10 @@ paths:
     failure included),
     `attest`, then `publish` and `cleanup` (#363), the only jobs with `contents: write`, each only when the mode's
     publish output is `'true'`, the run is on main and the gate said build. `publish` (`scripts/nightly-publish.sh`)
-    stops quietly only when today's tag is already published and checks out as its last step checks it, or has a tag and
-    no release; a draft for today's tag (its token is shown drafts), or a release that does not check out, fails the
-    step and deletes nothing, so a re-run stays red; else notes
+    stops quietly only when today's tag is already published and checks out as its last step checks it; a draft for
+    today's tag (its token is shown drafts), a release that does not check out, or a tag with no release fails the step
+    and deletes nothing, so "Re-run failed jobs" stays red ("Re-run all jobs" re-runs the gate, which skips quietly when
+    today already has a nightly or a tag); else notes
     from the generate-notes API from the gate's `base_tag` (the list, the SHA-256 line, the changelog link), a draft
     pre-release at the commit whose notes end with a line naming the run and attempt (`GITHUB_RUN_ID`, `GITHUB_RUN_ATTEMPT`;
     the published notes do not carry it), one upload, exactly one asset whose bytes match the digest, then a pre-release with Latest

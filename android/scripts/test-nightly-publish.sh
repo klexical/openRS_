@@ -263,11 +263,27 @@ for c in "a draft:true:true:$SHA:" "a published release that is not a pre-releas
   check "publish: today's tag already has $label: the step fails and deletes nothing"
 done
 
+# A tag with no release in step 1 is a leftover or made by hand (the gate skips a day with a tag): the step fails, so the
+# clean-up runs; it deletes the tag only at the recorded commit, and the next "Re-run failed jobs" (attempt 2) publishes
+WHY=""; state "[$EXISTING]" "{\"$TAG\": \"$SHA\"}"; run_publish
+fail_closed "with no release"; nothing_written
+[ "$(q "s['tags'].get('$TAG')")" = "$SHA" ] || why "the tag is now at $(q "s['tags'].get('$TAG')")"
+check "publish: today's tag exists at the commit without a release: the step fails and deletes nothing"
+WHY=""; run_cleanup
+[ "$CODE" -eq 0 ] || why "clean-up exit $CODE"
+[ "$(q "s['tags'].get('$TAG')")" = "None" ] || why "the clean-up left the tag at $(q "s['tags'].get('$TAG')")"
+run_publish "$PREV" GITHUB_RUN_ATTEMPT=2
+[ "$CODE" -eq 0 ] || why "the re-run's publish exit $CODE"
+[ "$(q "[(r['draft'], r['prerelease'], r['target']) for r in s['releases'] if r['tag']=='$TAG']")" = "[(False, True, '$SHA')]" ] \
+  || why "after the re-run: $(q "[r for r in s['releases'] if r['tag']=='$TAG']")"
+check "publish then clean-up: the tag at the commit is deleted, and the next Re-run failed jobs publishes"
+
 WHY=""; state "[$EXISTING]" "{\"$TAG\": \"$OTHER\"}"; run_publish
-[ "$CODE" -eq 0 ] || why "exit $CODE"
-[[ "$OUT" == *"already has a tag"* ]] || why "the log does not say why it stopped"
-nothing_written
-check "publish: today's tag exists without a release: a quiet stop, nothing created or deleted"
+fail_closed "with no release"; nothing_written
+run_cleanup
+fail_closed "another commit"; nothing_written
+[ "$(q "s['tags'].get('$TAG')")" = "$OTHER" ] || why "the tag at another commit was touched"
+check "publish and clean-up: today's tag at another commit without a release: both fail, nothing is deleted"
 
 for raw in "" "not json" '{"message":"Bad credentials"}'; do
   WHY=""; state "[$EXISTING]" '{}'; run_publish "$PREV" FAKE_LIST_RAW="$raw"
@@ -424,6 +440,11 @@ for c in "an earlier run:$(mark 7531 1)" "an earlier attempt of this run:$(mark 
   [ "$(q "s['tags'].get('$TAG')")" = "$SHA" ] || why "the tag was deleted"
   check "clean-up: a draft for today's tag from $label is never deleted, nor its tag"
 done
+
+WHY=""; state "[$EXISTING,$(rel_json "$TAG" true true "$SHA" $'* A merged pull request\r\n\r\n'"$(mark)"$'\r\n')]" "{\"$TAG\": \"$SHA\"}"; run_cleanup
+[ "$CODE" -eq 0 ] || why "exit $CODE"
+[ "$(q "[r['tag'] for r in s['releases'] if r['tag']=='$TAG']")" = "[]" ] || why "this attempt's draft remains"
+check "clean-up: this attempt's draft whose notes come back with CRLF line endings is deleted"
 
 WHY=""; state "[$EXISTING,$(rel_json "$TAG" true true "$OTHER" "$(mark)")]" '{}'; run_cleanup
 fail_closed "not this run attempt's"; nothing_written
