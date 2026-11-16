@@ -155,4 +155,40 @@ class UiTimingExportTest {
         DiagnosticLogger.connectionAttempt(null, null)
         assertNull(DiagnosticLogger.exportCounters.uiTiming!!.bluetooth)
     }
+
+    /**
+     * The logger is process-wide and an earlier test class has started a session, so "before the first connection of
+     * this app run" is reached by setting its session start back to 0 (restored after), as a fresh process has it.
+     */
+    @Test fun `live export - before the first connection the logger gives no block and the summary says nothing was counted`() {
+        DiagnosticLogger.sessionStart("Bluetooth", 0, prefs = null, transport = "Bluetooth (MeatPi Pro)")
+        DiagnosticLogger.linkLockWait.waited(0, 60 * ms)                 // counts exist: only the gate can hide them
+        val f = DiagnosticLogger::class.java.getDeclaredField("sessionStartMs").apply { isAccessible = true }
+        val saved = f.getLong(null)
+        try {
+            f.setLong(null, 0L)
+            assertNull(DiagnosticLogger.exportCounters.uiTiming)
+            val (text, detail) = DiagnosticReportBuilder.buildSummaryAndDetail("t")
+            assertFalse(JSONObject(detail).has("uiTiming"))
+            assertEquals(listOf(
+                "─── UI TIMING ─────────────────────────────────────────────",
+                "  no connection yet in this app run: nothing counted",
+            ), section(text))
+        } finally {
+            f.setLong(null, saved)
+        }
+        assertNotNull("control: the same counters export once a session has started", DiagnosticLogger.exportCounters.uiTiming)
+    }
+
+    @Test fun `frames are counted only inside a session - the flag is set at sessionStart and cleared at sessionEnd`() {
+        DiagnosticLogger.sessionEnd()
+        assertFalse(DiagnosticLogger.uiTimingCounting)
+        DiagnosticLogger.sessionStart("Bluetooth", 0, prefs = null, transport = "Bluetooth (MeatPi Pro)")
+        assertTrue(DiagnosticLogger.uiTimingCounting)
+        DiagnosticLogger.frameTimes.frame(0, 40 * ms)
+        DiagnosticLogger.sessionEnd()
+        assertFalse(DiagnosticLogger.uiTimingCounting)
+        assertEquals("the ended session's counts stay for the export", 1L,
+            DiagnosticLogger.exportCounters.uiTiming!!.frames.getValue("DRIVE").count)
+    }
 }
