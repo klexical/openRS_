@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # nightly-publish.sh <tag> <title> <sha> <base tag> <file> <sha256> — the nightly's publishing step (#363). Needs
 # GH_TOKEN with contents: write and GITHUB_REPOSITORY. In order:
-#   1. stop quietly (exit 0, nothing created) when <tag> already has a release in any state (a draft included: this token
-#      is shown drafts, the gate's read-only one is not) or a tag ref;
+#   1. when <tag> already has a release (this token is shown drafts, the gate's read-only one is not): a published one is
+#      checked as step 5 checks it, and a quiet stop (exit 0, nothing created) only if it checks out; a draft, or a
+#      release that does not check out, fails the step (a re-run then stays red until someone looks), and nothing is
+#      deleted. A tag ref with no release is a quiet stop;
 #   2. notes: GitHub's generated list of merged pull requests since <base tag> (the newest published nightly, rc.8 for the
 #      first), then the SHA-256 line, then the changelog link at <sha>; on the first nightly the rc.8 line;
 #   3. a DRAFT pre-release for <tag> at <sha>, Latest off, whose notes end with a line naming this run and attempt
@@ -46,11 +48,36 @@ tag_ref() {
   echo "::error::the tag ref $1 could not be read: $(cat "$err")" >&2; rm -f "$err"; exit 1
 }
 
-# 1. Today's tag already taken, in any state: a quiet stop
+# check_published <what>: the release for <tag> must be a published pre-release holding exactly the one asset <file>,
+# whose downloaded bytes match <sha256>, its tag at <sha>, and not the release marked Latest (steps 1 and 5)
+check_published() {
+  local view pubcheck
+  view=$(gh release view "$TAG" --repo "$R" --json isDraft,isPrerelease,assets) || fail "the $1 $TAG could not be read"
+  jq -e '.isDraft == false and .isPrerelease == true' >/dev/null <<<"$view" || fail "$TAG is not a published pre-release ($1)"
+  jq -e --arg a "$ASSET" '[.assets[].name] == [$a]' >/dev/null <<<"$view" \
+    || fail "the $1 $TAG does not hold exactly one asset $ASSET: $(jq -c '[.assets[].name]' <<<"$view")"
+  pubcheck=$(mktemp -d)
+  gh release download "$TAG" --repo "$R" --pattern "$ASSET" --dir "$pubcheck" || fail "the $1 $ASSET could not be downloaded"
+  [ "$(sha256 "$pubcheck/$ASSET")" = "$SHA256" ] || fail "the $1 $ASSET does not match the digest $SHA256"
+  AT=$(tag_ref "$TAG")
+  [ "$AT" = "$SHA" ] || fail "the $1 tag $TAG points at '${AT:-nothing}', not $SHA"
+  LATEST_ERR=$(mktemp); LATEST=$(gh api "repos/$R/releases/latest" --jq .tag_name 2>"$LATEST_ERR") \
+    || grep -q 'HTTP 404' "$LATEST_ERR" || fail "the release marked Latest could not be read: $(cat "$LATEST_ERR")"
+  [ "$LATEST" != "$TAG" ] || fail "$TAG is marked Latest; a nightly never is"
+}
+
+# 1. Today's tag already taken: a published release that checks out is a quiet stop; a draft, or one that does not, fails
 RELEASES=$(gh release list --repo "$R" --limit 1000 --json tagName,isDraft,isPrerelease) || fail "the release list could not be read"
 jq -e 'type == "array"' >/dev/null 2>&1 <<<"$RELEASES" || fail "the release list is not a JSON list (empty, or an error), so nothing is created"
 STATE=$(jq -r --arg t "$TAG" '[.[] | select(.tagName == $t) | if .isDraft then "draft" elif .isPrerelease then "pre-release" else "published release" end] | first // empty' <<<"$RELEASES")
-if [ -n "$STATE" ]; then summary "Nothing published: $TAG already has a release ($STATE); nothing created or deleted."; exit 0; fi
+if [ "$STATE" = draft ]; then
+  fail "$TAG already has a draft: a leftover of an earlier attempt or a nightly taken back; nothing published or deleted (look at it by hand)"
+fi
+if [ -n "$STATE" ]; then
+  check_published "already published"
+  summary "Nothing published: $TAG is already published and checks out (pre-release, one asset with the digest, tag at $SHA, not Latest); nothing created or deleted."
+  exit 0
+fi
 EXISTING=$(tag_ref "$TAG")
 if [ -n "$EXISTING" ]; then summary "Nothing published: $TAG already has a tag (at $EXISTING) with no release; nothing created or deleted."; exit 0; fi
 
@@ -86,11 +113,5 @@ gh release download "$TAG" --repo "$R" --pattern "$ASSET" --dir "$CHECK" || fail
 # 5. Publish: a pre-release, never Latest
 gh release edit "$TAG" --repo "$R" --draft=false --prerelease --latest=false --notes-file "$NOTES" >/dev/null \
   || fail "the draft $TAG could not be published"
-VIEW=$(gh release view "$TAG" --repo "$R" --json isDraft,isPrerelease,assets) || fail "the published $TAG could not be read"
-jq -e '.isDraft == false and .isPrerelease == true' >/dev/null <<<"$VIEW" || fail "$TAG is not a published pre-release after publishing"
-AT=$(tag_ref "$TAG")
-[ "$AT" = "$SHA" ] || fail "the published tag $TAG points at '${AT:-nothing}', not $SHA"
-LATEST_ERR=$(mktemp); LATEST=$(gh api "repos/$R/releases/latest" --jq .tag_name 2>"$LATEST_ERR") \
-  || grep -q 'HTTP 404' "$LATEST_ERR" || fail "the release marked Latest could not be read: $(cat "$LATEST_ERR")"
-[ "$LATEST" != "$TAG" ] || fail "$TAG is marked Latest; a nightly never is"
+check_published "published"
 summary "Published $TAG as a pre-release (Latest: ${LATEST:-none}), one asset $ASSET, SHA-256 $SHA256, tag at $SHA."

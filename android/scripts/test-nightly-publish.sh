@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # test-nightly-publish.sh — checks nightly-publish.sh and nightly-cleanup.sh, the publishing half of the nightly (#363):
-#   - publish stops quietly, creating nothing, when today's tag already has a release in any state (a draft, a pre-release
-#     or a published release) or a tag ref; it fails closed on a release list that is not a JSON list and on a tag lookup
-#     that fails with anything but 404;
+#   - publish stops quietly, creating nothing, when today's tag is already published and checks out as step 5 checks it (a
+#     pre-release, its tag at the recorded commit, not Latest, one asset with the digest), or has a tag ref and no release;
+#     a draft for today's tag, or a published release that does not check out, fails and deletes nothing; it fails closed
+#     on a release list that is not a JSON list and on a tag lookup that fails with anything but 404;
 #   - otherwise: notes from the generate-notes API from the gate's base tag (the list, then the SHA-256 line, then the
 #     changelog link; on the first nightly the rc.8 line), a draft pre-release at the recorded commit with Latest off, the
 #     one upload, exactly one asset of that name whose bytes match the digest, then published as a pre-release with Latest
@@ -189,7 +190,7 @@ EXISTING="$(rel_json android-v2.2.7-nightly.20261108 false true),$(rel_json $RC8
 # ── nightly-publish.sh ──────────────────────────────────────────────────────────────────────────────────────────────
 WHY=""; state "[$EXISTING]" '{}'; run_publish
 [ "$CODE" -eq 0 ] || why "exit $CODE"
-want="release list|api GET git/ref/tags/*|api POST releases/generate-notes|release create|api GET git/ref/tags/*|release upload|release view|release download|release edit|release view|api GET git/ref/tags/*|api GET releases/latest"
+want="release list|api GET git/ref/tags/*|api POST releases/generate-notes|release create|api GET git/ref/tags/*|release upload|release view|release download|release edit|release view|release download|api GET git/ref/tags/*|api GET releases/latest"
 [ "$(verbs)" = "$want" ] || why "calls '$(verbs)', expected '$want'"
 [ "$(q "[r['draft'] for r in s['releases'] if r['tag']=='$TAG']")" = "[False]" ] || why "release state $(q "[r for r in s['releases'] if r['tag']=='$TAG']")"
 [ "$(q "[(r['prerelease'], r['latest_flag'], r['target'], r['title']) for r in s['releases'] if r['tag']=='$TAG']")" = "[(True, True, '$SHA', '$TITLE')]" ] \
@@ -232,14 +233,33 @@ WHY=""; state "[$(rel_json $RC8 false true)]" '{}'; run_publish "$RC8"
 grep -q -F 'On rc.2–rc.7? Update to rc.8 first to keep receiving builds.' "$WORK/notes-posted" 2>/dev/null || why "the first nightly's notes lack the rc.8 line"
 check "publish: the first nightly's notes start from rc.8 and carry the rc.8 line"
 
-for st in "draft:true:true" "pre-release:false:true" "published release:false:false"; do
-  IFS=: read -r label d p <<<"$st"
-  WHY=""; state "[$EXISTING,$(rel_json "$TAG" "$d" "$p")]" '{}'; run_publish
-  [ "$CODE" -eq 0 ] || why "exit $CODE"
-  [ "$(verbs)" = "release list" ] || why "calls '$(verbs)', expected only the release list"
-  [[ "$OUT" == *"already has a release"* ]] || why "the log does not say why it stopped"
+# F2 (QA's FINAL on r4): a release for today's tag in step 1 is checked as step 5 checks it; a draft fails
+published() {   # published <draft true|false> <prerelease true|false> [assets JSON]: today's tag, at SHA, with the APK
+  local assets="${3:-}"
+  cp "$FILE" "$WORK/asset-$(basename "$FILE")"
+  [ -n "$assets" ] || assets=$(printf '[{"name": "%s"}]' "$(basename "$FILE")")
+  python3 -I -c 'import json,sys; print(json.dumps({"tag": sys.argv[1], "draft": sys.argv[2] == "true", "prerelease": sys.argv[3] == "true",
+    "latest_flag": True, "target": sys.argv[4], "title": "t", "assets": json.loads(sys.argv[5]), "body": "notes"}))' \
+    "$TAG" "$1" "$2" "$SHA" "$assets"
+}
+WHY=""; state "[$EXISTING,$(published false true)]" "{\"$TAG\": \"$SHA\"}"; run_publish
+[ "$CODE" -eq 0 ] || why "exit $CODE"
+[[ "$OUT" == *"already published"* ]] || why "the log does not say why it stopped"
+nothing_written
+check "publish: today's tag already published and checking out as step 5 checks it: a quiet stop, nothing created or deleted"
+
+for c in "a draft:true:true:$SHA:" "a published release that is not a pre-release:false:false:$SHA:" \
+         "a pre-release whose tag is at another commit:false:true:$OTHER:" "a pre-release marked Latest:false:true:$SHA:latest" \
+         "a pre-release with two assets:false:true:$SHA:two" "a pre-release whose asset's bytes differ:false:true:$SHA:corrupt"; do
+  IFS=: read -r label d p tagsha extra <<<"$c"
+  assets=""; [ "$extra" = two ] && assets="[{\"name\": \"$(basename "$FILE")\"}, {\"name\": \"extra.txt\"}]"
+  WHY=""; state "[$EXISTING,$(published "$d" "$p" "$assets")]" "{\"$TAG\": \"$tagsha\"}" "$([ "$extra" = latest ] && echo "$TAG" || echo android-v2.2.6)"
+  if [ "$extra" = corrupt ]; then run_publish "$PREV" FAKE_CORRUPT=1; else run_publish; fi
+  [ "$CODE" -ne 0 ] || why "exit 0: a re-run would turn green over it"
+  [[ "$OUT" == *"::error::"* ]] || why "no ::error:: line"
   nothing_written
-  check "publish: today's tag already has a $label: a quiet stop, nothing created or deleted"
+  [ "$(q "[r['tag'] for r in s['releases'] if r['tag']=='$TAG']")" = "['$TAG']" ] || why "the release was deleted"
+  check "publish: today's tag already has $label: the step fails and deletes nothing"
 done
 
 WHY=""; state "[$EXISTING]" "{\"$TAG\": \"$OTHER\"}"; run_publish
