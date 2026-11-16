@@ -28,6 +28,7 @@ STARTED_FILE="$PWD/emulator.started"; ARGS_FILE="$PWD/emulator.args"
 # agree). A retry starts only with MIN_BOOT_S of boot time left after a margin, the restart and the check's own share.
 JOB_LIMIT_S=900
 RETRY_MARGIN_S=60; RESTART_S=30; CHECK_S=150; MIN_BOOT_S=120; MAX_BOOT_S=420
+PROC_ROOT="${LAUNCH_PROC_ROOT:-/proc}"                             # the trace's CPU source (a fake one in the tests)
 TRACE_S="${LAUNCH_TRACE_S:-2}"                                     # the liveness trace's interval
 CRASH_DIR="${LAUNCH_CRASH_DIR-}"     # the emulator's crash database: by default the one its own log names (crash_dir)
 HANDLER_WAIT_S="${LAUNCH_HANDLER_WAIT_S:-20}"                      # for crashpad_handler to finish a dump
@@ -151,7 +152,7 @@ diagnostics() {
     for _ in $(seq 1 "$HANDLER_WAIT_S"); do pgrep -f -- "$EMULATOR_HANDLER" >/dev/null 2>&1 || break; sleep 1; done
     timeout 20 python3 -I "$DIR/crash-facts.py" decode "$cdir" "$t0" 2>&1 | redact || echo "(could not read: crash-facts.py decode)"
   fi
-  echo "--- the liveness trace (the last 60 samples: seconds after the cold start, emulator, app's process id, load)"
+  echo "--- the liveness trace (the last 60 samples: seconds after the cold start, emulator, its CPU % over the interval and resident kB, app's process id, load)"
   if [ -n "$A" ] && [ -s "$A/trace" ]; then tail -n 60 "$A/trace"; else echo "(no trace: the check stopped before the cold start)"; fi
   echo "--- disk (df -h)"
   st=0; out=$(timeout 10 df -h "$PWD" "${HOME:-}/.android" 2>&1) || st=$?
@@ -186,18 +187,38 @@ call() {
 }
 
 # trace: the liveness trace, in the background from just before the cold start (#363): every TRACE_S, the seconds since
-# the cold start, whether the emulator.pid process is alive, the app's process id as the device answers it (or none /
+# the cold start, whether the emulator.pid process is alive, its CPU % over the interval (/proc) and resident memory in
+# kB (ps; "-" when gone, unreadable or for the first sample), the app's process id as the device answers it (or none /
 # fail / timeout), the host's 1-minute load, and whether the process check after the start had recorded its id (after=1).
 trace() {
   set +e
-  local t0 epid app r st load
+  local t0 epid app r st load cpu rss alive hz stat up ticks f prev_ticks="" prev_up=""
+  hz=$(getconf CLK_TCK 2>/dev/null); [[ "$hz" =~ ^[0-9]+$ ]] && [ "$hz" -gt 0 ] || hz=100
   t0=$(date +%s); epid=$(tr -dc '0-9' < "$EMULATOR_PID_FILE" 2>/dev/null)
   while :; do
     r=$(timeout 3 adb shell 'p=$(pidof com.openrs.dash); echo "pid:$p"' 2>/dev/null); st=$?; r=${r//$'\r'/}
     if [ "$st" -eq 124 ]; then app=timeout; elif [ "$st" -ne 0 ] || [[ "$r" != pid:* ]]; then app=fail
     else app=${r#pid:}; app=${app// /,}; [ -n "$app" ] || app=none; [[ "$app" =~ ^([0-9,]+|none)$ ]] || app=fail; fi
     load=$(cut -d' ' -f1 /proc/loadavg 2>/dev/null || echo -)
-    echo "+$(( $(date +%s) - t0 ))s emulator=$( [ -n "$epid" ] && kill -0 "$epid" 2>/dev/null && echo alive || echo gone) app=$app load=${load:--} after=$( [ -s "$A/pid1" ] && echo 1 || echo 0)" >> "$A/trace"
+    # the emulator's CPU % over the last interval (utime + stime from /proc/<pid>/stat against /proc/uptime; "-" for the
+    # first sample or without /proc) and its resident memory in kB (ps): numbers only, saturation or growth before a crash
+    # (#363, QA's S4: ps's pcpu is a lifetime average)
+    cpu=-; rss=-; alive=gone
+    if [ -n "$epid" ] && kill -0 "$epid" 2>/dev/null; then
+      alive=alive
+      stat=$(cat "$PROC_ROOT/$epid/stat" 2>/dev/null); up=$(cut -d' ' -f1 "$PROC_ROOT/uptime" 2>/dev/null); up=${up/./}
+      ticks=""
+      if [[ "$stat" == *") "* ]] && [[ "$up" =~ ^[0-9]+$ ]]; then
+        read -r -a f <<<"${stat##*) }"
+        [[ "${f[11]-}" =~ ^[0-9]+$ ]] && [[ "${f[12]-}" =~ ^[0-9]+$ ]] && ticks=$(( f[11] + f[12] ))
+      fi
+      if [ -n "$ticks" ]; then
+        [ -n "$prev_ticks" ] && [ "$up" -gt "$prev_up" ] && cpu=$(( (ticks - prev_ticks) * 10000 / (hz * (up - prev_up)) ))
+        prev_ticks=$ticks; prev_up=$up
+      fi
+      rss=$(timeout 5 ps -o rss= -p "$epid" 2>/dev/null); rss=${rss// /}; [[ "$rss" =~ ^[0-9]+$ ]] || rss=-
+    fi
+    echo "+$(( $(date +%s) - t0 ))s emulator=$alive cpu=$cpu rss_kb=$rss app=$app load=${load:--} after=$( [ -s "$A/pid1" ] && echo 1 || echo 0)" >> "$A/trace"
     sleep "$TRACE_S"
   done
 }
