@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # test-nightly-gate.sh — checks nightly-gate.sh, the nightly workflow's gate (#363): build only when files under android/
 # differ between the commit and the newest PUBLISHED nightly's tag (rc.8's for the first nightly; a leftover tag or a draft
-# does not count), and today's UTC date has no nightly release and no tag; refuse bad input and a failed release lookup.
-# A throwaway repository holds the commits and tags; a fake gh prints a release list from a fixture. Dates and names are
-# invented test values. Run from anywhere: bash android/scripts/test-nightly-gate.sh
+# does not count), and today's UTC date has no nightly release and no tag; skip quietly only when today's nightly is a
+# clean published one at the commit its own tag and notes name, and fail on anything else for today (Q114, Q115); refuse bad input and a failed
+# lookup. A throwaway repository holds the commits and tags; a fake gh prints a release list, a release view, an asset and
+# the release marked Latest from fixtures. Dates and names are invented test values. Run from anywhere: bash android/scripts/test-nightly-gate.sh
 set -uo pipefail
 SCRIPT="$(cd "$(dirname "$0")" && pwd)/nightly-gate.sh"
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/nightly-gate-test.XXXXXX")
@@ -12,14 +13,28 @@ failures=0; ran=0
 D=20261110                                   # "today" in every case
 NAME=2.2.7-nightly.$D; TAG=android-v$NAME
 
-# ── Fake gh: `gh release list … --json tagName,isDraft` prints $WORK/releases.json, or fails when FAKE_GH_FAIL=1 ──
+# ── Fake gh. `release list` prints $WORK/releases.json (FAKE_GH_FAIL=1: fails); for a day that has a nightly (#363,
+#    Q114) `release view` prints $WORK/view.json, `release download` copies $WORK/asset, `api …/releases/latest` prints
+#    $WORK/latest (absent: HTTP 404). FAKE_VIEW_FAIL / FAKE_DOWNLOAD_FAIL / FAKE_LATEST_FAIL=1 make those fail. Every call
+#    is appended to $WORK/gh-calls ──
 mkdir -p "$WORK/bin"
 cat > "$WORK/bin/gh" <<'STUB'
 #!/usr/bin/env bash
-printf '%s\n' "$*" > "$WORK/gh-args"
+printf '%s\n' "$*" > "$WORK/gh-args"; printf '%s\n' "$*" >> "$WORK/gh-calls"
 [ "${FAKE_GH_FAIL:-0}" = 1 ] && { echo "HTTP 502" >&2; exit 1; }
-[ "$1 $2" = "release list" ] || { echo "fake gh: unexpected $*" >&2; exit 2; }
-cat "$WORK/releases.json"
+case "$1 $2" in
+  "release list") cat "$WORK/releases.json" ;;
+  "release view") [ "${FAKE_VIEW_FAIL:-0}" = 1 ] && { echo "HTTP 502" >&2; exit 1; }; cat "$WORK/view.json" ;;
+  "release download")
+    [ "${FAKE_DOWNLOAD_FAIL:-0}" = 1 ] && { echo "HTTP 502" >&2; exit 1; }
+    pat=""; dir=""; while [ $# -gt 0 ]; do case "$1" in --pattern) pat="$2"; shift ;; --dir) dir="$2"; shift ;; esac; shift; done
+    cp "$WORK/asset" "$dir/$pat" ;;
+  "api repos/owner/repo/releases/latest")
+    [ "${FAKE_LATEST_FAIL:-0}" = 1 ] && { echo "HTTP 502" >&2; exit 1; }
+    [ -f "$WORK/latest" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }
+    cat "$WORK/latest" ;;
+  *) echo "fake gh: unexpected $*" >&2; exit 2 ;;
+esac
 STUB
 chmod +x "$WORK/bin/gh"
 releases() { printf '%s\n' "$1" > "$WORK/releases.json"; }     # releases '<JSON array>'
@@ -40,7 +55,7 @@ g checkout -q "$C3" 2>/dev/null
 # run <sha> <today> [env...]: runs the gate in the repository; OUT, CODE, and GITHUB_OUTPUT's lines in $WORK/out
 run() {
   local sha="$1" today="$2"; shift 2
-  : > "$WORK/out"; rm -f "$WORK/gh-args"
+  : > "$WORK/out"; rm -f "$WORK/gh-args" "$WORK/gh-calls"
   OUT=$(cd "$R" && env PATH="$WORK/bin:$PATH" WORK="$WORK" GITHUB_OUTPUT="$WORK/out" GITHUB_REPOSITORY=owner/repo "$@" \
         bash "$SCRIPT" "$sha" "$today" 2>&1); CODE=$?
 }
@@ -105,18 +120,99 @@ expect_run  "a draft nightly is not a base"                                "$C1"
 releases '[{"tagName":"android-v2.2.7-rc.8","isDraft":false}]'
 expect_run  "a leftover nightly tag without a published release is not a base" "$C1" android-v2.2.7-rc.8
 
-# Today taken: a release in any state the token can see, or a tag
-releases "[{\"tagName\":\"$TAG\",\"isDraft\":false}]"
-expect_skip "today's published nightly is a quiet skip"                    "$C3" "already has a nightly"
-releases "[{\"tagName\":\"$TAG\",\"isDraft\":true},{\"tagName\":\"android-v2.2.7-rc.8\",\"isDraft\":false}]"
-expect_skip "today's draft, when the token can see it, is a quiet skip"    "$C3" "already has a nightly"
-releases "[{\"tagName\":\"android-v2.2.8-nightly.$D\",\"isDraft\":false}]"
-expect_skip "today's nightly of another base is a quiet skip"              "$C3" "already has a nightly"
+# Today taken (Q114, Q115): a quiet skip only for a clean published nightly at the commit its own tag and notes name
+# (a run after a same-day staging merge too); anything else for today fails the run, so "Re-run all jobs" after a
+# publish that failed past its last step stays red (#363)
+APK="openRS_v$NAME.apk"
+printf 'apk bytes\n' > "$WORK/asset"
+DIGEST=$( (command -v sha256sum >/dev/null && sha256sum "$WORK/asset" || shasum -a 256 "$WORK/asset") | cut -d' ' -f1)
+NOTES="* A merged pull request\n\nSHA-256 of \`$APK\`: \`$DIGEST\`\n\nFull changelog: https://github.com/owner/repo/blob/$C3/android/CHANGELOG.md\n"
+view() {   # view <isDraft> <isPrerelease> <asset names as a JSON list> [notes]: what `gh release view` prints
+  jq -n --argjson d "$1" --argjson p "$2" --argjson a "$3" --arg b "$(printf "${4:-$NOTES}")" \
+    '{isDraft: $d, isPrerelease: $p, assets: [$a[] | {name: .}], body: $b}' > "$WORK/view.json"
+}
+clean_day() {   # today's release for $TAG, published, one asset, digest in its notes, tag at C3, rc.8 marked Latest
+  releases "[{\"tagName\":\"$TAG\",\"isDraft\":false},{\"tagName\":\"android-v2.2.7-rc.8\",\"isDraft\":false}]"
+  view false true "[\"$APK\"]"; printf 'apk bytes\n' > "$WORK/asset"; echo android-v2.2.6 > "$WORK/latest"
+  g tag -f "$TAG" "$C3" >/dev/null 2>&1
+}
+called() { grep -q -F -- "$1" "$WORK/gh-calls" 2>/dev/null || why "gh was not asked '$1'"; }
+
+clean_day
+expect_skip "today's clean published nightly is a quiet skip" "$C3" "clean published nightly"
+called "release view $TAG --repo owner/repo"; called "release download $TAG --repo owner/repo --pattern $APK"
+called "api repos/owner/repo/releases/latest"; check "a quiet skip comes only after the release, its asset and Latest are read"
+rm -f "$WORK/latest"
+expect_skip "a clean nightly when no release is marked Latest is a quiet skip" "$C3" "clean published nightly"
+
+clean_day; expect_skip "today's clean nightly at an earlier commit (staging moved since) is a quiet skip (Q115)" "$C1" "clean published nightly: $TAG at $C3"
+clean_day; view false true "[\"$APK\"]" "${NOTES//$C3/$C1}"
+expect_fail "today's tag at another commit than its notes name fails"     "the commit its notes name" "$C3" "$D"
+clean_day; view false true "[\"$APK\"]" "${NOTES//Full changelog/Changelog}"
+expect_fail "today's notes that name no commit fail"                      "name exactly one commit" "$C3" "$D"
+clean_day; view false true "[\"$APK\"]" "${NOTES}Full changelog: https://github.com/owner/repo/blob/$C1/android/CHANGELOG.md\n"
+expect_fail "today's notes with two changelog links (the first at the tag's commit) fail" "do not name exactly one commit" "$C3" "$D"
+clean_day; jq -n --arg a "$APK" '{isDraft: false, isPrerelease: true, assets: [{name: $a}], body: null}' > "$WORK/view.json"
+expect_fail "today's release whose notes are null fails with an error"   "notes could not be read" "$C3" "$D"
+NOTES_CRLF="* A merged pull request\r\n\r\nSHA-256 of \`$APK\`: \`$DIGEST\`\r\n\r\nFull changelog: https://github.com/owner/repo/blob/$C3/android/CHANGELOG.md\r\n"
+clean_day; view false true "[\"$APK\"]" "$NOTES_CRLF"
+expect_skip "notes with CRLF line ends still check out"                   "$C3" "clean published nightly"
+clean_day; view true true "[\"$APK\"]"
+releases "[{\"tagName\":\"$TAG\",\"isDraft\":true}]"
+expect_fail "today's draft, when the token can see it, fails"            "is a draft"       "$C3" "$D"
+clean_day; view true true "[\"$APK\"]"
+expect_fail "a release the list shows published but the view shows a draft fails" "published pre-release" "$C3" "$D"
+clean_day; view false false "[\"$APK\"]"
+expect_fail "today's release that is not a pre-release fails"             "published pre-release" "$C3" "$D"
+clean_day; view false true "[\"$APK\",\"extra.txt\"]"
+expect_fail "today's release with a second asset fails"                   "exactly one asset" "$C3" "$D"
+clean_day; view false true "[\"openRS_v2.2.7-nightly.20261109.apk\"]"
+expect_fail "today's release whose one asset has another name fails"      "exactly one asset" "$C3" "$D"
+clean_day; view false true "[]"
+expect_fail "today's release with no asset fails"                         "exactly one asset" "$C3" "$D"
+clean_day; view false true "[\"$APK\"]" "* A merged pull request\n"
+expect_fail "today's release whose notes carry no SHA-256 line fails"     "SHA-256 line"     "$C3" "$D"
+clean_day; view false true "[\"$APK\"]" "$NOTES\nSHA-256 of \`$APK\`: \`$DIGEST\`\n"
+expect_fail "today's release whose notes carry two SHA-256 lines fails"   "SHA-256 line"     "$C3" "$D"
+clean_day; printf 'other bytes\n' > "$WORK/asset"
+expect_fail "today's asset whose bytes do not match its notes fails"      "does not match"   "$C3" "$D"
+clean_day; echo "$TAG" > "$WORK/latest"
+expect_fail "today's nightly marked Latest fails"                         "Latest"           "$C3" "$D"
+clean_day; g tag -d "$TAG" >/dev/null
+expect_fail "today's release whose tag is not in the checkout fails"      "points at"        "$C3" "$D"
+clean_day; expect_fail "a failed release view fails"                      "could not be read" "$C3" "$D" FAKE_VIEW_FAIL=1
+clean_day; expect_fail "a failed asset download fails"                    "downloaded"       "$C3" "$D" FAKE_DOWNLOAD_FAIL=1
+clean_day; expect_fail "a failed Latest lookup (not a 404) fails"         "Latest"           "$C3" "$D" FAKE_LATEST_FAIL=1
+g tag -d "$TAG" >/dev/null
+# Q119: today's one nightly is judged under its own name, even when this run's base has moved since (a stable cut)
+OTAG="android-v2.2.8-nightly.$D"; OAPK="openRS_v2.2.8-nightly.$D.apk"
+releases "[{\"tagName\":\"$OTAG\",\"isDraft\":false}]"; g tag -f "$OTAG" "$C3" >/dev/null 2>&1
+view false true "[\"$OAPK\"]" "${NOTES//$APK/$OAPK}"
+expect_skip "today's one clean nightly under another base is a quiet skip (Q119)" "$C3" "clean published nightly: $OTAG at $C3"
+called "release view $OTAG --repo owner/repo"; called "release download $OTAG --repo owner/repo --pattern $OAPK"
+check "that nightly is read under its own tag and asset name"
+view false true "[\"$APK\"]" "${NOTES//$APK/$OAPK}"
+expect_fail "today's one nightly under another base with this run's asset name fails" "exactly one asset $OAPK" "$C3" "$D"
+clean_day; g tag -f "$OTAG" "$C3" >/dev/null 2>&1
+expect_fail "today's clean nightly beside a tag of another base for today fails" "more than one nightly" "$C3" "$D"
+g tag -d "$OTAG" "$TAG" >/dev/null
+releases "[{\"tagName\":\"test-nightly.$D\",\"isDraft\":false}]"
+expect_fail "today's release whose tag is not a nightly's fails"          "is not a nightly's tag" "$C3" "$D"
+clean_day; releases "[{\"tagName\":\"$TAG\",\"isDraft\":false},{\"tagName\":\"android-v2.2.8-nightly.$D\",\"isDraft\":false}]"
+expect_fail "a second release for today beside the clean one fails"       "more than one nightly" "$C3" "$D"
+g tag -d "$TAG" >/dev/null
 releases '[{"tagName":"android-v2.2.7-rc.8","isDraft":false}]'
 g tag "android-v2.2.6-nightly.$D" "$C0"
-expect_skip "a tag for today without a release is a quiet skip"           "$C3" "already has a nightly"
+expect_fail "a tag for today of another base without a release fails"    "android-v2.2.6-nightly.$D" "$C3" "$D"
 g tag -d "android-v2.2.6-nightly.$D" >/dev/null
+g tag "$TAG" "$C3"
+expect_fail "this run's tag for today without a release fails"           "no release"       "$C3" "$D"
+g tag -d "$TAG" >/dev/null
 WHY=""; run "$C1" "$D"; [[ "$OUT" == *"draft"* ]] || why "the log does not say drafts are not visible"; check "the log says drafts are not visible to it"
+
+clean_day; view false true "[\"$APK\"]" "${NOTES//$C3/$C1}"
+expect_fail "staging moved, and today's tag is not where its notes say, fails" "the commit its notes name" "$C1" "$D"
+g tag -d "$TAG" >/dev/null
 
 # Refused: bad input, a failed lookup, an unreadable base, no base tag
 expect_fail "a commit that is not a full SHA"     "40"            staging "$D"

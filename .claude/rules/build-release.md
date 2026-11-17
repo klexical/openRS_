@@ -46,8 +46,12 @@ paths:
     (schedule and "Run workflow" exist only on the default branch), so every script and Gradle step runs in a checkout of staging's tip, the SHA the gate records,
     never the run's own commit or ref. Jobs: `mode` (the publish output from the file's `PUBLISH`, with no checkout and
     no repository code), `gate` (`scripts/nightly-gate.sh`: build only when `android/` changed since
-    the newest published nightly, rc.8's for the first, and today has no nightly or tag; a read-only token is shown no
-    draft releases), `checks` (ci.yml's build and lint commands and the release script tests), `release` (the recipe),
+    the newest published nightly, rc.8's for the first, and today has no nightly or tag; a day that has one is a quiet
+    skip only when it is a clean published nightly (the publish step's checks of a published one, the digest from the
+    release's own notes, the tag where its notes' changelog link points, which need not be the run's commit: a run
+    after a same-day staging merge skips, Q115; today's one nightly is judged under its own name, so a stable cut's new
+    base skips too, Q119), and fails the run otherwise, a second nightly that day included; a read-only token is
+    shown no draft releases), `checks` (ci.yml's build and lint commands and the release script tests), `release` (the recipe),
     `launch` (`scripts/start-emulator.sh` starts an API 36 emulator with `-gpu swangle` (under `swiftshader_indirect` it
     crashed on its host render thread, #363) under a wrapper that writes its exit status to
     `emulator.exit`, prints its version (from `emulator/source.properties`) and process id, writes `emulator.pid` beside
@@ -77,8 +81,8 @@ paths:
     publish output is `'true'`, the run is on main and the gate said build. `publish` (`scripts/nightly-publish.sh`)
     stops quietly only when today's tag is already published and checks out as its last step checks it; a draft for
     today's tag (its token is shown drafts), a release that does not check out, or a tag with no release fails the step
-    and deletes nothing, so "Re-run failed jobs" stays red ("Re-run all jobs" re-runs the gate, which skips quietly when
-    today already has a nightly or a tag); else notes
+    and deletes nothing, so "Re-run failed jobs" stays red ("Re-run all jobs" stays red too: the gate
+    fails unless today's nightly is a clean published one, and a draft it cannot see fails this step again, Q114); else notes
     from the generate-notes API from the gate's `base_tag` (the list, the SHA-256 line, the changelog link), a draft
     pre-release at the commit whose notes end with a line naming the run and attempt (`GITHUB_RUN_ID`, `GITHUB_RUN_ATTEMPT`;
     the published notes do not carry it), one upload, exactly one asset whose bytes match the digest, then a pre-release with Latest

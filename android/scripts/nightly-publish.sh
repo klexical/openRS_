@@ -4,8 +4,8 @@
 #   1. when <tag> already has a release (this token is shown drafts, the gate's read-only one is not): a published one is
 #      checked as step 5 checks it, and a quiet stop (exit 0, nothing created) only if it checks out; a draft, a
 #      release that does not check out, or a tag ref with no release fails the step, and nothing is deleted here
-#      ("Re-run failed jobs" then stays red until someone looks; "Re-run all jobs" re-runs the gate, which skips quietly
-#      when today already has a nightly or a tag);
+#      ("Re-run failed jobs" then stays red until someone looks; "Re-run all jobs" stays red too: the gate fails unless
+#      today's nightly is a clean published one, and a draft it cannot see fails this step again, Q114);
 #   2. notes: GitHub's generated list of merged pull requests since <base tag> (the newest published nightly, rc.8 for the
 #      first), then the SHA-256 line, then the changelog link at <sha>; on the first nightly the rc.8 line;
 #   3. a DRAFT pre-release for <tag> at <sha>, Latest off, whose notes end with a line naming this run and attempt
@@ -68,7 +68,8 @@ check_published() {
 }
 
 # 1. Today's tag already taken: a published release that checks out is a quiet stop; a draft, one that does not, or a tag
-#    with no release fails (the gate skips a day with a tag, so it is a leftover or made by hand)
+#    with no release fails (the gate stops a day whose nightly or tag it can see, so this is a draft it could not see,
+#    or a release made since)
 RELEASES=$(gh release list --repo "$R" --limit 1000 --json tagName,isDraft,isPrerelease) || fail "the release list could not be read"
 jq -e 'type == "array"' >/dev/null 2>&1 <<<"$RELEASES" || fail "the release list is not a JSON list (empty, or an error), so nothing is created"
 STATE=$(jq -r --arg t "$TAG" '[.[] | select(.tagName == $t) | if .isDraft then "draft" elif .isPrerelease then "pre-release" else "published release" end] | first // empty' <<<"$RELEASES")
