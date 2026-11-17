@@ -145,3 +145,14 @@ paths:
     source, read). SavvyCAN's loader refuses the log's time field, which is padded inside the parentheses (`(%10.3f)`;
     its source, read, not run); Kayak not read. So no text in the app names either as compatible (`RequestLogTest`,
     `RequestLogExportTest`, `DtcScanExplainTest`, `BufferBoundsTest`)
+- **UI timing in the export is counts only, per session (#421)** — `uiTiming` / UI TIMING: main-thread lateness (a 100 ms
+  ticker on Main inside the connection job), frame durations by the pager's settled page (a frame-metrics listener on its
+  own thread, counted only between `sessionStart` and `sessionEnd`), each OBD merge's wait for the link lock (from before
+  `deliver` to its block's first line; the post's own delay to Main is not counted: the ticker measures that queue) and,
+  over Bluetooth, notifications / SLCAN lines / most lines in one, summed over the session's attempts. Edges are strictly
+  over (50 / 200 / 700, 32 / 100 / 700, 5 / 50 / 200 ms); never a clock time. Every counter resets at `sessionStart` and
+  is read in the one `ExportCounters` snapshot; the block is absent before the first connection and its Bluetooth part for
+  a session that is not Bluetooth. Additive: no schema bump; not in drives, Sapphire ignores it. The listener sees the
+  activity's window only: a dialog window's own frames (Settings, the BLE picker) are not counted; the Custom Dashboard
+  overlay's count to the tab beneath; a swipe's frames to the tab it left (`UiTimingTest`, `UiTimingExportTest`,
+  `BleTransportTest`, `BleMtuContextExportTest`)

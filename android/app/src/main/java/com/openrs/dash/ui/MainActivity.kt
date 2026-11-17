@@ -79,6 +79,17 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 // ACTIVITY
 // ═══════════════════════════════════════════════════════════════════════════
 class MainActivity : ComponentActivity() {
+    // UI timing (#421): each drawn frame's duration goes to the export, counted to the settled tab, on a thread of its own
+    // so nothing is added to the main thread. Counted only while a connection's session runs.
+    @Volatile private var frameTab = 0
+    private var frameThread: android.os.HandlerThread? = null
+    private val frameListener = android.view.Window.OnFrameMetricsAvailableListener { _, metrics, _ ->
+        if (com.openrs.dash.diagnostics.DiagnosticLogger.uiTimingCounting) {
+            com.openrs.dash.diagnostics.DiagnosticLogger.frameTimes.frame(frameTab,
+                metrics.getMetric(android.view.FrameMetrics.TOTAL_DURATION))
+        }
+    }
+
     private var service: CanDataService? = null
     private val conn = object : ServiceConnection {
         override fun onServiceConnected(n: ComponentName, b: IBinder) {
@@ -210,6 +221,7 @@ class MainActivity : ComponentActivity() {
         } else OpeningState.splashGone.complete(Unit)
         if (!showOpening) OpeningState.splashGone.complete(Unit)   // nothing to wait for (resume / recreation)
 
+        startFrameTiming()
         StartupTrace.mark("setContent")
         setContent {
             val vs          by OpenRSDashApp.instance.vehicleState.collectAsState()
@@ -227,6 +239,7 @@ class MainActivity : ComponentActivity() {
                 }
             } ?: driveState
             val pagerState  = rememberPagerState(pageCount = { 5 })
+            LaunchedEffect(pagerState) { snapshotFlow { pagerState.settledPage }.collect { frameTab = it } }   // #421
             val selectedTab by remember { derivedStateOf { pagerState.currentPage } }
             var mapTouched  by remember { mutableStateOf(false) }
             val hazeState   = remember { HazeState() }
@@ -573,7 +586,17 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         try { unbindService(conn) } catch (_: Exception) {}
+        try { window.removeOnFrameMetricsAvailableListener(frameListener) } catch (_: Exception) {}
+        frameThread?.quitSafely(); frameThread = null
         super.onDestroy()
+    }
+
+    /** #421: frame durations need a hardware-accelerated window; without one the platform logs and reports nothing. */
+    private fun startFrameTiming() {
+        val t = android.os.HandlerThread("openrs-frame-timing").also { it.start() }
+        frameThread = t
+        try { window.addOnFrameMetricsAvailableListener(frameListener, android.os.Handler(t.looper)) }
+        catch (_: Exception) { t.quitSafely(); frameThread = null }
     }
 }
 

@@ -74,6 +74,8 @@ class BleGattCore(
         private set
     /** This attempt's MTU request and its answer, for the export (#253); the core only writes to it. */
     val mtuTrace = BleMtuTrace()
+    /** This attempt's notifications and SLCAN lines, for the export's UI timing (#421); the core only writes to it. */
+    val delivery = BleDeliveryCounts()
     private var writeType = WRITE_TYPE_DEFAULT
     private var link: GattLink? = null
 
@@ -146,14 +148,17 @@ class BleGattCore(
     /**
      * Notification bytes on [characteristic]; a frame may span notifications, a notification may hold several. A line past
      * [MAX_SLCAN_LINE_CHARS] is refused whole and counted; with the line queue full the newest line is dropped and counted.
+     * Each notification and the non-empty lines it completes go to [delivery] for the export's UI timing (#421).
      */
     fun onNotify(characteristic: UUID, bytes: ByteArray) {
         if (characteristic != profile?.notify) return
+        var completed = 0                                      // SLCAN lines this notification ended (#421)
         for (b in bytes) {
             if (b.toInt() and 0xFF == 0x0D) {
                 val line = lineBuffer.toString(); lineBuffer.clear()
                 if (discardingLine) { discardingLine = false; continue }
                 if (line.isNotEmpty()) {
+                    completed++
                     val sent = lines.trySend(line)
                     if (sent.isFailure && !sent.isClosed) DiagnosticLogger.countLineDropped()   // full; closed = link gone
                 }
@@ -167,6 +172,7 @@ class BleGattCore(
                 DiagnosticLogger.countOverlongLine()
             }
         }
+        delivery.notified(completed)
     }
 
     // ── Transport ────────────────────────────────────────────────────────────

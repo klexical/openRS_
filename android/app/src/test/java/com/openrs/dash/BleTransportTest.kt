@@ -237,4 +237,37 @@ class BleTransportTest {
         assertTrue("$e", e is IOException && e.message!!.contains("180A"))
         if (e == null) fail()
     }
+
+    // ── #421: Bluetooth delivery counts for the export's UI timing ───────────
+
+    @Test fun `delivery - notifications, SLCAN lines completed and the most lines in one notification`() = runTest {
+        val core = BleGattCore("MEATPI_PRO"); val g = FakeGatt(core, this)
+        connect(core, g)
+        core.onNotify(pro.notify, "t09080000C1FF617D0000\rt0F880011223344556677\rt1A4800000000005A0000\r".toByteArray())
+        core.onNotify(pro.notify, "t09080000C1FF617D0000\r".toByteArray())
+        val d = core.delivery.read()
+        assertEquals(2L, d.notifications); assertEquals(4L, d.lines); assertEquals(3, d.mostLinesInOne)
+    }
+
+    @Test fun `delivery - a line split across two notifications counts once, in the notification that ends it`() = runTest {
+        val core = BleGattCore("MEATPI_PRO"); val g = FakeGatt(core, this)
+        connect(core, g)
+        core.onNotify(pro.notify, "t0908".toByteArray())
+        core.onNotify(pro.notify, "0000C1FF617D0000\rt0F8".toByteArray())
+        core.onNotify(pro.notify, "80011223344556677\r".toByteArray())
+        val d = core.delivery.read()
+        assertEquals(3L, d.notifications); assertEquals(2L, d.lines); assertEquals(1, d.mostLinesInOne)
+        assertEquals("t09080000C1FF617D0000", core.readLine())
+    }
+
+    @Test fun `delivery - another characteristic, an empty line and an overlong line are not lines completed`() = runTest {
+        val core = BleGattCore("MEATPI_PRO"); val g = FakeGatt(core, this)
+        connect(core, g)
+        core.onNotify(pro.write, "t09080000C1FF617D0000\r".toByteArray())           // not the notify characteristic
+        core.onNotify(pro.notify, "\r\r".toByteArray())
+        core.onNotify(pro.notify, ("t" + "0".repeat(300) + "\r").toByteArray())         // refused whole (#253)
+        val d = core.delivery.read()
+        assertEquals("only the notify characteristic's notifications", 2L, d.notifications)
+        assertEquals(0L, d.lines); assertEquals(0, d.mostLinesInOne)
+    }
 }

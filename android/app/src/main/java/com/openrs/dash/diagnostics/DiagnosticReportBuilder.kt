@@ -350,6 +350,8 @@ internal object DiagnosticReportBuilder {
         appendLine()
         logLimitsText(counters.limits, knockSessionDropped(), counters.integrity).forEach { appendLine(it) }
         appendLine()
+        uiTimingText(counters.uiTiming).forEach { appendLine(it) }   // #421, additive
+        appendLine()
 
         // Unattributed NRCs: exact count; their event lines are folded to ≤ 1 per minute per kind (#216)
         if (counters.nrcUnattributed > 0) {
@@ -556,6 +558,7 @@ internal object DiagnosticReportBuilder {
         counters.bleMtu?.let { root.put("bleMtu", bleMtuJson(it)) }   // #253, additive; absent unless the attempt is Bluetooth
         root.put("didInventory", didInventoryJson(counters.dids))   // rc.8 #253, additive
         root.put("logLimits", logLimitsJson(counters.limits, knockSessionDropped()))  // additive
+        counters.uiTiming?.let { root.put("uiTiming", uiTimingJson(it)) }   // #421, additive; absent before the first connection
         root.put("exportSchemaVersion", EXPORT_SCHEMA_VERSION)   // rc.8 #253, additive; when it changes: see the constant
 
         // nrcSuppression
@@ -718,6 +721,46 @@ private fun knockSessionDropped() =
 
 /** The adapter's device ID never leaves the app in an export (#263); GARAGE still shows it. */
 private const val DEVICE_ID_MASKED = "<masked>"
+
+/**
+ * UI TIMING summary lines (#421): main-thread lateness, screen frames by the settled tab, the OBD merges' wait for the link
+ * lock and, over Bluetooth, notification delivery. Counts only; "> N ms" is strictly over N.
+ */
+internal fun uiTimingText(r: UiTimingRecord?): List<String> = buildList {
+    add("─── UI TIMING ─────────────────────────────────────────────")
+    if (r == null) { add("  no connection yet in this app run: nothing counted"); return@buildList }
+    fun edges(c: TimingCounts, lead: String) = c.overMs.entries.mapIndexed { i, (edge, n) ->
+        if (i == 0) "$lead> $edge ms $n" else "> $edge ms $n"
+    }.joinToString(" · ")
+    fun line(label: String, head: String, c: TimingCounts, lead: String) =
+        "  ${label.padEnd(14)}: $head · ${edges(c, lead)} · longest ${c.longestMs} ms"
+    add(line("Main thread", "${r.mainThread.count} wakes of ${MainThreadLag.PERIOD_MS} ms", r.mainThread, "late "))
+    r.frames.forEach { (tab, c) -> add(line("Frames $tab", "${c.count}", c, "")) }
+    add(line("OBD merges", "${r.mergeLockWait.count}", r.mergeLockWait, "lock wait "))
+    r.bluetooth?.let {
+        add("  ${"Bluetooth".padEnd(14)}: ${it.notifications} notifications · ${it.lines} SLCAN lines · " +
+            "most in one notification ${it.mostLinesInOne}")
+    }
+    add("  Counts since this connection started (frames by the settled tab); no clock times")
+}
+
+internal fun uiTimingJson(r: UiTimingRecord): JSONObject = JSONObject().apply {
+    fun timing(c: TimingCounts, countKey: String) = JSONObject().apply {
+        put(countKey, c.count)
+        put("overMs", JSONObject().apply { c.overMs.forEach { (edge, n) -> put(edge.toString(), n) } })
+        put("longestMs", c.longestMs)
+    }
+    put("mainThread", timing(r.mainThread, "samples").apply { put("periodMs", MainThreadLag.PERIOD_MS) })
+    put("frames", JSONObject().apply { r.frames.forEach { (tab, c) -> put(tab, timing(c, "frames")) } })
+    put("mergeLockWait", timing(r.mergeLockWait, "merges"))
+    r.bluetooth?.let {
+        put("bluetooth", JSONObject().apply {
+            put("notifications", it.notifications)
+            put("slcanLines", it.lines)
+            put("mostLinesInOneNotification", it.mostLinesInOne)
+        })
+    }
+}
 
 /** LOG LIMITS summary lines (#253): what this session's rolling / capped logs no longer hold. */
 internal fun logLimitsText(l: DiagnosticLogger.LogLimits, knockDropped: Int, li: DiagnosticLogger.LinkIntegrity): List<String> = buildList {
