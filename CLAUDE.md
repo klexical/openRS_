@@ -271,7 +271,7 @@ RC label, SHA-256, `gh attestation verify`. Never force-move a tag or delete an 
 No further RC is cut after rc.8: builds after it are nightlies, published by the nightly pipeline (#363).
 
 **Nightlies (#363).** `.github/workflows/nightly.yml` is scheduled for 08:17 UTC and can be run by hand ("Run
-workflow"), but GitHub runs it only from the copy on main: once it is there, it builds staging's tip through the shared
+workflow"), but GitHub runs it only from the copy on main: it builds staging's tip through the shared
 recipe `release-apk.yml`. Its gate
 builds only when files under `android/` changed since the newest published nightly (rc.8 for the first) and today's UTC
 date has no nightly. Its `PUBLISH` constant is true, the same on main and staging (owner Q127), so a run on main that
@@ -280,7 +280,7 @@ false. Only two jobs can write contents, the publish (`scripts/nightly-publish.s
 Latest) and the deletion of a failed publish's draft (`scripts/nightly-cleanup.sh`), and they run only when `PUBLISH` is
 true and the run is on main. They run the scripts of the gate's commit, staging's tip (main has no copy), so while
 `PUBLISH` is true a staging change to `nightly-publish.sh`, `nightly-cleanup.sh` or `nightly-gate.sh` changes how main
-publishes: such a change is owner-only (the integrator's call, recorded in the decision log). GitHub disables a schedule in a public repository after
+publishes: such a change is owner-only. GitHub disables a schedule in a public repository after
 60 days without activity: a run that stops arriving may need re-enabling on the Actions page.
 
 **A bad nightly.** On the owner's word (a deletion, owner-only) the integrator turns that release back into a draft and
