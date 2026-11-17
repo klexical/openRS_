@@ -280,8 +280,14 @@ Latest) and the deletion of a failed publish's draft (`scripts/nightly-cleanup.s
 true and the run is on main. GitHub disables a schedule in a public repository after
 60 days without activity: a run that stops arriving may need re-enabling on the Actions page.
 
-**A bad nightly.** On the owner's word the integrator turns that release back into a draft (the tag and the file stay).
-The fix goes into staging the normal way and the next night's build replaces it. This works only while the repository's
+**A bad nightly.** On the owner's word (a deletion, owner-only) the integrator turns that release back into a draft and
+then deletes its APK file from it; the draft, its tag and its notes stay as the record (Q122). A draft alone is not
+enough: in the Q116 trial (run 44005524480) the old public download URL still answered HTTP 200 without a login after
+the draft-back. The commands: `gh release edit <tag> -R klexical/openRS_ --draft=true`, then
+`gh release delete-asset <tag> openRS_v<name>.apk -R klexical/openRS_ --yes`; then read back
+`gh release view <tag> -R klexical/openRS_ --json isDraft,assets --jq '{isDraft, assets: [.assets[].name]}'`, which must
+print `{"assets":[],"isDraft":true}`, and record what the old download URL answers without a login. The fix goes into
+staging the normal way and the next night's build replaces it. This works only while the repository's
 immutable-releases setting is off.
 
 **Stable and the base after it.** Stable is cut by hand: staging merged into main, tag on main, with `releaseStage` empty
