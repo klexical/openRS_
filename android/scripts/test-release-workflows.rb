@@ -6,8 +6,8 @@
 # script tests; nightly.yml runs only on its schedule and by hand, in one group, builds only staging's tip through the
 # recipe, and re-checks the digest before the launch check, the attestation and the publish; its launch job starts the
 # emulator only through android/scripts/start-emulator.sh, and no workflow runs the SDK's emulator tools inline; only its
-# publish and cleanup jobs can write contents, each only when PUBLISH is true and the run is on main (PUBLISH is false: a
-# dry run), and the scripts that write releases or tags run only there; actions.lock lists every remote action of every
+# publish and cleanup jobs can write contents, each only when PUBLISH is true and the run is on main (PUBLISH is true,
+# owner Q127: a run on another ref is a dry run), and the scripts that write releases or tags run only there; actions.lock lists every remote action of every
 # workflow under its own key (Q117). Reads the YAML only; GitHub's own run of the workflows is the evidence for what they do. Ruby's standard library only (YAML 1.1: the key `on` reads as true).
 # Runs on Ruby 2.6 (macOS) and 3.x (CI's Ubuntu). Run from anywhere: ruby android/scripts/test-release-workflows.rb
 require 'yaml'
@@ -232,7 +232,7 @@ check('in every workflow, a secret-holding job outputs nothing but the digest') 
   end
 end
 
-# ── nightly.yml (#363): the nightly in dry-run mode ───────────────────────────────────────────────────────────────────
+# ── nightly.yml (#363): the nightly, publishing on main (Q127) ────────────────────────────────────────────────────────
 GATE_IF = "needs.gate.outputs.run == 'true'"
 # The publishing jobs' condition (#363): PUBLISH true (from the mode job) AND the run on main, whose copy of this file is
 # the reviewed one (a manual run on another ref runs that ref's copy), AND the gate said build
@@ -280,9 +280,9 @@ check('nightly.yml runs at 08:17 UTC and by hand, nothing else, in one never-can
   why
 end
 
-check('nightly.yml is in dry-run mode: PUBLISH is false, and only publish and cleanup can write contents, under the publishing condition') do
+check('nightly.yml publishes: PUBLISH is true (Q127), and only publish and cleanup can write contents, under the publishing condition') do
   why = []
-  why << "PUBLISH is #{nightly.dig('env', 'PUBLISH').inspect}, expected 'false'" unless nightly.dig('env', 'PUBLISH') == 'false'
+  why << "PUBLISH is #{nightly.dig('env', 'PUBLISH').inspect}, expected 'true'" unless nightly.dig('env', 'PUBLISH') == 'true'
   why << "top-level permissions #{nightly['permissions'].inspect}, expected none" unless nightly['permissions'] == {}
   why << "jobs #{jobs(nightly).keys.inspect}" unless jobs(nightly).keys == NIGHTLY_JOBS.keys
   NIGHTLY_JOBS.each do |id, (c, perms)|
