@@ -1,17 +1,16 @@
 name: Nightly
 
-# One build a night from staging's tip (#363). DRY-RUN
-# MODE while PUBLISH is false: every run stops after the attestation, and the two jobs that hold a token able to write
-# contents (publish, cleanup) are skipped, so no release or tag is made. They run only when PUBLISH is true AND the run
-# is on main (a manual run on another ref runs that ref's copy of this file); PUBLISH is set to true in a change of its
-# own, after two green dry-run nights.
+# One build a night from staging's tip (#363). PUBLISH is true (owner Q127, the same on main and staging): a run on
+# main that builds publishes the nightly. The two jobs that hold a token able to write contents (publish, cleanup) run
+# only when PUBLISH is true AND the run is on main; a manual run on another ref runs that ref's copy of this file and is
+# a dry run: it stops after the attestation, and no release or tag is made. With PUBLISH false every run is a dry run.
 #
 # GitHub runs the schedule (and offers "Run workflow") only from this file on the default branch, main, whose tree is
 # the 2.2.6 one. So every step that runs a repository script or Gradle runs in a checkout of staging's tip, the commit
 # the gate records, never the run's own commit or ref (on a schedule those are main's); the run's ref is read only in
 # the two publishing jobs' condition. The recipe (release-apk.yml, also on main) checks out that commit itself.
-# In a dry run each night that builds leaves a release-signed APK as a one-day run artifact and a public build-provenance
-# attestation for a build that is not published (owner, 2026-11-13).
+# A dry run that builds leaves a release-signed APK as a one-day run artifact and a public build-provenance attestation
+# for a build that is not published (owner, 2026-11-13).
 # android/scripts/test-release-workflows.rb pins this file's shape.
 
 on:
@@ -26,7 +25,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  PUBLISH: 'false'            # dry-run mode (#363): set to true in a change of its own, after two green dry-run nights
+  PUBLISH: 'true'             # publishing (#363, owner Q127): equal on main and staging; 'false' makes every run a dry run
 
 jobs:
   # The publish output, from this file's PUBLISH alone: no checkout, no repository code, so nothing on staging can set it

@@ -253,7 +253,7 @@ docs/*    → main    (direct)        (README.md, assets/, docs/, firmware/READM
                                     CLAUDE.md, .claude/rules/ and GLOSSARY.md follow the code route (staging)
 Release tags: android-v*  (triggers CI signing + GitHub Release)
 RCs: one pre-release per RC tag (android-v<ver>-rc.N), tagged on staging; stable tags on main; rc.8 is the last RC
-Nightlies (#363, once nightly.yml publishes): android-v<ver>-nightly.YYYYMMDD, from staging's tip
+Nightlies (#363): android-v<ver>-nightly.YYYYMMDD, from staging's tip
 ```
 
 Android RCs ship from **staging**; **main** carries stable Android (v2.2.6) and Sapphire. Sapphire may reach main web/-only
@@ -268,14 +268,15 @@ pushes that would publish a private address (GH007), and fixing that afterwards 
 to that release) → download the asset and check name, `apksigner verify --print-certs` (cert `c99b6f26…`), versionCode /
 RC label, SHA-256, `gh attestation verify`. Never force-move a tag or delete an older RC release.
 
-No further RC is cut after rc.8: builds after it are nightlies, which come once the nightly pipeline publishes (#363).
+No further RC is cut after rc.8: builds after it are nightlies, published by the nightly pipeline (#363).
 
 **Nightlies (#363).** `.github/workflows/nightly.yml` is scheduled for 08:17 UTC and can be run by hand ("Run
 workflow"), but GitHub runs it only from the copy on main: once it is there, it builds staging's tip through the shared
 recipe `release-apk.yml`. Its gate
 builds only when files under `android/` changed since the newest published nightly (rc.8 for the first) and today's UTC
-date has no nightly. While its `PUBLISH` constant is false every run is a dry run: it stops after the attestation. Only
-two jobs can write contents, the publish (`scripts/nightly-publish.sh`: draft, one asset checked, then a pre-release, never
+date has no nightly. Its `PUBLISH` constant is true, the same on main and staging (owner Q127), so a run on main that
+builds publishes; a run on another ref is a dry run and stops after the attestation, as is every run while `PUBLISH` is
+false. Only two jobs can write contents, the publish (`scripts/nightly-publish.sh`: draft, one asset checked, then a pre-release, never
 Latest) and the deletion of a failed publish's draft (`scripts/nightly-cleanup.sh`), and they run only when `PUBLISH` is
 true and the run is on main. GitHub disables a schedule in a public repository after
 60 days without activity: a run that stops arriving may need re-enabling on the Actions page.

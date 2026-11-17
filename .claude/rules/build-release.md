@@ -90,8 +90,9 @@ paths:
     deletes only this run attempt's draft (at the recorded commit, its notes holding that line) and a tag only at the
     recorded commit, checked before anything is deleted, then requires the ref's 404; any other draft, and a published
     release, is never deleted (the step fails). Both scripts refuse any tag but a nightly's or the throwaway trial's
-    (`test-nightly-cleanup-<date>`). A dry run (`PUBLISH` is `'false'`): the run stops after the attestation and nothing
-    is published, so every night builds and leaves a one-day release-signed artifact and a public attestation.
+    (`test-nightly-cleanup-<date>`). `PUBLISH` is `'true'`, the same on main and staging (owner Q127). A dry run (a run
+    on another ref, or any run while `PUBLISH` is `'false'`) stops after the attestation and publishes nothing: one that
+    builds leaves a one-day release-signed artifact and a public attestation.
     `scripts/test-nightly-gate.sh`, `scripts/test-launch-check.sh` (it also runs `scripts/test-crash-facts.py`),
     `scripts/test-start-emulator.sh`, `scripts/test-nightly-publish.sh` and `test-release-workflows.rb` pin it; CI's
     build job runs them.
