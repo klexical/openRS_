@@ -286,7 +286,7 @@ enough: in the Q116 trial (run 44005524480) the old public download URL still an
 the draft-back. The commands: `gh release edit <tag> -R klexical/openRS_ --draft=true`, then
 `gh release delete-asset <tag> openRS_v<name>.apk -R klexical/openRS_ --yes`; then read back
 `gh release view <tag> -R klexical/openRS_ --json isDraft,assets --jq '{isDraft, assets: [.assets[].name]}'`, which must
-print `{"isDraft":true,"assets":[]}`, and record what the old download URL answers without a login. The fix goes into
+print `{"assets":[],"isDraft":true}`, and record what the old download URL answers without a login. The fix goes into
 staging the normal way and the next night's build replaces it. This works only while the repository's
 immutable-releases setting is off.
 
