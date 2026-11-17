@@ -278,7 +278,9 @@ date has no nightly. Its `PUBLISH` constant is true, the same on main and stagin
 builds publishes; a run on another ref is a dry run and stops after the attestation, as is every run while `PUBLISH` is
 false. Only two jobs can write contents, the publish (`scripts/nightly-publish.sh`: draft, one asset checked, then a pre-release, never
 Latest) and the deletion of a failed publish's draft (`scripts/nightly-cleanup.sh`), and they run only when `PUBLISH` is
-true and the run is on main. GitHub disables a schedule in a public repository after
+true and the run is on main. They run the scripts of the gate's commit, staging's tip (main has no copy), so while
+`PUBLISH` is true a staging change to `nightly-publish.sh`, `nightly-cleanup.sh` or `nightly-gate.sh` changes how main
+publishes: such a change is owner-only (the integrator's call, recorded in the decision log). GitHub disables a schedule in a public repository after
 60 days without activity: a run that stops arriving may need re-enabling on the Actions page.
 
 **A bad nightly.** On the owner's word (a deletion, owner-only) the integrator turns that release back into a draft and
