@@ -5,7 +5,7 @@
 #      checked as step 5 checks it, and a quiet stop (exit 0, nothing created) only if it checks out; a draft, a
 #      release that does not check out, or a tag ref with no release fails the step, and nothing is deleted here
 #      ("Re-run failed jobs" then stays red until someone looks; "Re-run all jobs" re-runs the gate, which skips quietly
-#      when today already has a nightly or a tag);
+#      only when today's nightly is a clean published one and fails on anything else for today, Q114);
 #   2. notes: GitHub's generated list of merged pull requests since <base tag> (the newest published nightly, rc.8 for the
 #      first), then the SHA-256 line, then the changelog link at <sha>; on the first nightly the rc.8 line;
 #   3. a DRAFT pre-release for <tag> at <sha>, Latest off, whose notes end with a line naming this run and attempt

@@ -144,7 +144,14 @@ called "api repos/owner/repo/releases/latest"; check "a quiet skip comes only af
 rm -f "$WORK/latest"
 expect_skip "a clean nightly when no release is marked Latest is a quiet skip" "$C3" "clean published nightly"
 
-clean_day; expect_fail "today's nightly with its tag at another commit (staging moved) fails" "points at" "$C1" "$D"
+clean_day; expect_fail "today's clean nightly at an earlier commit (staging moved since) fails" "not this run's commit" "$C1" "$D"
+clean_day; view false true "[\"$APK\"]" "${NOTES//$C3/$C1}"
+expect_fail "today's tag at another commit than its notes name fails"     "the commit its notes name" "$C3" "$D"
+clean_day; view false true "[\"$APK\"]" "${NOTES//Full changelog/Changelog}"
+expect_fail "today's notes that name no commit fail"                      "name exactly one commit" "$C3" "$D"
+NOTES_CRLF="* A merged pull request\r\n\r\nSHA-256 of \`$APK\`: \`$DIGEST\`\r\n\r\nFull changelog: https://github.com/owner/repo/blob/$C3/android/CHANGELOG.md\r\n"
+clean_day; view false true "[\"$APK\"]" "$NOTES_CRLF"
+expect_skip "notes with CRLF line ends still check out"                   "$C3" "clean published nightly"
 clean_day; view true true "[\"$APK\"]"
 releases "[{\"tagName\":\"$TAG\",\"isDraft\":true}]"
 expect_fail "today's draft, when the token can see it, fails"            "draft"            "$C3" "$D"
@@ -179,12 +186,26 @@ expect_fail "a second release for today beside the clean one fails"       "andro
 g tag -d "$TAG" >/dev/null
 releases '[{"tagName":"android-v2.2.7-rc.8","isDraft":false}]'
 g tag "android-v2.2.6-nightly.$D" "$C0"
-expect_fail "a tag for today without a release fails"                    "no release"       "$C3" "$D"
+expect_fail "a tag for today of another base without a release fails"    "android-v2.2.6-nightly.$D" "$C3" "$D"
 g tag -d "android-v2.2.6-nightly.$D" >/dev/null
 g tag "$TAG" "$C3"
 expect_fail "this run's tag for today without a release fails"           "no release"       "$C3" "$D"
 g tag -d "$TAG" >/dev/null
 WHY=""; run "$C1" "$D"; [[ "$OUT" == *"draft"* ]] || why "the log does not say drafts are not visible"; check "the log says drafts are not visible to it"
+
+# The other reading of Q114's "at the run's commit" (CLEAN_AT=notes, pending the owner): a copy of the gate with the one
+# line changed. Staging moving after the nightly is then a quiet skip; the tag must still stand where the notes say.
+NOTES_GATE="$WORK/nightly-gate-notes.sh"
+sed 's/^CLEAN_AT=run$/CLEAN_AT=notes/' "$SCRIPT" > "$NOTES_GATE"
+WHY=""; [ "$(diff "$SCRIPT" "$NOTES_GATE" | grep -c '^[<>]')" = 2 ] || why "the copy does not differ from the gate in exactly the CLEAN_AT line"
+check "the gate holds exactly one CLEAN_AT=run line (the reading in force)"
+SCRIPT_RUN="$SCRIPT"; SCRIPT="$NOTES_GATE"
+clean_day; expect_skip "notes reading: today's clean nightly at an earlier commit (staging moved since) is a quiet skip" "$C1" "clean published nightly"
+clean_day; view false true "[\"$APK\"]" "${NOTES//$C3/$C1}"
+expect_fail "notes reading: today's tag at another commit than its notes name fails" "the commit its notes name" "$C1" "$D"
+sed 's/^CLEAN_AT=run$/CLEAN_AT=bogus/' "$SCRIPT_RUN" > "$NOTES_GATE"
+clean_day; expect_fail "an unknown CLEAN_AT fails the run"               "neither run nor notes" "$C3" "$D"
+SCRIPT="$SCRIPT_RUN"; g tag -d "$TAG" >/dev/null
 
 # Refused: bad input, a failed lookup, an unreadable base, no base tag
 expect_fail "a commit that is not a full SHA"     "40"            staging "$D"
