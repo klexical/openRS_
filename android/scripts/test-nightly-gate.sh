@@ -2,7 +2,7 @@
 # test-nightly-gate.sh — checks nightly-gate.sh, the nightly workflow's gate (#363): build only when files under android/
 # differ between the commit and the newest PUBLISHED nightly's tag (rc.8's for the first nightly; a leftover tag or a draft
 # does not count), and today's UTC date has no nightly release and no tag; skip quietly only when today's nightly is a
-# clean published one at the run's commit, and fail on anything else for today (Q114); refuse bad input and a failed
+# clean published one at the commit its own tag and notes name, and fail on anything else for today (Q114, Q115); refuse bad input and a failed
 # lookup. A throwaway repository holds the commits and tags; a fake gh prints a release list, a release view, an asset and
 # the release marked Latest from fixtures. Dates and names are invented test values. Run from anywhere: bash android/scripts/test-nightly-gate.sh
 set -uo pipefail
@@ -120,8 +120,9 @@ expect_run  "a draft nightly is not a base"                                "$C1"
 releases '[{"tagName":"android-v2.2.7-rc.8","isDraft":false}]'
 expect_run  "a leftover nightly tag without a published release is not a base" "$C1" android-v2.2.7-rc.8
 
-# Today taken (Q114): a quiet skip only for a clean published nightly at the run's commit; anything else for today fails
-# the run, so "Re-run all jobs" after a publish that failed past its last step stays red (#363)
+# Today taken (Q114, Q115): a quiet skip only for a clean published nightly at the commit its own tag and notes name
+# (a run after a same-day staging merge too); anything else for today fails the run, so "Re-run all jobs" after a
+# publish that failed past its last step stays red (#363)
 APK="openRS_v$NAME.apk"
 printf 'apk bytes\n' > "$WORK/asset"
 DIGEST=$( (command -v sha256sum >/dev/null && sha256sum "$WORK/asset" || shasum -a 256 "$WORK/asset") | cut -d' ' -f1)
@@ -138,13 +139,13 @@ clean_day() {   # today's release for $TAG, published, one asset, digest in its 
 called() { grep -q -F -- "$1" "$WORK/gh-calls" 2>/dev/null || why "gh was not asked '$1'"; }
 
 clean_day
-expect_skip "today's clean published nightly at the run's commit is a quiet skip" "$C3" "clean published nightly"
+expect_skip "today's clean published nightly is a quiet skip" "$C3" "clean published nightly"
 called "release view $TAG --repo owner/repo"; called "release download $TAG --repo owner/repo --pattern $APK"
 called "api repos/owner/repo/releases/latest"; check "a quiet skip comes only after the release, its asset and Latest are read"
 rm -f "$WORK/latest"
 expect_skip "a clean nightly when no release is marked Latest is a quiet skip" "$C3" "clean published nightly"
 
-clean_day; expect_fail "today's clean nightly at an earlier commit (staging moved since) fails" "not this run's commit" "$C1" "$D"
+clean_day; expect_skip "today's clean nightly at an earlier commit (staging moved since) is a quiet skip (Q115)" "$C1" "clean published nightly: $TAG at $C3"
 clean_day; view false true "[\"$APK\"]" "${NOTES//$C3/$C1}"
 expect_fail "today's tag at another commit than its notes name fails"     "the commit its notes name" "$C3" "$D"
 clean_day; view false true "[\"$APK\"]" "${NOTES//Full changelog/Changelog}"
@@ -193,19 +194,9 @@ expect_fail "this run's tag for today without a release fails"           "no rel
 g tag -d "$TAG" >/dev/null
 WHY=""; run "$C1" "$D"; [[ "$OUT" == *"draft"* ]] || why "the log does not say drafts are not visible"; check "the log says drafts are not visible to it"
 
-# The other reading of Q114's "at the run's commit" (CLEAN_AT=notes, pending the owner): a copy of the gate with the one
-# line changed. Staging moving after the nightly is then a quiet skip; the tag must still stand where the notes say.
-NOTES_GATE="$WORK/nightly-gate-notes.sh"
-sed 's/^CLEAN_AT=run$/CLEAN_AT=notes/' "$SCRIPT" > "$NOTES_GATE"
-WHY=""; [ "$(diff "$SCRIPT" "$NOTES_GATE" | grep -c '^[<>]')" = 2 ] || why "the copy does not differ from the gate in exactly the CLEAN_AT line"
-check "the gate holds exactly one CLEAN_AT=run line (the reading in force)"
-SCRIPT_RUN="$SCRIPT"; SCRIPT="$NOTES_GATE"
-clean_day; expect_skip "notes reading: today's clean nightly at an earlier commit (staging moved since) is a quiet skip" "$C1" "clean published nightly"
 clean_day; view false true "[\"$APK\"]" "${NOTES//$C3/$C1}"
-expect_fail "notes reading: today's tag at another commit than its notes name fails" "the commit its notes name" "$C1" "$D"
-sed 's/^CLEAN_AT=run$/CLEAN_AT=bogus/' "$SCRIPT_RUN" > "$NOTES_GATE"
-clean_day; expect_fail "an unknown CLEAN_AT fails the run"               "neither run nor notes" "$C3" "$D"
-SCRIPT="$SCRIPT_RUN"; g tag -d "$TAG" >/dev/null
+expect_fail "staging moved, and today's tag is not where its notes say, fails" "the commit its notes name" "$C1" "$D"
+g tag -d "$TAG" >/dev/null
 
 # Refused: bad input, a failed lookup, an unreadable base, no base tag
 expect_fail "a commit that is not a full SHA"     "40"            staging "$D"

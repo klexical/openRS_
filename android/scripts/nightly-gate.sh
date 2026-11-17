@@ -20,11 +20,6 @@ fail() { echo "::error::$*"; exit 1; }
 SHA="$1"; TODAY="$2"
 FIRST_BASE_TAG=android-v2.2.7-rc.8            # the first nightly is compared with rc.8 (#363)
 NIGHTLY_TAG='^android-v[0-9]+\.[0-9]+\.[0-9]+-nightly\.[0-9]{8}$'
-# Which commit today's clean nightly must stand at (Q114 check 4; the owner's reading is pending, T7 round 2):
-#   run   = this run's commit (staging's tip now): a run after a same-day staging merge fails beside a clean nightly;
-#   notes = the commit the release's own notes name (its changelog link): such a run skips quietly.
-# Either way the tag must point at the commit the notes name.
-CLEAN_AT=run
 
 [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || fail "'$SHA' is not a full commit SHA (40 lower-case hex characters)"
 [[ "$TODAY" =~ ^[0-9]{8}$ ]] || fail "today '$TODAY' is not YYYYMMDD"
@@ -36,14 +31,14 @@ RELEASES=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1000 --json tagNa
 jq -e 'type == "array"' >/dev/null 2>&1 <<<"$RELEASES" || fail "the release list is not a JSON list (empty, or an error), so the gate cannot decide"
 echo "Releases read: $(jq length <<<"$RELEASES") (a read-only token is shown no draft releases)"
 
-# check_today_clean: today's nightly must be a clean published one at this run's commit, or the run fails (#363, Q114),
+# check_today_clean: today's nightly must be a clean published one, or the run fails (#363, Q114, Q115),
 # so "Re-run all jobs" after a publish that failed past its last step stays red. Clean = what nightly-publish.sh checks
 # of a published nightly (check_published), with the digest from the release's own notes (this gate has no build yet):
 #   - today has exactly one nightly release and no other nightly tag, both for this run's $TAG;
 #   - it is not a draft and is a pre-release;
 #   - it holds exactly one asset, openRS_v<name>.apk, whose downloaded bytes match the one SHA-256 line of its notes;
 #   - its notes name one commit (the changelog link nightly-publish.sh writes) and its tag (this checkout's) points at it;
-#     with CLEAN_AT=run that commit must also be this run's;
+#     that commit need not be this run's: a run after a same-day staging merge skips quietly beside a clean nightly (Q115);
 #   - it is not the release marked Latest.
 sha256() { if command -v sha256sum >/dev/null; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -d' ' -f1; }
 check_today_clean() {
@@ -72,15 +67,11 @@ check_today_clean() {
   [ -n "$named" ] || fail "today's $TAG notes do not name exactly one commit (the changelog link)"
   at=$(git rev-parse -q --verify "refs/tags/$TAG^{commit}" || true)
   [ "$at" = "$named" ] || fail "today's tag $TAG points at '${at:-nothing}', not $named, the commit its notes name"
-  case "$CLEAN_AT" in
-    run) [ "$named" = "$SHA" ] || fail "today's $TAG is at $named, not this run's commit $SHA (staging moved since it was published)" ;;
-    notes) ;;
-    *) fail "CLEAN_AT '$CLEAN_AT' is neither run nor notes" ;;
-  esac
   err=$(mktemp)
   latest=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name 2>"$err") \
     || grep -q 'HTTP 404' "$err" || fail "the release marked Latest could not be read: $(cat "$err")"
   [ "$latest" != "$TAG" ] || fail "today's $TAG is marked Latest; a nightly never is"
+  CLEAN_COMMIT=$named
   echo "Today's $TAG checks out: a published pre-release, one asset with the digest of its notes, tag at $named, not Latest"
 }
 
@@ -95,7 +86,7 @@ TODAY_RELEASES=$(jq -r --arg d "-nightly.$TODAY" '.[] | select(.tagName | endswi
 TODAY_TAGS=$(git tag -l "android-v*-nightly.$TODAY")
 if [ -n "$TODAY_RELEASES$TODAY_TAGS" ]; then
   check_today_clean
-  decide false "today ($TODAY UTC) already has a clean published nightly: $TAG" "-"; exit 0
+  decide false "today ($TODAY UTC) already has a clean published nightly: $TAG at $CLEAN_COMMIT" "-"; exit 0
 fi
 
 PREV=$(jq -r --arg re "$NIGHTLY_TAG" '.[] | select(.isDraft | not) | .tagName | select(test($re))' <<<"$RELEASES" \

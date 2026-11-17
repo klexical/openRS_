@@ -48,8 +48,8 @@ paths:
     no repository code), `gate` (`scripts/nightly-gate.sh`: build only when `android/` changed since
     the newest published nightly, rc.8's for the first, and today has no nightly or tag; a day that has one is a quiet
     skip only when it is a clean published nightly (the publish step's checks of a published one, the digest from the
-    release's own notes, the tag where its notes' changelog link points; `CLEAN_AT=run` also wants that commit to be
-    the run's, the reading in force until the owner's Q114 answer), and fails the run otherwise; a read-only token is
+    release's own notes, the tag where its notes' changelog link points, which need not be the run's commit: a run
+    after a same-day staging merge skips, Q115), and fails the run otherwise; a read-only token is
     shown no draft releases), `checks` (ci.yml's build and lint commands and the release script tests), `release` (the recipe),
     `launch` (`scripts/start-emulator.sh` starts an API 36 emulator with `-gpu swangle` (under `swiftshader_indirect` it
     crashed on its host render thread, #363) under a wrapper that writes its exit status to
