@@ -34,7 +34,8 @@ echo "Releases read: $(jq length <<<"$RELEASES") (a read-only token is shown no 
 # check_today_clean: today's nightly must be a clean published one, or the run fails (#363, Q114, Q115),
 # so "Re-run all jobs" after a publish that failed past its last step stays red. Clean = what nightly-publish.sh checks
 # of a published nightly (check_published), with the digest from the release's own notes (this gate has no build yet):
-#   - today has exactly one nightly release and no other nightly tag, both for this run's $TAG;
+#   - today has exactly one nightly (one tag name across its releases and tags), judged under its own name even when
+#     this run's base has moved since (Q119), and a release for it;
 #   - it is not a draft and is a pre-release;
 #   - it holds exactly one asset, openRS_v<name>.apk, whose downloaded bytes match the one SHA-256 line of its notes;
 #   - its notes name one commit (the changelog link nightly-publish.sh writes) and its tag (this checkout's) points at it;
@@ -42,37 +43,44 @@ echo "Releases read: $(jq length <<<"$RELEASES") (a read-only token is shown no 
 #   - it is not the release marked Latest.
 sha256() { if command -v sha256sum >/dev/null; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -d' ' -f1; }
 check_today_clean() {
-  local others asset view want dir named at latest err
-  others=$(printf '%s\n%s\n' "$TODAY_RELEASES" "$TODAY_TAGS" | grep -v -x -F -e "$TAG" -e '' || true)
-  [ -z "$others" ] || fail "today ($TODAY UTC) has a nightly other than this run's $TAG: $(echo $others)"
-  [ -n "$TODAY_RELEASES" ] || fail "today's $TAG has a tag but no release this token can see (a leftover, a draft or made by hand); look at it by hand"
-  ! jq -e --arg t "$TAG" 'any(.[]; .tagName == $t and .isDraft)' >/dev/null <<<"$RELEASES" \
-    || fail "today's $TAG is a draft: a leftover of an earlier attempt; look at it by hand"
-  asset="openRS_v$NAME.apk"
-  view=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease,assets,body) \
-    || fail "today's release $TAG could not be read"
-  jq -e '.isDraft == false and .isPrerelease == true' >/dev/null <<<"$view" || fail "today's $TAG is not a published pre-release"
+  # The release judged is today's one nightly under its own tag and name, even when this run's base has moved since
+  # (a stable cut sets the next base on staging; Q119); a second, different nightly that day fails
+  local tag name today_names asset view want dir named at latest err
+  today_names=$(printf '%s\n%s\n' "$TODAY_RELEASES" "$TODAY_TAGS" | grep -v -x -e '' | sort -u || true)
+  [ "$(grep -c . <<<"$today_names")" -eq 1 ] || fail "today ($TODAY UTC) has more than one nightly: $(echo $today_names)"
+  tag="$today_names"
+  [[ "$tag" =~ $NIGHTLY_TAG ]] || fail "today's $tag is not a nightly's tag (android-v<X.Y.Z>-nightly.<date>)"
+  name="${tag#android-v}"
+  [ -n "$TODAY_RELEASES" ] || fail "today's $tag has a tag but no release this token can see (a leftover, a draft or made by hand); look at it by hand"
+  ! jq -e --arg t "$tag" 'any(.[]; .tagName == $t and .isDraft)' >/dev/null <<<"$RELEASES" \
+    || fail "today's $tag is a draft: a leftover of an earlier attempt; look at it by hand"
+  asset="openRS_v$name.apk"
+  view=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease,assets,body) \
+    || fail "today's release $tag could not be read"
+  jq -e '.isDraft == false and .isPrerelease == true' >/dev/null <<<"$view" || fail "today's $tag is not a published pre-release"
   jq -e --arg a "$asset" '[.assets[].name] == [$a]' >/dev/null <<<"$view" \
-    || fail "today's $TAG does not hold exactly one asset $asset: $(jq -c '[.assets[].name]' <<<"$view")"
+    || fail "today's $tag does not hold exactly one asset $asset: $(jq -c '[.assets[].name]' <<<"$view")"
   want=$(jq -r --arg a "$asset" '.body | split("\n") | map(rtrimstr("\r")) | map(select(startswith("SHA-256 of `" + $a + "`: `")))
-    | if length == 1 then .[0] | capture(": `(?<h>[0-9a-f]{64})`$").h // empty else empty end' <<<"$view")
-  [ -n "$want" ] || fail "today's $TAG notes do not carry exactly one SHA-256 line for $asset"
+    | if length == 1 then .[0] | capture(": `(?<h>[0-9a-f]{64})`$").h // empty else empty end' <<<"$view") \
+    || fail "today's $tag notes could not be read"
+  [ -n "$want" ] || fail "today's $tag notes do not carry exactly one SHA-256 line for $asset"
   dir=$(mktemp -d)
-  gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "$asset" --dir "$dir" \
+  gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern "$asset" --dir "$dir" \
     || fail "today's $asset could not be downloaded"
   [ "$(sha256 "$dir/$asset")" = "$want" ] || fail "today's $asset does not match the SHA-256 in its notes ($want)"
   named=$(jq -r --arg p "Full changelog: https://github.com/$GITHUB_REPOSITORY/blob/" '.body | split("\n") | map(rtrimstr("\r"))
     | map(select(startswith($p)) | ltrimstr($p) | capture("^(?<c>[0-9a-f]{40})/android/CHANGELOG\\.md$").c // "?")
-    | if length == 1 and .[0] != "?" then .[0] else empty end' <<<"$view")
-  [ -n "$named" ] || fail "today's $TAG notes do not name exactly one commit (the changelog link)"
-  at=$(git rev-parse -q --verify "refs/tags/$TAG^{commit}" || true)
-  [ "$at" = "$named" ] || fail "today's tag $TAG points at '${at:-nothing}', not $named, the commit its notes name"
+    | if length == 1 and .[0] != "?" then .[0] else empty end' <<<"$view") \
+    || fail "today's $tag notes could not be read"
+  [ -n "$named" ] || fail "today's $tag notes do not name exactly one commit (the changelog link)"
+  at=$(git rev-parse -q --verify "refs/tags/$tag^{commit}" || true)
+  [ "$at" = "$named" ] || fail "today's tag $tag points at '${at:-nothing}', not $named, the commit its notes name"
   err=$(mktemp)
   latest=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name 2>"$err") \
     || grep -q 'HTTP 404' "$err" || fail "the release marked Latest could not be read: $(cat "$err")"
-  [ "$latest" != "$TAG" ] || fail "today's $TAG is marked Latest; a nightly never is"
-  CLEAN_COMMIT=$named
-  echo "Today's $TAG checks out: a published pre-release, one asset with the digest of its notes, tag at $named, not Latest"
+  [ "$latest" != "$tag" ] || fail "today's $tag is marked Latest; a nightly never is"
+  CLEAN_TAG=$tag; CLEAN_COMMIT=$named
+  echo "Today's $tag checks out: a published pre-release, one asset with the digest of its notes, tag at $named, not Latest"
 }
 
 decide() {   # decide <run> <reason> <base tag>
@@ -86,7 +94,7 @@ TODAY_RELEASES=$(jq -r --arg d "-nightly.$TODAY" '.[] | select(.tagName | endswi
 TODAY_TAGS=$(git tag -l "android-v*-nightly.$TODAY")
 if [ -n "$TODAY_RELEASES$TODAY_TAGS" ]; then
   check_today_clean
-  decide false "today ($TODAY UTC) already has a clean published nightly: $TAG at $CLEAN_COMMIT" "-"; exit 0
+  decide false "today ($TODAY UTC) already has a clean published nightly: $CLEAN_TAG at $CLEAN_COMMIT" "-"; exit 0
 fi
 
 PREV=$(jq -r --arg re "$NIGHTLY_TAG" '.[] | select(.isDraft | not) | .tagName | select(test($re))' <<<"$RELEASES" \

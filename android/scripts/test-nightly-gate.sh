@@ -150,6 +150,10 @@ clean_day; view false true "[\"$APK\"]" "${NOTES//$C3/$C1}"
 expect_fail "today's tag at another commit than its notes name fails"     "the commit its notes name" "$C3" "$D"
 clean_day; view false true "[\"$APK\"]" "${NOTES//Full changelog/Changelog}"
 expect_fail "today's notes that name no commit fail"                      "name exactly one commit" "$C3" "$D"
+clean_day; view false true "[\"$APK\"]" "${NOTES}Full changelog: https://github.com/owner/repo/blob/$C1/android/CHANGELOG.md\n"
+expect_fail "today's notes with two changelog links (the first at the tag's commit) fail" "do not name exactly one commit" "$C3" "$D"
+clean_day; jq -n --arg a "$APK" '{isDraft: false, isPrerelease: true, assets: [{name: $a}], body: null}' > "$WORK/view.json"
+expect_fail "today's release whose notes are null fails with an error"   "notes could not be read" "$C3" "$D"
 NOTES_CRLF="* A merged pull request\r\n\r\nSHA-256 of \`$APK\`: \`$DIGEST\`\r\n\r\nFull changelog: https://github.com/owner/repo/blob/$C3/android/CHANGELOG.md\r\n"
 clean_day; view false true "[\"$APK\"]" "$NOTES_CRLF"
 expect_skip "notes with CRLF line ends still check out"                   "$C3" "clean published nightly"
@@ -180,10 +184,22 @@ clean_day; expect_fail "a failed release view fails"                      "could
 clean_day; expect_fail "a failed asset download fails"                    "downloaded"       "$C3" "$D" FAKE_DOWNLOAD_FAIL=1
 clean_day; expect_fail "a failed Latest lookup (not a 404) fails"         "Latest"           "$C3" "$D" FAKE_LATEST_FAIL=1
 g tag -d "$TAG" >/dev/null
-releases "[{\"tagName\":\"android-v2.2.8-nightly.$D\",\"isDraft\":false}]"
-expect_fail "today's nightly of another base fails"                       "android-v2.2.8-nightly.$D" "$C3" "$D"
+# Q119: today's one nightly is judged under its own name, even when this run's base has moved since (a stable cut)
+OTAG="android-v2.2.8-nightly.$D"; OAPK="openRS_v2.2.8-nightly.$D.apk"
+releases "[{\"tagName\":\"$OTAG\",\"isDraft\":false}]"; g tag -f "$OTAG" "$C3" >/dev/null 2>&1
+view false true "[\"$OAPK\"]" "${NOTES//$APK/$OAPK}"
+expect_skip "today's one clean nightly under another base is a quiet skip (Q119)" "$C3" "clean published nightly: $OTAG at $C3"
+called "release view $OTAG --repo owner/repo"; called "release download $OTAG --repo owner/repo --pattern $OAPK"
+check "that nightly is read under its own tag and asset name"
+view false true "[\"$APK\"]" "${NOTES//$APK/$OAPK}"
+expect_fail "today's one nightly under another base with this run's asset name fails" "exactly one asset $OAPK" "$C3" "$D"
+clean_day; g tag -f "$OTAG" "$C3" >/dev/null 2>&1
+expect_fail "today's clean nightly beside a tag of another base for today fails" "more than one nightly" "$C3" "$D"
+g tag -d "$OTAG" "$TAG" >/dev/null
+releases "[{\"tagName\":\"test-nightly.$D\",\"isDraft\":false}]"
+expect_fail "today's release whose tag is not a nightly's fails"          "is not a nightly's tag" "$C3" "$D"
 clean_day; releases "[{\"tagName\":\"$TAG\",\"isDraft\":false},{\"tagName\":\"android-v2.2.8-nightly.$D\",\"isDraft\":false}]"
-expect_fail "a second release for today beside the clean one fails"       "android-v2.2.8-nightly.$D" "$C3" "$D"
+expect_fail "a second release for today beside the clean one fails"       "more than one nightly" "$C3" "$D"
 g tag -d "$TAG" >/dev/null
 releases '[{"tagName":"android-v2.2.7-rc.8","isDraft":false}]'
 g tag "android-v2.2.6-nightly.$D" "$C0"
