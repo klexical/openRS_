@@ -1,7 +1,9 @@
 # Coding standards for review
 
 What a reviewer can check from a pull request's diff. Where a rule lives in full elsewhere, its line points there, and
-the pointer wins when the two differ. Paths under `.claude/rules/` are the per-area rule files of the `staging` branch.
+the pointer wins when the two differ. Every pointer means the staging branch's file, CLAUDE.md included; on a pull
+request to main, read them on staging (https://github.com/klexical/openRS_/blob/staging/<path>) until the stable merge
+brings them to main. Lines with no pointer are this file's own team rules, and this file is their source.
 Comment only on lines the diff adds or changes, once per finding, with the file and line and the rule broken.
 
 ## Telemetry and VehicleState (`android/`)
@@ -9,7 +11,8 @@ Comment only on lines the diff adds or changes, once per finding, with the file 
 - `VehicleState` is immutable: changes go through `.copy(...)`, never a mutation. CLAUDE.md, "VehicleState Rules".
 - Sentinels: `-99.0` = a temperature (and `sparkAdvance`) not yet received; `-1.0` / `-1L` = an OBD scalar not yet polled;
   `0L` = a timestamp not yet received; `null` = unknown for `Boolean?` fields. A sentinel is never shown, recorded or
-  averaged as a reading, and a decoded 0 is a reading. CLAUDE.md, "VehicleState Rules".
+  averaged as a reading, and a decoded 0 is a reading unless its area's rule file says otherwise (#223: battery voltage
+  0x0304). CLAUDE.md, "VehicleState Rules".
 - `CanDecoder.decode()` returns `null` for short data: every caller null-checks. CLAUDE.md, "VehicleState Rules".
 - No new constructor parameter on `VehicleState` without grouping or moving fields: the class is near the JVM's 255-slot
   limit (`VehicleStateSlotsTest`). `.claude/rules/can-decoding.md`, "VehicleState slot ceiling".
@@ -37,22 +40,22 @@ Comment only on lines the diff adds or changes, once per finding, with the file 
 ## Privacy in exports, logs and the repository
 
 - Nothing identifying leaves the app unmasked: the VIN is masked in exports (three layers), the adapter's device ID is
-  masked, a MAC or adapter name never reaches a log line (`LogText.sanitize`, `SlcanTransport.kind`).
+  masked (#263), a MAC or adapter name never reaches a log line (`LogText.sanitize`, `SlcanTransport.kind`).
   `.claude/rules/diagnostics.md`.
-- New export fields are counts or values the export already carries in the same form; an added section is additive, and
-  a removed, renamed or re-scaled field bumps `EXPORT_SCHEMA_VERSION`. `.claude/rules/diagnostics.md`, "Export schema
-  version".
+- An added export section is additive; a field or file removed or renamed, or a type, unit, scale or meaning changed,
+  bumps `EXPORT_SCHEMA_VERSION`. `.claude/rules/diagnostics.md`, "Export schema version". UI timing in the export is
+  counts only (#421). `.claude/rules/diagnostics.md`, "UI timing in the export".
 - Committed fixtures are synthetic: no real export, raw capture, VIN, MAC, location, absolute time or personal path. Export
   fixtures carry synthetic times only. `.claude/rules/diagnostics.md`; CLAUDE.md, "Issue tracking and field evidence".
 - No secret, key value or keystore in the diff; keys come from `local.properties` or the environment. CLAUDE.md, "Build".
 
 ## Tests
 
-- A fix comes with a regression test that fails before the fix and passes after, on the production path. CLAUDE.md,
-  "Issue tracking and field evidence".
+- A fix comes with a regression test that fails before the fix and passes after, on the production path.
 - Tests protect data integrity: byte and bit mappings, scales, sentinel edges, parsing, what a recorder stores. A test that
   only repeats a constant or a display string adds little; say so rather than ask for one.
-- Emulator, mock or demo results are labelled as such; a claim about the car needs a capture or an owner report.
+- Emulator, mock or demo results are labelled as such. A claim about the car names its evidence class: owner report,
+  captured, reproduced, or hypothesis.
 
 ## Code and comments
 
