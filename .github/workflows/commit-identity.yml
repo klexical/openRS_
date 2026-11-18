@@ -20,9 +20,11 @@ jobs:
     permissions:
       contents: read
     steps:
+      # The default ref: the run's merge commit, whose tree holds the workflow and the scripts together (QA's
+      # FINAL-failure-facts C1: a head checkout lacks any script added to the base after the PR was cut). fetch-depth 0
+      # brings every branch, and the PR head is the merge commit's second parent.
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0             # the whole history: the check walks base..head
           persist-credentials: false
 
@@ -41,6 +43,8 @@ jobs:
           BASE: ${{ github.event.pull_request.base.sha }}
           HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
+          # the commits checked are the PR head's, never the synthetic merge commit (HEAD, made by GitHub)
+          [ "$(git rev-parse HEAD^2)" = "$HEAD" ] || { echo "the merge commit's second parent is not the PR head $HEAD"; exit 1; }
           STAGING=$(git rev-parse --verify origin/staging^{commit})
           MAIN=$(git rev-parse --verify origin/main^{commit})
           bash .github/scripts/check-commit-identity.sh "$BASE" "$HEAD" "$STAGING" "$MAIN"

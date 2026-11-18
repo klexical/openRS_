@@ -93,6 +93,10 @@ idj = load_wf.("commit-identity.yml")["jobs"].values.first
 idsteps = idj["steps"]
 check.(idj["continue-on-error"].nil? && idsteps.none? { |s| s.key?("continue-on-error") }, "the identity check is a hard check")
 co = idsteps.find { |s| s["uses"].to_s.start_with?("actions/checkout@") }
+check.(co && !(co["with"] || {}).key?("ref"),
+       "the identity job checks out the default merge ref, so its scripts match its workflow (QA FINAL-failure-facts C1)")
+check.(idsteps.map { |s| s["run"].to_s }.join("\n").include?('[ "$(git rev-parse HEAD^2)" = "$HEAD" ] ||'),
+       "the identity check walks the PR head, the merge commit's second parent, never the merge commit itself")
 check.(co && co.dig("with", "fetch-depth") == 0, "the identity job fetches the whole history and the branches")
 runs = idsteps.map { |s| s["run"].to_s }.join("\n")
 check.(runs.include?("origin/staging") && runs.include?("origin/main") &&

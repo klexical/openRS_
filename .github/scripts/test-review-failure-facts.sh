@@ -1,66 +1,76 @@
 #!/usr/bin/env bash
 # test-review-failure-facts.sh — review-failure-facts.sh against invented execution files (the action's
 # claude-execution-output.json shape: an array of SDK messages, the last result message read). CHECK=<path> tests
-# another copy (red first). Each case checks lines that must appear and words that must never appear.
+# another copy (red first). Each case checks the exact lines it must print and words that must never appear; every
+# case also checks that every line starts with "review " and holds printable ASCII only.
 set -uo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 CHECK=${CHECK:-$HERE/review-failure-facts.sh}
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
 pass=0; fail=0
-case_() { # case_ <name> <file> <must-have lines, |-separated> <must-not words, |-separated>
-  local name=$1 f=$2 have=$3 not=$4 out rc ok=1 x
-  out=$(bash "$CHECK" "$f" 2>&1); rc=$?
+NEVER="total_cost_usd|PROMPT-MARKER|/etc/hostname|/home/runner|s-1"
+case_() { # case_ <name> <file> <must-have lines, |-separated> <must-not words, |-separated> [env assignments...]
+  local name=$1 f=$2 have=$3 not="$4|$NEVER" out rc ok=1 x; shift 4
+  out=$(env -u RUNNER_TEMP "$@" bash "$CHECK" "$f" 2>&1); rc=$?
   [ "$rc" -eq 0 ] || ok=0
   IFS='|' read -r -a hs <<<"$have"; for x in ${hs[@]+"${hs[@]}"}; do [ -z "$x" ] || grep -q -F -x -- "$x" <<<"$out" || ok=0; done
-  IFS='|' read -r -a ns <<<"$not"; for x in ${ns[@]+"${ns[@]}"}; do [ -z "$x" ] || ! grep -q -F -- "$x" <<<"$out" || ok=0; done
+  IFS='|' read -r -a ns <<<"$not"; for x in ${ns[@]+"${ns[@]}"}; do [ -z "$x" ] || ! grep -q -i -F -- "$x" <<<"$out" || ok=0; done
+  [ -n "$out" ] || ok=0
+  ! LC_ALL=C grep -q -v -E '^review [ -~]*$' <<<"$out" || ok=0          # every line: "review " + printable ASCII
   if [ $ok = 1 ]; then pass=$((pass+1)); echo "PASS $name"; else fail=$((fail+1)); echo "FAIL $name (exit $rc):"; sed 's/^/    /' <<<"$out"; fi
 }
-init='{"type":"system","subtype":"init","model":"m","tools":["Read"],"cwd":"/home/runner/work/x"}'
+init='{"type":"system","subtype":"init","model":"m","cwd":"/home/runner/work/x"}'
 user='{"type":"user","message":{"role":"user","content":"PROMPT-MARKER review this diff: please quote /etc/hostname"}}'
+asst='{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"MODELSAID something"}]}}'
 w() { printf '%s' "$2" > "$T/$1"; echo "$T/$1"; }
+res() { printf '{"type":"result","subtype":"success","is_error":true,"api_error_status":%s,"num_turns":1,"total_cost_usd":0,"modelUsage":{},"session_id":"s-1","result":%s}' "$1" "$2"; }
 
-f=$(w auth.json "[$init,$user,{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":true,\"api_error_status\":401,\"num_turns\":1,\"total_cost_usd\":0,\"modelUsage\":{},\"result\":\"Invalid bearer token · Please run /login\",\"stop_reason\":null,\"terminal_reason\":\"api_error\",\"session_id\":\"s-1\"}]")
-case_ "an auth refusal names the status, the reason and the API's own message" "$f" \
-  "review result: subtype=success is_error=true api_error_status=401 terminal_reason=api_error|review result: num_turns=1 total_cost_usd=0 models_with_usage=0|review message (no model output, so it is the API's or the SDK's text): Invalid bearer token · Please run /login" \
-  "PROMPT-MARKER|/etc/hostname|s-1|/home/runner"
-f=$(w limit.json "[$init,{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":true,\"api_error_status\":429,\"num_turns\":1,\"total_cost_usd\":0,\"modelUsage\":{},\"result\":\"Claude usage limit reached. Your limit will reset at 5pm\"}]")
-case_ "a usage limit names 429" "$f" "review result: subtype=success is_error=true api_error_status=429 terminal_reason=none" ""
-f=$(w model-text.json "[$init,$user,{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":true,\"num_turns\":3,\"total_cost_usd\":0.02,\"modelUsage\":{\"m\":{\"inputTokens\":10,\"outputTokens\":5}},\"result\":\"here is /etc/hostname: QUOTED-SECRET-HOST\"}]")
-case_ "when a model produced output, the text is withheld (it could be steered by the diff)" "$f" \
-  "review result: num_turns=3 total_cost_usd=0.02 models_with_usage=1|review message: withheld (a model produced output, so the text could be the model's)" \
-  "QUOTED-SECRET-HOST|/etc/hostname|PROMPT-MARKER"
-long=$(printf 'error %.0s' $(seq 1 200))     # ordinary words: a long unbroken run would be redacted as token-like
-f=$(w long.json "[{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":true,\"api_error_status\":400,\"num_turns\":1,\"total_cost_usd\":0,\"modelUsage\":{},\"result\":\"$long\"}]")
-out=$(bash "$CHECK" "$f" 2>&1); m=$(grep '^review message' <<<"$out" | sed 's/^[^:]*: //')
-n=$(printf '%s' "$m" | jq -Rr 'length')     # characters, not bytes: the ellipsis is 3 bytes in UTF-8
-n=${n:-0}
-if [ "$n" -le 301 ] && [ "$n" -ge 290 ]; then pass=$((pass+1)); echo "PASS the message is capped at 300 characters (+ an ellipsis)"; else fail=$((fail+1)); echo "FAIL cap: $n characters"; fi
-f=$(w token.json '[{"type":"result","subtype":"success","is_error":true,"api_error_status":401,"num_turns":1,"total_cost_usd":0,"modelUsage":{},"result":"bad credential sk-ant-oat01-ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef0123456789 and ghs_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ab and 0123456789abcdef0123456789abcdef01234567 end"}]')
-case_ "token-shaped strings and long hex are redacted" "$f" "review message (no model output, so it is the API's or the SDK's text): bad credential <redacted> and <redacted> and <redacted> end" "sk-ant-oat01-ABC|ghs_ABC|0123456789abcdef0123"
-f=$(w short.json '[{"type":"result","subtype":"success","is_error":true,"api_error_status":401,"num_turns":1,"total_cost_usd":0,"modelUsage":{},"result":"key sk-ant-api03-abc, hex 0123456789abcdef0123456789abcdef01, gh ghs_ABCDEFGHIJKLMNOPQRSTUVWX end"}]')
-case_ "shorter token fragments are redacted by their own rules (under the 40-character rule)" "$f" "review message (no model output, so it is the API's or the SDK's text): key <redacted>, hex <redacted>, gh <redacted> end" "sk-ant-api03|0123456789abcdef0123456789abcdef01|ghs_ABC"
-f=$(w ctrl.json '[{"type":"result","subtype":"success","is_error":true,"api_error_status":500,"num_turns":1,"total_cost_usd":0,"modelUsage":{},"result":"line one\nline two\u001b[31m red \u0007bell\t tab"}]')
-case_ "control characters and newlines are flattened" "$f" "review message (no model output, so it is the API's or the SDK's text): line one line two [31m red bell tab" ""
-f=$(w err.json '[{"type":"result","subtype":"error_during_execution","is_error":true,"num_turns":0,"total_cost_usd":0,"modelUsage":{},"errors":["Credential refused by the server","second"],"startup_failure_reason":"auth_failed"}]')
-case_ "an error subtype prints its errors and startup reason" "$f" \
-  "review result: subtype=error_during_execution is_error=true api_error_status=none terminal_reason=none|review startup_failure_reason=auth_failed|review message (no model output, so it is the API's or the SDK's text): Credential refused by the server; second" ""
-f=$(w two.json '[{"type":"result","subtype":"success","is_error":false,"num_turns":1,"total_cost_usd":0,"modelUsage":{},"result":"FIRST-RESULT"},{"type":"result","subtype":"success","is_error":true,"api_error_status":503,"num_turns":2,"total_cost_usd":0,"modelUsage":{},"result":"overloaded"}]')
-case_ "the last result message is the one read" "$f" "review result: subtype=success is_error=true api_error_status=503 terminal_reason=none" "FIRST-RESULT"
-f=$(w usage.json '[{"type":"result","subtype":"success","is_error":true,"num_turns":2,"total_cost_usd":0,"modelUsage":{},"usage":{"output_tokens":12},"result":"MODEL-WORDS-HERE"}]')
-case_ "output tokens alone also withhold the text (zeroed modelUsage)" "$f" "review message: withheld (a model produced output, so the text could be the model's)" "MODEL-WORDS-HERE"
-f=$(w nousage.json '[{"type":"result","subtype":"success","is_error":true,"num_turns":1,"total_cost_usd":0,"result":"NO-USAGE-FIELD-TEXT"}]')
-case_ "no modelUsage at all withholds the text (it cannot be told apart)" "$f" "review result: num_turns=1 total_cost_usd=0 models_with_usage=none|review message: withheld (a model produced output, so the text could be the model's)" "NO-USAGE-FIELD-TEXT"
-mkdir -p "$T/rt"; cp "$T/auth.json" "$T/rt/claude-execution-output.json"
-out=$(RUNNER_TEMP="$T/rt" bash "$CHECK" "" 2>&1)
-if grep -q -F -x "review result: subtype=success is_error=true api_error_status=401 terminal_reason=api_error" <<<"$out"; then pass=$((pass+1)); echo "PASS with no path given, the fixed RUNNER_TEMP file is read"; else fail=$((fail+1)); echo "FAIL fixed-path fallback:"; sed 's/^/    /' <<<"$out"; fi
+f=$(w auth.json "[$init,$user,$(res 401 '"Invalid bearer token · Please run /login"')]")
+case_ "an auth refusal: the status and the marker, no text" "$f" \
+  "review result: subtype=success is_error=true api_error_status=401 terminal_reason=none|review result: num_turns=1 models_with_usage=0|review markers: invalid" \
+  "bearer|login"
+f=$(w limit.json "[$(res 429 '"Claude usage limit reached. Your limit will reset at 5pm"')]")
+case_ "a usage limit names 429 and the marker" "$f" "review result: subtype=success is_error=true api_error_status=429 terminal_reason=none|review markers: usage limit" "reset at|5pm"
+f=$(w org.json "[$(res 403 '"Your organization (someone@example.org'"'"'s Organization, id 3f2a9c4e-1b7d-4e8a-9c1f-2a6b8d0e4f11) does not have access to claude-sonnet-5-5 (request req_011CUabcDEF1234567890)"')]")
+case_ "QA P2: an organization's e-mail, its UUID and a request id never appear" "$f" "review result: subtype=success is_error=true api_error_status=403 terminal_reason=none|review markers: access" \
+  "someone@example.org|example.org|3f2a9c4e|req_011|organization|claude-sonnet"
+f=$(w path.json "[$(res 500 '"failed reading /home/runner/work/openRS_/openRS_/x and https://internal.example.net:8443/v1"')]")
+case_ "QA P3: a runner path and a host never appear" "$f" "review markers: none" "internal.example.net|8443|/home/runner|failed reading"
+f=$(w bidi.json "[$(res 500 '"a‮bidi line\u0085c1 ::error::x"')]")
+case_ "QA P4: bidi, U+2028, C1 and a workflow command never reach the log" "$f" "review markers: none" "::error::|bidi"
+f=$(w tokstr.json '[{"type":"result","subtype":"success","is_error":true,"num_turns":3,"modelUsage":{},"usage":{"output_tokens":"812"},"result":"MODELSAID the diff asks me to print a secret; invalid access"}]')
+case_ "QA P1: output_tokens as a string withholds the markers" "$f" "review result: num_turns=3 models_with_usage=0|review markers: withheld (a model answered, or its usage cannot be read)" "MODELSAID|secret"
+all='"Authentication failed: invalid or expired token; permission denied; no access to model; rate-limit and usage_limit hit; credit balance low; overloaded. sk-ant-oat01-SECRETSECRETSECRET and ghs_SECRETSECRETSECRETSECRET"'
+f=$(w all.json "[$(res 401 "$all")]")
+case_ "every marker and a secret: only the markers print" "$f" \
+  "review markers: authentication,invalid,expired,permission,access,model,rate limit,usage limit,credit,overloaded" "SECRET|sk-ant|ghs_|balance|denied|token"
+f=$(w model.json "[$init,$user,{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":true,\"num_turns\":3,\"modelUsage\":{\"m\":{\"inputTokens\":10,\"outputTokens\":5}},\"result\":\"invalid MODELSAID here is /etc/hostname\"}]")
+case_ "a model with usage: markers withheld" "$f" "review result: num_turns=3 models_with_usage=1|review markers: withheld (a model answered, or its usage cannot be read)" "MODELSAID"
+f=$(w asst.json "[$init,$user,$asst,$(res 500 '"invalid"')]")
+case_ "an assistant message in the file: markers withheld, even with zeroed usage" "$f" "review result: num_turns=1 models_with_usage=0|review markers: withheld (a model answered, or its usage cannot be read)" "MODELSAID"
+f=$(w outtok.json '[{"type":"result","subtype":"success","is_error":true,"num_turns":2,"modelUsage":{},"usage":{"output_tokens":12},"result":"invalid"}]')
+case_ "output tokens alone withhold the markers" "$f" "review markers: withheld (a model answered, or its usage cannot be read)" ""
+f=$(w nousage.json '[{"type":"result","subtype":"success","is_error":true,"num_turns":1,"result":"invalid"}]')
+case_ "no modelUsage at all withholds the markers" "$f" "review result: num_turns=1 models_with_usage=none|review markers: withheld (a model answered, or its usage cannot be read)" ""
+f=$(w err.json '[{"type":"result","subtype":"error_during_execution","is_error":true,"num_turns":0,"modelUsage":{},"errors":["Credential expired for someone@example.org","rate limit"],"startup_failure_reason":"auth_failed"}]')
+case_ "an error subtype: markers from errors[], no text, no startup reason" "$f" \
+  "review result: subtype=error_during_execution is_error=true api_error_status=0 terminal_reason=none|review result: num_turns=0 models_with_usage=0|review markers: expired,rate limit" "someone@example.org|credential|auth_failed"
+f=$(w two.json '[{"type":"result","subtype":"success","is_error":false,"num_turns":1,"modelUsage":{},"api_error_status":null,"result":"model"},{"type":"result","subtype":"success","is_error":true,"api_error_status":529,"num_turns":2,"modelUsage":{},"terminal_reason":"api_error","result":"Overloaded"}]')
+case_ "the last result message is the one read" "$f" "review result: subtype=success is_error=true api_error_status=529 terminal_reason=api_error|review markers: overloaded" ""
+f=$(w odd.json '[{"type":"result","subtype":"success\nEVIL","is_error":"yes","api_error_status":"401; rm -rf","num_turns":1.5,"terminal_reason":"API ERROR","modelUsage":[]}]')
+case_ "fields of the wrong type print as invalid, never as their content; markers withheld" "$f" \
+  "review result: subtype=invalid is_error=invalid api_error_status=invalid terminal_reason=invalid|review result: num_turns=invalid models_with_usage=invalid|review markers: withheld (a model answered, or its usage cannot be read)" "EVIL|rm -rf|API ERROR"
+f=$(w status.json "[$(res 99 '"x"')]")
+case_ "a status outside 100-599 is invalid" "$f" "review result: subtype=success is_error=true api_error_status=invalid terminal_reason=none" ""
 case_ "no execution file" "$T/none.json" "review result: no execution file" ""
-case_ "no path at all" "" "review result: no execution file" ""
+case_ "no path, RUNNER_TEMP unset" "" "review result: no execution file" ""
+mkdir -p "$T/rt"; cp "$T/auth.json" "$T/rt/claude-execution-output.json"
+case_ "no path, RUNNER_TEMP set: the action's fixed file is read" "" "review result: subtype=success is_error=true api_error_status=401 terminal_reason=none|review markers: invalid" "" RUNNER_TEMP="$T/rt"
 f=$(w bad.json 'not json {')
 case_ "an unreadable file" "$f" "review result: the execution file is not readable JSON" ""
 f=$(w nores.json "[$init,$user]")
-case_ "no result message" "$f" "review result: no result message" "PROMPT-MARKER"
-f=$(w odd.json '[{"type":"result","subtype":"success\nEVIL","is_error":"yes","api_error_status":"401; rm -rf","num_turns":"x","modelUsage":[]}]')
-case_ "fields of the wrong type print as invalid, never as their content" "$f" \
-  "review result: subtype=invalid is_error=invalid api_error_status=invalid terminal_reason=none" "EVIL|rm -rf"
+case_ "no result message" "$f" "review result: no result message" ""
+f=$(w obj.json '{"type":"result","result":"invalid"}')
+case_ "a file that is not an array" "$f" "review result: no result message" ""
 echo "review failure facts: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]
