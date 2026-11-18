@@ -4,8 +4,14 @@ All notable changes to Sapphire, the openRS_ web dashboard (`web/`), are documen
 The Android app has its own changelog: [android/CHANGELOG.md](../android/CHANGELOG.md).
 
 Sections, in this order: Added, Fixed, Changed, Removed. Every entry ends with its issue link.
+A fix shipped after a slice goes into that slice's Fixed list until the next slice's section opens.
 
 ---
+
+## A drive's page (slice 3)
+
+### Changed
+- **What's new shows the update it speaks of** — the dialog reads the changelog section whose heading names its own release, not simply the newest section, so it keeps showing slice 2's changes while slice 3's section grows (`lib/changelogSection.ts`). ([#416](https://github.com/klexical/openRS_/issues/416))
 
 ## Storage and the list of drives (slice 2)
 
