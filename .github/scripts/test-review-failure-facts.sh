@@ -54,7 +54,7 @@ f=$(w nousage.json '[{"type":"result","subtype":"success","is_error":true,"num_t
 case_ "no modelUsage at all withholds the markers" "$f" "review result: num_turns=1 models_with_usage=none|review markers: withheld (a model answered, or its usage cannot be read)" ""
 f=$(w err.json '[{"type":"result","subtype":"error_during_execution","is_error":true,"num_turns":0,"modelUsage":{},"errors":["Credential expired for someone@example.org","rate limit"],"startup_failure_reason":"auth_failed"}]')
 case_ "an error subtype: markers from errors[], no text, no startup reason" "$f" \
-  "review result: subtype=error_during_execution is_error=true api_error_status=0 terminal_reason=none|review result: num_turns=0 models_with_usage=0|review markers: expired,rate limit" "someone@example.org|credential|auth_failed"
+  "review result: subtype=error_during_execution is_error=true api_error_status=none terminal_reason=none|review result: num_turns=0 models_with_usage=0|review markers: expired,rate limit" "someone@example.org|credential|auth_failed"
 f=$(w two.json '[{"type":"result","subtype":"success","is_error":false,"num_turns":1,"modelUsage":{},"api_error_status":null,"result":"model"},{"type":"result","subtype":"success","is_error":true,"api_error_status":529,"num_turns":2,"modelUsage":{},"terminal_reason":"api_error","result":"Overloaded"}]')
 case_ "the last result message is the one read" "$f" "review result: subtype=success is_error=true api_error_status=529 terminal_reason=api_error|review markers: overloaded" ""
 f=$(w odd.json '[{"type":"result","subtype":"success\nEVIL","is_error":"yes","api_error_status":"401; rm -rf","num_turns":1.5,"terminal_reason":"API ERROR","modelUsage":[]}]')
@@ -62,6 +62,30 @@ case_ "fields of the wrong type print as invalid, never as their content; marker
   "review result: subtype=invalid is_error=invalid api_error_status=invalid terminal_reason=invalid|review result: num_turns=invalid models_with_usage=invalid|review markers: withheld (a model answered, or its usage cannot be read)" "EVIL|rm -rf|API ERROR"
 f=$(w status.json "[$(res 99 '"x"')]")
 case_ "a status outside 100-599 is invalid" "$f" "review result: subtype=success is_error=true api_error_status=invalid terminal_reason=none" ""
+# Round 7: an API error turn is an assistant message with the SDK's typed `error` field (SDKAssistantMessageError,
+# sdk.d.ts at the action's pinned 0.3.327) and no output; retries are system/api_retry messages. Shapes from those types.
+apierr() { printf '{"type":"assistant","message":{"id":"m1","model":"<synthetic>","role":"assistant","content":[{"type":"text","text":%s}],"usage":{"input_tokens":0,"output_tokens":%s}},"error":"%s","parent_tool_use_id":null,"session_id":"s-1","uuid":"u1"}' "$1" "${3:-0}" "$2"; }
+retry() { printf '{"type":"system","subtype":"api_retry","attempt":%s,"max_retries":10,"retry_delay_ms":500,"error_status":%s,"error":"%s","session_id":"s-1","uuid":"r%s"}' "$1" "$2" "$3" "$1"; }
+noresp() { printf '{"type":"result","subtype":"success","is_error":true,"api_error_status":null,"num_turns":1,"modelUsage":{},"terminal_reason":"api_error","session_id":"s-1","result":%s}' "$1"; }
+f=$(w apierr.json "[$init,$user,$(apierr '"API Error: 401 OAuth token has expired for someone@example.org'"'"'s Organization"' authentication_failed),$(noresp '"API Error: 401 OAuth token has expired"')]")
+case_ "an API error turn is not a model answer: its category prints, markers read its text, the status reads none" "$f" \
+  "review result: subtype=success is_error=true api_error_status=none terminal_reason=api_error|review api_errors: authentication_failed|review markers: expired" \
+  "someone@example.org|organization|oauth|API Error"
+f=$(w apierr-only.json "[$init,$(apierr '"Your credit balance is too low for someone@example.org"' billing_error),$(noresp '""')]")
+case_ "a marker found only in the API error turn's text" "$f" "review api_errors: billing_error|review markers: credit" "someone@example.org|balance"
+f=$(w retries.json "[$init,$(retry 1 529 overloaded),$(retry 2 529 overloaded),$(retry 3 null unknown),$(apierr '"Overloaded"' overloaded),$(noresp '"Overloaded"')]")
+case_ "retries: their count, statuses and categories, no text" "$f" \
+  "review api_retries: count=3 statuses=529,none errors=overloaded,unknown|review api_errors: overloaded|review markers: overloaded" ""
+f=$(w apierr-and-model.json "[$init,$asst,$(apierr '"invalid token"' authentication_failed),$(noresp '"x"')]")
+case_ "an API error turn beside a real model reply: markers withheld" "$f" "review api_errors: authentication_failed|review markers: withheld (a model answered, or its usage cannot be read)" "MODELSAID"
+f=$(w apierr-tokens.json "[$init,$(apierr '"invalid MODELWORDS"' authentication_failed 7),$(noresp '"x"')]")
+case_ "an error turn that has output tokens is a model answer: withheld" "$f" "review markers: withheld (a model answered, or its usage cannot be read)" "MODELWORDS"
+f=$(w apierr-odd.json "[$init,$(apierr '"invalid"' 'hacked; rm -rf'),$(noresp '"x"')]")
+case_ "an error value outside the SDK's list: invalid, and withheld" "$f" "review api_errors: invalid|review markers: withheld (a model answered, or its usage cannot be read)" "hacked|rm -rf"
+f=$(w noerr.json "[$(res 401 '"invalid"')]")
+case_ "no API error turn and no retry: both say so" "$f" "review api_errors: none|review api_retries: count=0" ""
+f=$(w zero.json '[{"type":"result","subtype":"success","is_error":true,"api_error_status":0,"num_turns":1,"modelUsage":{},"result":"x"}]')
+case_ "an explicit status 0 prints 0, apart from none" "$f" "review result: subtype=success is_error=true api_error_status=0 terminal_reason=none" ""
 case_ "no execution file" "$T/none.json" "review result: no execution file" ""
 case_ "no path, RUNNER_TEMP unset" "" "review result: no execution file" ""
 mkdir -p "$T/rt"; cp "$T/auth.json" "$T/rt/claude-execution-output.json"
