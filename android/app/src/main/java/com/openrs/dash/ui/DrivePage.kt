@@ -444,13 +444,19 @@ private data class VehicleStatus(
 )
 
 /** Every rule here is an existing limit (THERMAL preset, TPMS low / warn psi, fuel < 10 %, knock counter). */
+/** The label of PCM 0x0304 wherever DRIVE and the Custom Dashboard show it (#365): the charging system's target. */
+internal const val CHARGE_TARGET_LABEL = "CHG"
+
 /**
- * DRIVE → VEHICLE → BATT (#223): PCM 0x0304 as reported — "— —" until a reading arrives (or when it reads 0), STALE while
- * disconnected or once the reading is older than the polled-value rule allows ([PolledFreshness]: 2 × 40 s), so a held
- * value never looks live. No voltage limit (none is established) and no claim beyond "the PCM's reported voltage".
+ * DRIVE → VEHICLE → CHG (#365): PCM 0x0304 is the charging system's target, not a measurement of the battery (#223: with
+ * the engine off it holds a fixed floor, the same as BCM 0x411D, below a meter on the battery). So with the engine off (rpm
+ * at or below [ObdConstants.FAST_POLL_MIN_RPM]) the cell reads "— —" whatever 0x0304 reports; GARAGE → DIAG keeps the raw
+ * value. Running: "— —" until a reading arrives (or when it reads 0), STALE while disconnected or once the reading is older
+ * than the polled-value rule allows ([PolledFreshness]: 2 × 40 s), so a held value never looks live. Never a warning
+ * level: a target is not a measurement to warn on.
  */
 internal fun batteryCell(vs: VehicleState, nowMs: Long): Pair<String, Level> {
-    if (vs.batteryVoltage <= 0) return "— —" to Level.NONE
+    if (vs.batteryVoltage <= 0 || vs.rpm <= ObdConstants.FAST_POLL_MIN_RPM) return "— —" to Level.NONE
     val lvl = when {
         !vs.isConnected -> Level.STALE
         !PolledFreshness.isFresh(vs, "batteryVoltage", nowMs) -> Level.STALE
@@ -705,7 +711,7 @@ private fun vehicleStatus(vs: VehicleState, p: UserPrefs, knockCount: Int, nowMs
                 { m -> StatusCell(RsIcon.OIL, "OIL", st.oil, st.oilLvl, m, sub(0)) },
                 { m -> StatusCell(RsIcon.COOLANT, "COOLANT", st.cool, st.coolLvl, m, sub(1)) },
                 { m -> StatusCell(RsIcon.FUEL, "FUEL", st.fuel, st.fuelLvl, m, sub(2)) },
-                { m -> StatusCell(RsIcon.BATTERY, "BATT", st.batt, st.battLvl, m, sub(3)) },
+                { m -> StatusCell(RsIcon.BATTERY, CHARGE_TARGET_LABEL, st.batt, st.battLvl, m, sub(3)) },
             )
             if (maxWidth < 340.dp) {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {

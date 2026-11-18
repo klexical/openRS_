@@ -22,8 +22,15 @@ object LiveBoostLabel {
 fun liveGaugeLabel(r: BoostReading): String =
     if (r.source == BoostSource.TIP_033E) LiveBoostLabel.TITLE else r.source.label
 
-/** A Custom Dashboard cell's caption: the pressure cell is the live gauge, BOOST whatever label a saved layout carries ("TIP" in rc.7). */
-fun dashCellLabel(cell: DashCell): String = if (cell.fieldKey == "boostKpa") LiveBoostLabel.TITLE else cell.label
+/**
+ * A Custom Dashboard cell's caption, whatever label a saved layout carries: the pressure cell is the live gauge, BOOST ("TIP"
+ * in rc.7); PCM 0x0304 is the charging target, CHG ("BATTERY" before #365).
+ */
+fun dashCellLabel(cell: DashCell): String = when (cell.fieldKey) {
+    "boostKpa" -> LiveBoostLabel.TITLE
+    "batteryVoltage" -> CHARGE_TARGET_LABEL   // a layout saved before #365 holds "BATTERY"
+    else -> cell.label
+}
 
 /**
  * Peak caption for a boost hero (#207): the session peak of the source being shown — never another source's — in the

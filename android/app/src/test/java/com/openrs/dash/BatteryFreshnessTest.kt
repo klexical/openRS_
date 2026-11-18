@@ -17,11 +17,12 @@ import org.junit.Test
  */
 class BatteryFreshnessTest {
     private val now = 1_000_000L
+    // the engine is running: with it off the cell reads "— —" whatever 0x0304 reports (#365, BatteryChargingTargetTest)
     private fun vs(volts: Double, stampAgeMs: Long?, connected: Boolean = true) = VehicleState(
-        isConnected = connected, batteryVoltage = volts,
+        isConnected = connected, batteryVoltage = volts, rpm = 850.0,
         fieldLastUpdateMs = stampAgeMs?.let { mapOf("batteryVoltage" to now - it) } ?: emptyMap(),
     )
-    private val cell = DashCell("batteryVoltage", "number", "BATTERY")
+    private val cell = DashCell("batteryVoltage", "number", "CHG")
 
     @Test fun `control - DRIVE shows a current reading as normal`() {
         assertEquals("15.0V" to Level.NORMAL, batteryCell(vs(14.96, stampAgeMs = 10_000L), now))
