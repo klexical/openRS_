@@ -19,11 +19,9 @@ import { exportSchemaNote } from '../../lib/exportSchema'
 import { colors } from '../../styles/tokens'
 import { go } from '../../lib/address'
 import { pointsInRange, useDriveRange } from '../../lib/selection'
-import { summaryInRange, type RangeSummary } from '../../lib/rangeSummary'
+import { summaryInRange, WHOLE_DRIVE_ONLY, type RangeSummary } from '../../lib/rangeSummary'
 import type { TripSummary } from '../../types/session'
 
-/** Under a narrowed range, in place of the figures that cannot be cut to it (#416 ticket 2; pending the owner's Q152). */
-const WHOLE_DRIVE_ONLY = 'Fuel, aggression, thermal progression and tyre pressures are for the whole drive.'
 
 export function DashboardPanel() {
   // ── Hooks (must run on every render path — keep above any early return) ──

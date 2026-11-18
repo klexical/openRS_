@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { useCurrentDrive } from '../../store'
+import { WHOLE_DRIVE_ONLY } from '../../lib/rangeSummary'
 import { clampRange, commitRangeToAddress, driveSpanMs, setRange, useDriveRange, type TimeRange } from '../../lib/selection'
 import { EmptyState } from '../ui/EmptyState'
 import { SectionLabel } from '../ui/SectionLabel'
@@ -105,8 +106,9 @@ export function TripPanel() {
       <SectionLabel>Drive Modes</SectionLabel>
       <ModeTimeline points={points} canonicalTimeline={trip.canonicalModeTimeline} />
 
-      {/* Thermal Progression (T2B) */}
-      {trip.thermalProgression && (
+      {/* Thermal Progression (T2B): a start, peak and end of the whole drive, left out while a range is set (Q152, QA C3) */}
+      {range && <p className="text-xs font-mono text-mid px-1">{WHOLE_DRIVE_ONLY}</p>}
+      {!range && trip.thermalProgression && (
         <>
           <SectionLabel>Thermal Progression</SectionLabel>
           <ThermalProgressionChart data={trip.thermalProgression} />

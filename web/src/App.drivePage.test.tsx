@@ -203,3 +203,26 @@ describe('#416 ticket 2: one selection, held in the address', () => {
     await waitFor(() => expect(card('Avg RPM')).toMatch(/^Avg RPM3000$/))
   })
 })
+
+// The owner's Q152 with QA's C3: while a range is set, thermal progression (a start, peak and end of the whole drive) is
+// left out on Trip as on the Dashboard, under the same whole-drive line.
+describe('#416 ticket 2: thermal progression is whole-drive on both views (Q152, QA C3)', () => {
+  const thermal = { oil: { startC: 40, peakC: 101, endC: 96 }, coolant: { startC: 35, peakC: 92, endC: 90 } }
+  const withThermal = () => { const d = drive('a', 'Invented loop'); d.trip!.thermalProgression = thermal; return d }
+  const heading = () => screen.queryByRole('heading', { level: 3, name: 'Thermal Progression' })
+
+  it('Trip, while a range is set: no thermal progression, and the whole-drive line', async () => {
+    await seed([withThermal()])
+    await boot('#/drive/a/trip?range=1000-2000')
+    expect(await screen.findByRole('heading', { level: 3, name: 'Route' }, { timeout: 3000 })).toBeInTheDocument()
+    expect(heading()).toBeNull()
+    expect(screen.getByText(WHOLE_LINE)).toBeInTheDocument()
+  })
+
+  it('Trip, on the whole drive: thermal progression as before, no line', async () => {
+    await seed([withThermal()])
+    await boot('#/drive/a/trip')
+    expect(await screen.findByRole('heading', { level: 3, name: 'Thermal Progression' }, { timeout: 3000 })).toBeInTheDocument()
+    expect(screen.queryByText(WHOLE_LINE)).toBeNull()
+  })
+})

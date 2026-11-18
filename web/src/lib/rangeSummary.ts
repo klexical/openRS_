@@ -7,6 +7,12 @@ import { hasPosition, haversine } from './distance'
 import { numReading, tempReading } from './readings'
 import { pointsInRange, type TimeRange } from './selection'
 
+/**
+ * Under a narrowed range, in place of what cannot be cut to it, on the Dashboard and on Trip (#416 ticket 2; the owner's
+ * Q152 with QA's C3: the figures are left out while a range is set, on both views).
+ */
+export const WHOLE_DRIVE_ONLY = 'Fuel, aggression, thermal progression and tyre pressures are for the whole drive.'
+
 export interface RangeSummary {
   /** The range's own length. */
   durationMs: number
