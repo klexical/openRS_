@@ -40,8 +40,8 @@ export interface NormalizedPoint {
 
 /**
  * Compare's cards for two trip summaries. A figure is a reading only when the drive received it: a field an older record
- * lacks, a value that is not a finite number, the import's −99 temperature marker (#414), a fuel economy of 0 (the import's
- * "could not compute") and an absent aggression score are no reading. A card stays when one drive has the reading, with
+ * lacks, a value that is not a finite number, the import's −99 temperature marker (#414), a fuel used or fuel economy of
+ * 0 (the import's "could not compute") and an absent aggression score are no reading. A card stays when one drive has the reading, with
  * no figure for the other and no difference (#416 ticket 3, owner Q82); a card with no reading on either side, or with 0
  * on both, is left out.
  */
@@ -59,7 +59,7 @@ export function computeDeltas(base: TripSummary, comp: TripSummary): KpiDelta[] 
     { key: 'peakCoolantC', label: 'Peak Coolant', unit: '°C', higherIsBetter: false, reading: tempReading },   // #414
     { key: 'peakOilTempC', label: 'Peak Oil', unit: '°C', higherIsBetter: false, reading: tempReading },
     { key: 'aggressionScore', label: 'Aggression', unit: '/100', higherIsBetter: true, reading: positive },   // T4A
-    { key: 'fuelUsedL', label: 'Fuel Used', unit: 'L', higherIsBetter: false },             // T4A
+    { key: 'fuelUsedL', label: 'Fuel Used', unit: 'L', higherIsBetter: false, reading: positive },   // T4A
   ]
 
   return kpis
@@ -72,7 +72,7 @@ export function computeDeltas(base: TripSummary, comp: TripSummary): KpiDelta[] 
     .concat(boostDelta(base, comp))
 }
 
-/** A value only above 0: the import stores 0 (or nothing) for a fuel economy or aggression score it could not compute. */
+/** A value only above 0: the import stores 0 (or nothing) for a fuel figure or aggression score it could not compute. */
 const positive = (v: number) => (v > 0 ? v : null)
 
 /** One card from two readings (null = no reading): none when neither has it, no difference unless both have it. */

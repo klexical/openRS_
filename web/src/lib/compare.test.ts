@@ -182,6 +182,11 @@ describe('computeDeltas: a card when one drive lacks a reading (#416 ticket 3)',
     expect(card(computeDeltas(unscored, scored), 'Aggression')).toMatchObject({ baseValue: null, compValue: 64, diff: null })
   })
 
+  it('fuel used: 0 is the import\'s "fewer than two fuel readings or no drop", never a figure (the Dashboard shows it only above 0)', () => {
+    const got = computeDeltas(makeSummary({ fuelUsedL: 0 }), makeSummary({ fuelUsedL: 2 }))
+    expect(card(got, 'Fuel Used')).toMatchObject({ baseValue: null, compValue: 2, diff: null, pctChange: null })
+  })
+
   it('fuel economy: 0 is the import\'s "could not compute", never a figure', () => {
     const got = computeDeltas(makeSummary({ avgFuelEconomy: 9.4 }), makeSummary({ avgFuelEconomy: 0 }))
     expect(card(got, 'Fuel Economy')).toMatchObject({ baseValue: 9.4, compValue: null, diff: null, pctChange: null })

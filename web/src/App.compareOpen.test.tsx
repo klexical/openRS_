@@ -85,6 +85,9 @@ describe('#416 ticket 3: Compare compares the drives that did open', () => {
     err.mockRestore()
     expect(alerts()).toEqual(["Couldn't open Invented a."])
     expect(screen.getByText("Base drive: Invented b (Invented a couldn't be opened).")).toBeInTheDocument()
+    // the picker agrees: b is the base and c second; a, ticked but not opened, has no place in the comparison
+    const tag = (name: string) => screen.getByRole('button', { name: new RegExp(`^${name}`) }).textContent!.replace(/^.*v2\.2\.7/, '')
+    expect([tag('Invented a'), tag('Invented b'), tag('Invented c')]).toEqual(['', 'Base', '#2'])
   })
 
   it('fewer than two open: only the lines and one sentence, no figures (Q91)', async () => {

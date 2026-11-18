@@ -31,6 +31,8 @@ export function ComparePanel() {
   const hasEnough = compareSessions.length >= 2
   const baseSession = compareSessions[0]
   const firstTickedFailed = compareIds.length > 0 && failedIds.includes(compareIds[0])
+  // the picker's places follow the comparison: a ticked drive that did not open has none, so the base is the first that did
+  const placed = compareIds.filter((id) => !failedIds.includes(id))
   const nameOf = (id: string) => sessions.find((d) => d.id === id)?.name ?? 'a compared drive'
 
   // KPI deltas: compare each session against the first (baseline)
@@ -59,9 +61,9 @@ export function ComparePanel() {
       <SectionLabel>Select Sessions to Compare (2–4)</SectionLabel>
       <div className="space-y-1.5">
         {eligibleSessions.map((sess) => {
-          const idx = compareIds.indexOf(sess.id)
-          const isSelected = idx >= 0
-          const color = isSelected ? SESSION_COLORS[idx % SESSION_COLORS.length] : undefined
+          const idx = placed.indexOf(sess.id)
+          const isSelected = compareIds.includes(sess.id)
+          const color = idx >= 0 ? SESSION_COLORS[idx % SESSION_COLORS.length] : undefined   // its line's colour, once it has a place
 
           return (
             <button
@@ -79,8 +81,8 @@ export function ComparePanel() {
               <div
                 className="w-3 h-3 rounded-full shrink-0 border-2"
                 style={{
-                  backgroundColor: isSelected ? color : 'transparent',
-                  borderColor: isSelected ? color : colors.dim,
+                  backgroundColor: color ?? 'transparent',
+                  borderColor: color ?? colors.dim,
                 }}
               />
               <div className="flex-1 min-w-0">
@@ -91,7 +93,7 @@ export function ComparePanel() {
                   <span>v{sess.meta.appVersion}</span>
                 </div>
               </div>
-              {isSelected && (
+              {idx >= 0 && (
                 <span className="text-[10px] font-mono uppercase tracking-wider"
                   style={{ color }}
                 >
