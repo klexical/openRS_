@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# test-check-commit-identity.sh — check-commit-identity.sh against throwaway repositories built here (owner Q141; the
-# integrator's four details of Q137 / Q141).
+# test-check-commit-identity.sh — check-commit-identity.sh against throwaway repositories built here.
 #   bash .github/scripts/test-check-commit-identity.sh            (CHECK=<path> tests another copy: red first)
 # Each case builds commits and branches with set identities and messages, then runs the check as the workflow does:
 # base, head, then staging's and main's tips as further exclusions where the case has them.
