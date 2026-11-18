@@ -34,7 +34,8 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      - uses: anthropics/claude-code-action@v1
+      - id: review
+        uses: anthropics/claude-code-action@v1
         continue-on-error: true
         timeout-minutes: 15            # a hung review fails the step, under the job's 20, so the job ends green (Q125)
         with:
@@ -62,3 +63,17 @@ jobs:
             --max-turns 30
             --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr diff ${{ github.event.pull_request.number }}),Bash(gh pr view ${{ github.event.pull_request.number }})"
             --disallowedTools "Edit,Write,NotebookEdit,Bash(git push:*),Bash(git commit:*),Bash(gh pr review:*),Bash(gh pr merge:*),Bash(gh api:*),Bash(gh pr comment:*)"
+
+      # A clean review posts nothing, so one line records that the review ran, on which head and with what outcome
+      # (success / failure / cancelled / skipped): without it a clean review and one that never ran look the same
+      # (integrator's call, DECISIONS "on QA FINAL-claude-review"). Values come through env, never ${{ }} in run.
+      - name: Record that the review ran
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          OUTCOME: ${{ steps.review.outcome }}
+        run: |
+          gh pr comment "$PR" --body "Claude review ran on $HEAD_SHA: $OUTCOME."

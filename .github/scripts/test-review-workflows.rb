@@ -56,6 +56,18 @@ check.(act && act["continue-on-error"] == true, "a failed review step never fail
 job_t = wf["jobs"].values.first["timeout-minutes"].to_i
 check.(act && act["timeout-minutes"].is_a?(Integer) && act["timeout-minutes"] < job_t,
        "the review step times out before the job does, so a hang fails the step, not the job (QA's C1)")
+# Addendum 3: a line on the PR records that the review ran, on which head and with what outcome (the model stays inline-only)
+ai = steps.index(act)
+rec = ai && steps[(ai + 1)..].find { |s| s["run"].to_s.include?("gh pr comment") }
+renv = rec ? (rec["env"] || {}) : {}
+check.(rec && rec["if"] == "always()", "a step after the review, with if: always(), records that it ran")
+check.(rec && !rec["run"].include?("${{"), "the recording step's run has no ${{ }} in it (values come through env)")
+check.(act && act["id"] && renv["OUTCOME"] == "${{ steps.#{act["id"]}.outcome }}", "the recorded outcome is the review step's (its id)")
+check.(renv["HEAD_SHA"] == "${{ github.event.pull_request.head.sha }}" && renv["PR"] == "${{ github.event.pull_request.number }}" &&
+       renv["GH_TOKEN"] == "${{ secrets.GITHUB_TOKEN }}", "the PR number, the head SHA and the job's own token come through env")
+check.(rec && rec["run"].strip == 'gh pr comment "$PR" --body "Claude review ran on $HEAD_SHA: $OUTCOME."',
+       "the recorded line is the head SHA and the outcome, nothing else")
+check.(with["prompt"].to_s.include?("If nothing is wrong, post nothing."), "the reviewer itself still posts nothing when nothing is wrong")
 check.(on_of.(wf).dig("pull_request", "types") == %w[opened synchronize reopened ready_for_review],
        "the review runs on opened, synchronize, reopened and ready_for_review (not edited)")
 check.(on_of.(load_wf.("commit-identity.yml")).dig("pull_request", "types")&.include?("edited"),
