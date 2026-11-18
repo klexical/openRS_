@@ -196,9 +196,10 @@ function readCurrent(id: string | null): void {
 
 /**
  * Read the compared drives (as App's effect did): the Current drive is reused from memory, unless it is in [fresh] or
- * its copy is stale (`staleCurrentId`, owner Q14); one guard (K6, K10). A read that fails clears the old copies, so
- * Compare shows no figures it just failed to read (owner, Q13), and its drive is named in `compareFailedIds` for Compare
- * to say so (#407); a new read clears them. Never rejects.
+ * its copy is stale (`staleCurrentId`, owner Q14); one guard (K6, K10). A drive whose read fails is named in
+ * `compareFailedIds` for Compare to say so (#407), and the copies become the drives this read did open, so no copy from
+ * an earlier read stays beside it (owner Q13) and Compare compares the drives that did open (#416 ticket 3, Q91, Q92);
+ * a new read clears the names. Never rejects.
  */
 function readCompared(ids: string[], fresh: string[] = []): Promise<void> {
   const token = nextToken('compare')
@@ -210,13 +211,10 @@ function readCompared(ids: string[], fresh: string[] = []): Promise<void> {
     .then((answers) => {
       if (!newest('compare', token)) return
       const failed = ids.filter((_, i) => answers[i].status === 'rejected')
-      if (failed.length > 0) {
-        for (const a of answers) if (a.status === 'rejected') console.error('[Sapphire] Failed to open the compared drives:', a.reason)
-        store().setCompareSessions([])                          // no figures beside a read that failed (owner, Q13)
-        store().setCompareFailedIds(failed)
-        return
-      }
+      for (const a of answers) if (a.status === 'rejected') console.error('[Sapphire] Failed to open the compared drives:', a.reason)
+      // only what this read opened: a drive not stored is left out (U4), one that failed is named (#407, #416 ticket 3)
       store().setCompareSessions(answers.flatMap((a) => (a.status === 'fulfilled' && a.value !== null ? [a.value] : [])))
+      if (failed.length > 0) store().setCompareFailedIds(failed)
     })
 }
 

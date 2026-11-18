@@ -2,18 +2,21 @@ import type { Session, TripSummary, TripPoint } from '../types/session'
 import { tempReading, pctReading } from './readings'
 import { boostFor, boostLabel, primaryBoostSource, type BoostSource } from './boost'
 
-/** A single KPI delta between two sessions. */
+/**
+ * One card of Compare: a figure of two drives (the base and one other) and their difference. A drive without the reading
+ * has no figure (null; the card draws "—"), and then the pair has no difference or percentage (#416 ticket 3, owner Q82).
+ */
 export interface KpiDelta {
   label: string
   unit: string
-  /** Value from first (baseline) session. */
-  baseValue: number
-  /** Value from second session. */
-  compValue: number
-  /** Absolute difference (comp - base). */
-  diff: number
-  /** Percentage change. */
-  pctChange: number
+  /** Value from first (baseline) session; null when it has no reading. */
+  baseValue: number | null
+  /** Value from second session; null when it has no reading. */
+  compValue: number | null
+  /** Absolute difference (comp - base); null unless both drives have the reading. */
+  diff: number | null
+  /** Percentage change; null unless both drives have the reading. */
+  pctChange: number | null
   /** true = higher is better (speed, boost); false = lower is better (fuel economy). */
   higherIsBetter: boolean
 }
@@ -36,11 +39,14 @@ export interface NormalizedPoint {
 }
 
 /**
- * Compute KPI deltas between two trip summaries. A peak temperature that is the import's −99 "no reading" marker is
- * missing, like any other missing value: that figure is left out and no difference is computed from it (#414).
+ * Compare's cards for two trip summaries. A figure is a reading only when the drive received it: a field an older record
+ * lacks, a value that is not a finite number, the import's −99 temperature marker (#414), a fuel economy of 0 (the import's
+ * "could not compute") and an absent aggression score are no reading. A card stays when one drive has the reading, with
+ * no figure for the other and no difference (#416 ticket 3, owner Q82); a card with no reading on either side, or with 0
+ * on both, is left out.
  */
 export function computeDeltas(base: TripSummary, comp: TripSummary): KpiDelta[] {
-  const kpis: { key: keyof TripSummary; label: string; unit: string; higherIsBetter: boolean; temp?: true }[] = [
+  const kpis: { key: keyof TripSummary; label: string; unit: string; higherIsBetter: boolean; reading?: (v: number) => number | null }[] = [
     { key: 'peakSpeedKph', label: 'Peak Speed', unit: 'kph', higherIsBetter: true },
     { key: 'avgSpeedKph', label: 'Avg Speed', unit: 'kph', higherIsBetter: true },
     { key: 'peakRpm', label: 'Peak RPM', unit: 'RPM', higherIsBetter: true },
@@ -49,40 +55,47 @@ export function computeDeltas(base: TripSummary, comp: TripSummary): KpiDelta[] 
     { key: 'peakLongG', label: 'Peak Long G', unit: 'G', higherIsBetter: false },
     { key: 'distanceKm', label: 'Distance', unit: 'km', higherIsBetter: true },
     { key: 'durationMs', label: 'Duration', unit: 'ms', higherIsBetter: false },
-    { key: 'avgFuelEconomy', label: 'Fuel Economy', unit: 'L/100km', higherIsBetter: false },
-    { key: 'peakCoolantC', label: 'Peak Coolant', unit: '°C', higherIsBetter: false, temp: true },
-    { key: 'peakOilTempC', label: 'Peak Oil', unit: '°C', higherIsBetter: false, temp: true },
-    { key: 'aggressionScore', label: 'Aggression', unit: '/100', higherIsBetter: true },   // T4A
+    { key: 'avgFuelEconomy', label: 'Fuel Economy', unit: 'L/100km', higherIsBetter: false, reading: positive },
+    { key: 'peakCoolantC', label: 'Peak Coolant', unit: '°C', higherIsBetter: false, reading: tempReading },   // #414
+    { key: 'peakOilTempC', label: 'Peak Oil', unit: '°C', higherIsBetter: false, reading: tempReading },
+    { key: 'aggressionScore', label: 'Aggression', unit: '/100', higherIsBetter: true, reading: positive },   // T4A
     { key: 'fuelUsedL', label: 'Fuel Used', unit: 'L', higherIsBetter: false },             // T4A
   ]
 
   return kpis
-    .map(({ key, label, unit, higherIsBetter, temp }) => {
-      const baseValue = base[key] as number | undefined
-      const compValue = comp[key] as number | undefined
-      if (baseValue == null || compValue == null) return null
-      if (temp && (tempReading(baseValue) === null || tempReading(compValue) === null)) return null   // the marker (#414)
-      if (!isFinite(baseValue) || !isFinite(compValue)) return null
-      if (baseValue === 0 && compValue === 0) return null
-      const diff = compValue - baseValue
-      const pctChange = baseValue !== 0 ? (diff / Math.abs(baseValue)) * 100 : 0
-      return { label, unit, baseValue, compValue, diff, pctChange, higherIsBetter }
+    .map(({ key, label, unit, higherIsBetter, reading }) => {
+      const read = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? (reading ? reading(v) : v) : null)
+      const card = pair(label, unit, higherIsBetter, read(base[key]), read(comp[key]))
+      return card && card.baseValue === 0 && card.compValue === 0 ? null : card
     })
-    .filter(Boolean)
-    .concat(boostDelta(base, comp)) as KpiDelta[]
+    .filter((d): d is KpiDelta => d !== null)
+    .concat(boostDelta(base, comp))
+}
+
+/** A value only above 0: the import stores 0 (or nothing) for a fuel economy or aggression score it could not compute. */
+const positive = (v: number) => (v > 0 ? v : null)
+
+/** One card from two readings (null = no reading): none when neither has it, no difference unless both have it. */
+function pair(label: string, unit: string, higherIsBetter: boolean, baseValue: number | null, compValue: number | null): KpiDelta | null {
+  if (baseValue === null && compValue === null) return null
+  if (baseValue === null || compValue === null) return { label, unit, baseValue, compValue, diff: null, pctChange: null, higherIsBetter }
+  const diff = compValue - baseValue
+  const pctChange = baseValue !== 0 ? (diff / Math.abs(baseValue)) * 100 : 0
+  return { label, unit, baseValue, compValue, diff, pctChange, higherIsBetter }
 }
 
 /**
- * Peak boost delta (#207) — only between peaks of the same measurement (both TIP, both CAN 0x0F8, or both from
- * exports without sources), never when either session has no reading. A genuine 0 peak compares.
+ * Peak boost card (#207): two peaks side by side only when they are the same measurement (both TIP, both CAN 0x0F8, or
+ * both from exports without sources); a genuine 0 peak compares. A drive with no boost reading keeps the card with no
+ * figure for it, named by the other drive's measurement (#416 ticket 3).
  */
 function boostDelta(base: TripSummary, comp: TripSummary): KpiDelta[] {
-  const a = base.peakBoostPsi, b = comp.peakBoostPsi
-  if (a == null || b == null || !Number.isFinite(a) || !Number.isFinite(b)) return []
-  if ((base.peakBoostSource ?? null) !== (comp.peakBoostSource ?? null)) return []
-  const diff = b - a
-  const label = `Peak ${boostLabel(base.peakBoostSource) === 'TIP' ? 'TIP' : 'Boost'}`
-  return [{ label, unit: 'PSI', baseValue: a, compValue: b, diff, pctChange: a !== 0 ? (diff / Math.abs(a)) * 100 : 0, higherIsBetter: true }]
+  const value = (v: number | null | undefined) => (v != null && Number.isFinite(v) ? v : null)
+  const a = value(base.peakBoostPsi), b = value(comp.peakBoostPsi)
+  if (a !== null && b !== null && (base.peakBoostSource ?? null) !== (comp.peakBoostSource ?? null)) return []
+  const source = a !== null ? base.peakBoostSource : comp.peakBoostSource
+  const card = pair(`Peak ${boostLabel(source) === 'TIP' ? 'TIP' : 'Boost'}`, 'PSI', true, a, b)
+  return card ? [card] : []
 }
 
 /** The boost measurement an overlay of these sessions can show, or undefined when they differ (#207). */

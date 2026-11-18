@@ -314,18 +314,21 @@ describe('the compared drives (pins, Drive library commit 1)', () => {
     await waitFor(() => expect(useStore.getState().compareSessions[0]?.name).toBe('Renamed behind the page'))
   })
 
-  it('Q13: a failed read of the compared drives clears the copies already shown', async () => {
+  // Q13 as changed by #416 ticket 3 (owner Q91, Q92): the drives that did open are kept, from this read only
+  it('Q13: a failed read of the compared drives clears the copies already shown; the drive this read opened stays', async () => {
     await seed([drive('a', 1), drive('b', 2)])
     const { useStore } = await boot()
     await waitFor(() => expect(useStore.getState().drives).toHaveLength(2))
     await compareOf(['a', 'b'], useStore)
     await waitFor(() => expect(useStore.getState().compareSessions).toHaveLength(2))
+    const [oldA] = useStore.getState().compareSessions
     gate.failLoad.add('b')
     const err = vi.spyOn(console, 'error').mockImplementation(() => {})
     await compareOf(['a', 'b'], useStore)
     await waitFor(() => expect(useStore.getState().compareFailedIds).toEqual(['b']))           // the read has failed (QA F6b)
     err.mockRestore()
-    expect(useStore.getState().compareSessions).toEqual([])                                  // no figures it just failed to read (owner, Q13)
+    expect(useStore.getState().compareSessions.map((s) => s.id)).toEqual(['a'])              // no copy of b it failed to read (Q13)
+    expect(useStore.getState().compareSessions[0]).not.toBe(oldA)                            // a is this read's copy, not the old one
   })
 
   it('K6 kept, with #407: a failed read of newly compared drives shows no figures, and names the drive', async () => {
@@ -341,8 +344,10 @@ describe('the compared drives (pins, Drive library commit 1)', () => {
     err.mockRestore()
     expect(alert.textContent).toBe("Couldn't open Invented c.")                               // the line (#407)
     expect(useStore.getState().compareSessionIds).toEqual(['c', 'd'])
-    expect(useStore.getState().compareSessions).toEqual([])                                  // the old copies are cleared (owner, Q13)
+    // the old copies are cleared (owner, Q13); d, which did open, is kept (#416 ticket 3), one drive alone is not compared (Q91)
+    expect(useStore.getState().compareSessions.map((s) => s.id)).toEqual(['d'])
     expect(document.body.textContent).not.toMatch(/ vs /)                                    // no figures
+    expect(screen.getByText('Compare needs at least two drives that open.')).toBeInTheDocument()
   })
 
   // K11 changed in delivery C (owner, 2026-11-14, "three grilling questions on Sapphire's Compare", item 2): Compare

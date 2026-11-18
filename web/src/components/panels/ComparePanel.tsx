@@ -27,8 +27,11 @@ export function ComparePanel() {
     [sessions]
   )
 
+  // the drives that did open, in ticked order: the first of them is the base (#416 ticket 3, owner Q92)
   const hasEnough = compareSessions.length >= 2
   const baseSession = compareSessions[0]
+  const firstTickedFailed = compareIds.length > 0 && failedIds.includes(compareIds[0])
+  const nameOf = (id: string) => sessions.find((d) => d.id === id)?.name ?? 'a compared drive'
 
   // KPI deltas: compare each session against the first (baseline)
   const allDeltas = useMemo(() => {
@@ -112,9 +115,16 @@ export function ComparePanel() {
       {/* A compared drive that could not be read (#407), named as the list calls it now */}
       {failedIds.map((id) => (
         <p key={id} role="alert" className="text-sm font-mono" style={{ color: colors.warn }}>
-          Couldn't open {sessions.find((d) => d.id === id)?.name ?? 'a compared drive'}.
+          Couldn't open {nameOf(id)}.
         </p>
       ))}
+      {/* the drives that did open are compared (#416 ticket 3): the base they are compared with (Q92), or why not (Q91) */}
+      {failedIds.length > 0 && hasEnough && firstTickedFailed && (
+        <p className="text-sm font-mono text-frost">Base drive: {baseSession.name} ({nameOf(compareIds[0])} couldn't be opened).</p>
+      )}
+      {failedIds.length > 0 && !hasEnough && (
+        <p className="text-sm font-mono text-frost">Compare needs at least two drives that open.</p>
+      )}
 
       {/* Comparison results */}
       {hasEnough && (
