@@ -162,3 +162,13 @@ describe('#416 ticket 3: a drive without coordinates has no distance reading (QA
     expect(card.textContent).not.toMatch(/[▲▼%]|\+/)
   })
 })
+
+// QA's FINAL, R4: a ticked drive with no stored record has no place in the picker: the first drive that opened is the base.
+describe('#416 ticket 3: a ticked drive no longer stored takes no place (QA R4)', () => {
+  it('the drives that opened keep their places from the first one', async () => {
+    await compare([drive('a', 1), drive('b', 2)], ['gone', 'a', 'b'])
+    expect(await screen.findByText('Invented b vs Invented a', {}, { timeout: 5000 })).toBeInTheDocument()
+    const tag = (name: string) => screen.getByRole('button', { name: new RegExp(`^${name}`) }).textContent!.replace(/^.*v2\.2\.7/, '')
+    expect([tag('Invented a'), tag('Invented b')]).toEqual(['Base', '#2'])
+  })
+})

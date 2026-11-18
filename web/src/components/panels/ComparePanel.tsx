@@ -31,8 +31,9 @@ export function ComparePanel() {
   const hasEnough = compareSessions.length >= 2
   const baseSession = compareSessions[0]
   const firstTickedFailed = compareIds.length > 0 && failedIds.includes(compareIds[0])
-  // the picker's places follow the comparison: a ticked drive that did not open has none, so the base is the first that did
-  const placed = compareIds.filter((id) => !failedIds.includes(id))
+  // the picker's places follow the comparison: a ticked drive that did not open has none, nor one no longer stored here
+  // (QA's FINAL on delivery A, R4), so the base is the first that did
+  const placed = compareIds.filter((id) => !failedIds.includes(id) && sessions.some((d) => d.id === id))
   const nameOf = (id: string) => sessions.find((d) => d.id === id)?.name ?? 'a compared drive'
 
   // KPI deltas: compare each session against the first (baseline)
