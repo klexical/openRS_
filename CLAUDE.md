@@ -259,6 +259,9 @@ Nightlies (#363): android-v<ver>-nightly.YYYYMMDD, from staging's tip
 Android RCs ship from **staging**; **main** carries stable Android (v2.2.6) and Sapphire. Sapphire may reach main web/-only
 without the Android RC.
 
+`CODING_STANDARDS.md` (the Claude review's standards, Q137) is kept byte-identical on staging and main: a change lands on
+both in one round (two PRs), or on staging alone with main taking it at stable.
+
 Commits carry the committer's GitHub noreply e-mail (`<id>+<login>@users.noreply.github.com`). The owner's account blocks
 pushes that would publish a private address (GH007), and fixing that afterwards means rewriting commits.
 
