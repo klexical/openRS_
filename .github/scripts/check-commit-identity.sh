@@ -2,10 +2,10 @@
 # check-commit-identity.sh <base sha> <head sha> [<also-exclude sha>...] — the pull request's NEW commits (reachable from
 # head, not from base nor from any other sha given; the workflow passes staging's and main's tips) each carry the
 # owner's noreply address as author, and as committer too, except that a merge commit may carry GitHub's own committer
-# address (a merge made on GitHub); none carries a `Claude-Session:` line, the key in any case, in any paragraph (owner
-# Q141; the integrator's four details of Q137 / Q141). Commits already on staging or main are not checked again, so a
-# promotion from staging to main has nothing new and passes. Prints one line per commit that fails (short SHA and what
-# is wrong, never the address found) and a total. Exit 0: every new commit passes; 1: a commit fails; 2: usage.
+# address (a merge made on GitHub); none carries a `Claude-Session:` line, the key in any case, in any paragraph.
+# Commits already on staging or main are not checked again, so a promotion from staging to main has nothing new and
+# passes. Prints one line per commit that fails (short SHA and what is wrong, never the address found) and a total.
+# Exit 0: every new commit passes; 1: a commit fails; 2: usage.
 set -euo pipefail
 OWNER=263109723+klexical@users.noreply.github.com
 GITHUB_MERGER=noreply@github.com

@@ -1,9 +1,8 @@
 name: Commit identity
 
 # Every commit of a pull request to staging or main carries the owner's noreply address as author and committer, and no
-# `Claude-Session:` line (owner Q141), except that a merge made on GitHub may carry GitHub's committer address; commits
-# already on staging or main are not checked again (the integrator's four details of Q137 / Q141). Fails the PR
-# otherwise. No secret is used; the script and its test run here.
+# `Claude-Session:` line, except that a merge made on GitHub may carry GitHub's committer address; commits already on
+# staging or main are not checked again. Fails the PR otherwise. No secret is used; the script and its test run here.
 
 on:
   pull_request:                      # never pull_request_target
@@ -20,8 +19,8 @@ jobs:
     permissions:
       contents: read
     steps:
-      # The default ref: the run's merge commit, whose tree holds the workflow and the scripts together (QA's
-      # FINAL-failure-facts C1: a head checkout lacks any script added to the base after the PR was cut). fetch-depth 0
+      # The default ref: the run's merge commit, whose tree holds the workflow and the scripts together (a head
+      # checkout lacks any script added to the base after the PR was cut). fetch-depth 0
       # brings every branch, and the PR head is the merge commit's second parent.
       - uses: actions/checkout@v4
         with:
@@ -34,7 +33,7 @@ jobs:
       - name: The review failure facts' own tests
         run: bash .github/scripts/test-review-failure-facts.sh
 
-      - name: The review workflows' shape (Q137, Q141)
+      - name: The review workflows' shape
         run: ruby .github/scripts/test-review-workflows.rb
 
       - name: Every new commit in the pull request
