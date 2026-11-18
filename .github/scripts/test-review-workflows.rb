@@ -1,6 +1,6 @@
 #!/usr/bin/env ruby
-# test-review-workflows.rb [<workflows dir>] — pins the shape of claude-review.yml and commit-identity.yml (owner Q137,
-# Q141): pull_request only, never pull_request_target; every job skips a fork's branch; the least permissions; the
+# test-review-workflows.rb [<workflows dir>] — pins the shape of claude-review.yml and commit-identity.yml:
+# pull_request only, never pull_request_target; every job skips a fork's branch; the least permissions; the
 # subscription token, never an API key; the reviewer holds no write tool. Exit 0 when every check passes.
 require "yaml"
 dir = ARGV[0] || File.join(__dir__, "..", "workflows")
@@ -38,7 +38,7 @@ args = with["claude_args"].to_s
 allowed = args[/--allowedTools "([^"]*)"/, 1].to_s.split(",")
 check.(!allowed.empty? && allowed.none? { |t| t =~ /\A(Edit|Write|NotebookEdit|Bash\((git|gh pr review|gh pr merge|gh api))/ },
        "the reviewer is allowed no editing, git, review, merge or api tool")
-# QA's C3: nothing a diff's text could steer into reading outside the checkout or posting a file
+# nothing a diff's text could steer into reading outside the checkout or posting a file
 check.(allowed.none? { |t| %w[Read Grep Glob].include?(t) || t.start_with?("Read(", "Grep(", "Glob(") },
        "no Read / Grep / Glob rule: reads stay inside the checkout")
 check.(allowed.none? { |t| t.include?("gh pr comment") } && args.include?("Bash(gh pr comment:*)"),
@@ -52,25 +52,25 @@ check.(%w[Edit Write Bash(git\ push:*) Bash(gh\ pr\ review:*) Bash(gh\ pr\ merge
 check.(args =~ /^\s*--permission-mode default\s*$/ && args.scan(/--permission-mode/).size == 1,
        "the allow list is the whole list: --permission-mode default (auto mode would let a review pass other calls)")
 check.(with["prompt"].to_s.include?("CODING_STANDARDS.md"), "the prompt reviews against CODING_STANDARDS.md")
-check.(act && act["continue-on-error"] == true, "a failed review step never fails the job (Q125: no Light merge waits on it)")
+check.(act && act["continue-on-error"] == true, "a failed review step never fails the job, so it never blocks a merge")
 job_t = wf["jobs"].values.first["timeout-minutes"].to_i
 check.(act && act["timeout-minutes"].is_a?(Integer) && act["timeout-minutes"] < job_t,
-       "the review step times out before the job does, so a hang fails the step, not the job (QA's C1)")
-# Addendum 3: a line on the PR records that the review ran, on which head and with what outcome (the model stays inline-only)
+       "the review step times out before the job does, so a hang fails the step, not the job")
+# a line on the PR records that the review ran, on which head and with what outcome (the model stays inline-only)
 ai = steps.index(act)
 rec = ai && steps[(ai + 1)..].find { |s| s["run"].to_s.include?("gh pr comment") }
 renv = rec ? (rec["env"] || {}) : {}
 check.(rec && rec["if"] == "always()", "a step after the review, with if: always(), records that it ran")
 check.(rec && !rec["run"].include?("${{"), "the recording step's run has no ${{ }} in it (values come through env)")
 check.(rec && rec["continue-on-error"] == true && rec["timeout-minutes"].is_a?(Integer) && rec["timeout-minutes"] <= 2,
-       "a failed or hung recording never fails the job (continue-on-error, timeout-minutes 2; QA READ-addendum3 D1)")
+       "a failed or hung recording never fails the job (continue-on-error, timeout-minutes 2)")
 check.(act && act["id"] && renv["OUTCOME"] == "${{ steps.#{act["id"]}.outcome }}", "the recorded outcome is the review step's (its id)")
 check.(renv["HEAD_SHA"] == "${{ github.event.pull_request.head.sha }}" && renv["PR"] == "${{ github.event.pull_request.number }}" &&
        renv["GH_TOKEN"] == "${{ secrets.GITHUB_TOKEN }}", "the PR number, the head SHA and the job's own token come through env")
 check.(rec && rec["run"].strip == 'gh pr comment "$PR" --body "Claude review ran on $HEAD_SHA: $OUTCOME."',
        "the recorded line is the head SHA and the outcome, nothing else")
 check.(with["prompt"].to_s.include?("If nothing is wrong, post nothing."), "the reviewer itself still posts nothing when nothing is wrong")
-# Fix round 5: a failed review says why, without its content
+# a failed review says why, without its content
 why = ai && steps[(ai + 1)..].find { |s| s["run"].to_s.include?("review-failure-facts.sh") }
 wenv = why ? (why["env"] || {}) : {}
 check.(why && why["if"] == "steps.#{act["id"]}.outcome == 'failure'", "a step after the review runs only when the review failed")
@@ -94,7 +94,7 @@ idsteps = idj["steps"]
 check.(idj["continue-on-error"].nil? && idsteps.none? { |s| s.key?("continue-on-error") }, "the identity check is a hard check")
 co = idsteps.find { |s| s["uses"].to_s.start_with?("actions/checkout@") }
 check.(co && !(co["with"] || {}).key?("ref"),
-       "the identity job checks out the default merge ref, so its scripts match its workflow (QA FINAL-failure-facts C1)")
+       "the identity job checks out the default merge ref, so its scripts match its workflow")
 check.(idsteps.map { |s| s["run"].to_s }.join("\n").include?('[ "$(git rev-parse HEAD^2)" = "$HEAD" ] ||'),
        "the identity check walks the PR head, the merge commit's second parent, never the merge commit itself")
 check.(co && co.dig("with", "fetch-depth") == 0, "the identity job fetches the whole history and the branches")
@@ -103,6 +103,39 @@ check.(runs.include?("origin/staging") && runs.include?("origin/main") &&
        runs =~ /check-commit-identity\.sh "\$BASE" "\$HEAD" "\$STAGING" "\$MAIN"/,
        "the check excludes staging's and main's tips")
 check.(steps.none? { |s| s.dig("with", "ref").to_s.include?("head") }, "the review checks out the base's merge ref, never the head ref")
+# The token's shape before the review, never its value: a stored token with a line break, a space or an invisible
+# character fails every review with an authentication error that the public log cannot show. Exactly one of four
+# lines; no part of the value, its length or a hash. A byte outside printable ASCII (a no-break or zero-width space, or
+# a control byte that is not whitespace) has its own line, since stripping spaces and line breaks does not remove it;
+# it wins over whitespace.
+SECRET = "${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}"
+tok = steps.find { |s| (s["env"] || {}).values.include?(SECRET) }
+tenv = tok ? (tok["env"] || {}) : {}
+check.(tok && ai && steps.index(tok) < ai && !tok.key?("if"), "a step before the review, with no condition, classifies the token's shape")
+check.(tok && tenv.size == 1 && tok["shell"] == "bash" && !tok["run"].to_s.include?("${{"),
+       "the token reaches the shape step through its one env key only, never ${{ }} in run")
+check.(tok && tok["continue-on-error"] == true && tok["timeout-minutes"] == 1, "the shape step never fails or holds the job (continue-on-error, timeout-minutes 1)")
+check.(tok && tok["run"].to_s.lines.first.to_s.strip == "export LC_ALL=C", "the shape step reads bytes, not a locale's characters (LC_ALL=C first)")
+check.(File.read(File.join(dir, "claude-review.yml")).downcase.scan("secrets.claude_code_oauth_token").size == 2,
+       "the token appears twice only: the shape step's env and the review's input")
+require "open3"
+require "tmpdir"
+LINES = { ok: "review token: ok", empty: "review token: empty", ws: "review token: has whitespace or a line break",
+          ascii: "review token: has a character outside printable ASCII" }
+probe = "SHAPEPROBE-x_1"
+{ probe => :ok, "" => :empty, "#{probe} x" => :ws, "\t#{probe}" => :ws, "#{probe}\r" => :ws, "#{probe}\n" => :ws,
+  "SHAPEPROBE-x\n_1" => :ws, " " => :ws, "#{probe}\v" => :ws, "#{probe}\u00a0" => :ascii, "#{probe}\u200b" => :ascii,
+  "#{probe}\x01" => :ascii, "#{probe}\x7f" => :ascii, "#{probe}\u00a0\n" => :ascii }.each do |val, want|
+  out = nil; st = nil
+  if tok
+    Dir.mktmpdir do |d|
+      sc = File.join(d, "step.sh"); File.write(sc, tok["run"].to_s)
+      out, st = Open3.capture2e({ tenv.keys.first.to_s => val }, "bash", "--noprofile", "--norc", "-eo", "pipefail", sc)
+    end
+  end
+  check.(tok && st&.success? && out == LINES[want] + "\n" && !out.include?("SHAPEPROBE"),
+         "the shape step prints exactly \"#{LINES[want]}\" for a token #{val.inspect.sub("SHAPEPROBE", "…")}, and exits 0")
+end
 
 puts "review workflow checks: #{fails.zero? ? "all passed" : "#{fails} failed"}"
 exit(fails.zero? ? 0 : 1)

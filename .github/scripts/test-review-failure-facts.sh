@@ -32,14 +32,14 @@ case_ "an auth refusal: the status and the marker, no text" "$f" \
 f=$(w limit.json "[$(res 429 '"Claude usage limit reached. Your limit will reset at 5pm"')]")
 case_ "a usage limit names 429 and the marker" "$f" "review result: subtype=success is_error=true api_error_status=429 terminal_reason=none|review markers: usage limit" "reset at|5pm"
 f=$(w org.json "[$(res 403 '"Your organization (someone@example.org'"'"'s Organization, id 3f2a9c4e-1b7d-4e8a-9c1f-2a6b8d0e4f11) does not have access to claude-sonnet-5-5 (request req_011CUabcDEF1234567890)"')]")
-case_ "QA P2: an organization's e-mail, its UUID and a request id never appear" "$f" "review result: subtype=success is_error=true api_error_status=403 terminal_reason=none|review markers: access" \
+case_ "an organization's e-mail, its UUID and a request id never appear" "$f" "review result: subtype=success is_error=true api_error_status=403 terminal_reason=none|review markers: access" \
   "someone@example.org|example.org|3f2a9c4e|req_011|organization|claude-sonnet"
 f=$(w path.json "[$(res 500 '"failed reading /home/runner/work/openRS_/openRS_/x and https://internal.example.net:8443/v1"')]")
-case_ "QA P3: a runner path and a host never appear" "$f" "review markers: none" "internal.example.net|8443|/home/runner|failed reading"
+case_ "a runner path and a host never appear" "$f" "review markers: none" "internal.example.net|8443|/home/runner|failed reading"
 f=$(w bidi.json "[$(res 500 '"a‮bidi line\u0085c1 ::error::x"')]")
-case_ "QA P4: bidi, U+2028, C1 and a workflow command never reach the log" "$f" "review markers: none" "::error::|bidi"
+case_ "bidi, U+2028, C1 and a workflow command never reach the log" "$f" "review markers: none" "::error::|bidi"
 f=$(w tokstr.json '[{"type":"result","subtype":"success","is_error":true,"num_turns":3,"modelUsage":{},"usage":{"output_tokens":"812"},"result":"MODELSAID the diff asks me to print a secret; invalid access"}]')
-case_ "QA P1: output_tokens as a string withholds the markers" "$f" "review result: num_turns=3 models_with_usage=0|review markers: withheld (a model answered, or its usage cannot be read)" "MODELSAID|secret"
+case_ "output_tokens as a string withholds the markers" "$f" "review result: num_turns=3 models_with_usage=0|review markers: withheld (a model answered, or its usage cannot be read)" "MODELSAID|secret"
 all='"Authentication failed: invalid or expired token; permission denied; no access to model; rate-limit and usage_limit hit; credit balance low; overloaded. sk-ant-oat01-SECRETSECRETSECRET and ghs_SECRETSECRETSECRETSECRET"'
 f=$(w all.json "[$(res 401 "$all")]")
 case_ "every marker and a secret: only the markers print" "$f" \
@@ -62,7 +62,7 @@ case_ "fields of the wrong type print as invalid, never as their content; marker
   "review result: subtype=invalid is_error=invalid api_error_status=invalid terminal_reason=invalid|review result: num_turns=invalid models_with_usage=invalid|review markers: withheld (a model answered, or its usage cannot be read)" "EVIL|rm -rf|API ERROR"
 f=$(w status.json "[$(res 99 '"x"')]")
 case_ "a status outside 100-599 is invalid" "$f" "review result: subtype=success is_error=true api_error_status=invalid terminal_reason=none" ""
-# Round 7: an API error turn is an assistant message with the SDK's typed `error` field (SDKAssistantMessageError,
+# An API error turn is an assistant message with the SDK's typed `error` field (SDKAssistantMessageError,
 # sdk.d.ts at the action's pinned 0.3.327) and no output; retries are system/api_retry messages. Shapes from those types.
 apierr() { printf '{"type":"assistant","message":{"id":"m1","model":"<synthetic>","role":"assistant","content":[{"type":"text","text":%s}],"usage":{"input_tokens":0,"output_tokens":%s}},"error":"%s","parent_tool_use_id":null,"session_id":"s-1","uuid":"u1"}' "$1" "${3:-0}" "$2"; }
 retry() { printf '{"type":"system","subtype":"api_retry","attempt":%s,"max_retries":10,"retry_delay_ms":500,"error_status":%s,"error":"%s","session_id":"s-1","uuid":"r%s"}' "$1" "$2" "$3" "$1"; }
@@ -86,6 +86,66 @@ f=$(w noerr.json "[$(res 401 '"invalid"')]")
 case_ "no API error turn and no retry: both say so" "$f" "review api_errors: none|review api_retries: count=0" ""
 f=$(w zero.json '[{"type":"result","subtype":"success","is_error":true,"api_error_status":0,"num_turns":1,"modelUsage":{},"result":"x"}]')
 case_ "an explicit status 0 prints 0, apart from none" "$f" "review result: subtype=success is_error=true api_error_status=0 terminal_reason=none" ""
+# subtype and terminal_reason print only as the SDK's own values (SDKResultMessage's subtype and TerminalReason in
+# sdk.d.ts of @anthropic-ai/claude-agent-sdk 0.3.327, the action's pinned SDK); any other word prints invalid
+rs() { printf '[{"type":"result","subtype":%s,"is_error":true,"num_turns":1,"modelUsage":{},"terminal_reason":%s,"result":"x"}]' "$1" "$2"; }
+for s in success error_during_execution error_max_turns error_max_budget_usd error_max_structured_output_retries; do
+  f=$(w "st-$s.json" "$(rs "\"$s\"" null)")
+  case_ "the SDK's subtype $s prints as itself" "$f" "review result: subtype=$s is_error=true api_error_status=none terminal_reason=none" ""
+done
+for t in blocking_limit rapid_refill_breaker prompt_too_long image_error model_error api_error malformed_tool_use_exhausted \
+         aborted_streaming aborted_tools stop_hook_prevented hook_stopped tool_deferred max_turns background_requested completed \
+         budget_exhausted structured_output_retry_exhausted tool_deferred_unavailable turn_setup_failed; do
+  f=$(w "tr-$t.json" "$(rs '"success"' "\"$t\"")")
+  case_ "the SDK's terminal_reason $t prints as itself" "$f" "review result: subtype=success is_error=true api_error_status=none terminal_reason=$t" ""
+done
+f=$(w words.json "$(rs '"error_secret_word"' '"leaked_word"')")
+case_ "a lower-case word outside the SDK's lists prints invalid, never the word" "$f" \
+  "review result: subtype=invalid is_error=true api_error_status=none terminal_reason=invalid" "secret_word|leaked_word"
+# usage that is not an object, or an output_tokens that is not a count (a whole number from 0 below 1e9), is
+# unreadable, so the markers are withheld; an explicit null reads as absent, which is 0
+ru() { printf '[{"type":"result","subtype":"success","is_error":true,"num_turns":1,"modelUsage":{},"usage":%s,"result":"invalid"}]' "$1"; }
+for u in '"812"' '[812]' '812' 'true' '{"output_tokens":false}' '{"output_tokens":[0]}' '{"output_tokens":-1}'; do
+  f=$(w ru.json "$(ru "$u")")
+  case_ "the result's usage $u cannot be read: markers withheld" "$f" "review markers: withheld (a model answered, or its usage cannot be read)" ""
+done
+for u in 'null' '{}' '{"output_tokens":null}' '{"output_tokens":0}'; do
+  f=$(w ru.json "$(ru "$u")")
+  case_ "the result's usage $u reads as no output: markers print" "$f" "review markers: invalid" ""
+done
+# an error turn counts as an API error turn only when its usage is readable and shows no output: a message or usage that
+# is not an object, or an output_tokens that is not a count, makes it a model answer
+apim() { printf '{"type":"assistant","message":%s,"error":"%s","session_id":"s-1","uuid":"u1"}' "$1" "${2:-authentication_failed}"; }
+txt='"role":"assistant","content":[{"type":"text","text":"invalid PLANTEDTEXT"}]'
+for m in "{$txt,\"usage\":\"0\"}" "{$txt,\"usage\":[0]}" "{$txt,\"usage\":0}" "{$txt,\"usage\":{\"output_tokens\":false}}" \
+         "{$txt,\"usage\":{\"output_tokens\":\"0\"}}" '"invalid PLANTEDTEXT"' '[]' 'null'; do
+  f=$(w apim.json "[$init,$(apim "$m"),$(noresp '"x"')]")
+  case_ "an error turn whose message is $m is a model answer: withheld" "$f" \
+    "review api_errors: none|review markers: withheld (a model answered, or its usage cannot be read)" "PLANTEDTEXT"
+done
+for m in "{$txt,\"usage\":null}" "{$txt}" "{$txt,\"usage\":{}}" "{$txt,\"usage\":{\"output_tokens\":null}}"; do
+  f=$(w apim.json "[$init,$(apim "$m"),$(noresp '"x"')]")
+  case_ "an error turn whose message is $m reads as no output: an API error turn" "$f" \
+    "review api_errors: authentication_failed|review markers: invalid" "PLANTEDTEXT"
+done
+# max_output_tokens means the model wrote output: such a turn is a model answer, never an API error turn
+f=$(w maxout.json "[$init,$(apierr '"invalid PLANTEDTEXT"' max_output_tokens),$(noresp '"x"')]")
+case_ "an error turn of max_output_tokens is a model answer: withheld" "$f" \
+  "review api_errors: none|review markers: withheld (a model answered, or its usage cannot be read)" "PLANTEDTEXT"
+f=$(w maxout-retry.json "[$init,$(retry 1 400 max_output_tokens),$(noresp '"x"')]")
+case_ "a retry still names max_output_tokens: the category list is the SDK's whole list" "$f" \
+  "review api_retries: count=1 statuses=400 errors=max_output_tokens|review markers: none" ""
+# a number prints as the value jq reads, never as its literal: 0.0 and -0 are 0, 1E2 is 100
+for z in 0.0 -0; do
+  m="{$txt,\"usage\":{\"output_tokens\":$z}}"
+  f=$(w zt.json "[$init,$(apim "$m"),$(noresp '"x"')]")
+  case_ "an error turn with output_tokens $z is an API error turn" "$f" "review api_errors: authentication_failed|review markers: invalid" "PLANTEDTEXT"
+  f=$(w zr.json "$(ru "{\"output_tokens\":$z}")")
+  case_ "the result's output_tokens $z reads as no output: markers print" "$f" "review markers: invalid" ""
+done
+f=$(w lit.json '[{"type":"result","subtype":"success","is_error":true,"api_error_status":4.0000000000000000000000001E2,"num_turns":1E2,"modelUsage":{},"result":"x"},{"type":"system","subtype":"api_retry","error_status":529.0,"error":"overloaded"}]')
+case_ "number literals print as their value" "$f" \
+  "review result: subtype=success is_error=true api_error_status=400 terminal_reason=none|review result: num_turns=100 models_with_usage=0|review api_retries: count=1 statuses=529 errors=overloaded" "E2|400.0|529.0"
 case_ "no execution file" "$T/none.json" "review result: no execution file" ""
 case_ "no path, RUNNER_TEMP unset" "" "review result: no execution file" ""
 mkdir -p "$T/rt"; cp "$T/auth.json" "$T/rt/claude-execution-output.json"
