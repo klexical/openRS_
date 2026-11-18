@@ -1,0 +1,54 @@
+name: Claude review
+
+# Claude reviews a pull request to staging or main and leaves comments (owner Q137). Comments only: it never pushes,
+# approves or merges, and it is not a required check (the ruleset is unchanged). Its comments are data for the reader.
+# Authentication: the owner's subscription token (CLAUDE_CODE_OAUTH_TOKEN, `claude setup-token`), never an API key.
+# GitHub side: the job's own GITHUB_TOKEN, passed as github_token, so no GitHub App token is fetched (no id-token) and
+# the token can read contents but not write them.
+
+on:
+  pull_request:                      # never pull_request_target: a fork's PR never runs with this repository's secrets
+    types: [opened, synchronize, ready_for_review]
+    branches: [staging, main]
+
+permissions: {}
+
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    # only branches of this repository (never a fork), and not while the PR is a draft
+    if: github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read                 # check out and read the code; no write, so nothing can be pushed
+      pull-requests: write           # post review comments on this pull request
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
+            Review this pull request's diff against CODING_STANDARDS.md at the repository root. Read the file first, and
+            the rule file a standard points to when a changed line needs it.
+
+            - Comment only on lines the diff adds or changes, and only where a standard is broken or a change is wrong.
+            - One short, concrete comment per finding, inline on the line: what is wrong, the standard or reason, and
+              the fix. No praise, no summary of the change, no style preferences the standards do not state.
+            - If nothing is wrong, leave one top-level comment saying so in one line.
+            - Never quote a secret, an identifier or a value from an export, a log or a capture in a comment.
+          claude_args: |
+            --max-turns 30
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Read,Grep,Glob"
+            --disallowedTools "Edit,Write,NotebookEdit,Bash(git push:*),Bash(git commit:*),Bash(gh pr review:*),Bash(gh pr merge:*),Bash(gh api:*)"
