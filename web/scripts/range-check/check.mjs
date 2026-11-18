@@ -94,12 +94,44 @@ check(dragged0 !== null && after.hash !== before.hash && Number(dragged0[1]) < 6
   'at the drag\'s end the address holds the new range (its start earlier, its end kept)')
 check(after.steps === before.steps, 'a range change adds no Back step')
 
+// what the charts plot: the first and last m:ss tick of each chart (Recharts 3 draws tick labels outside the axis group,
+// so every <text> of the chart outside its brush, keeping the m:ss ones: only the time axis is written that way)
+const plotted = () => page.$$eval('.recharts-wrapper', (ws) => ws.map((w) => {
+  const t = [...w.querySelectorAll('text')].filter((e) => !e.closest('.recharts-brush')).map((e) => e.textContent ?? '').filter((x) => /^\d+:\d\d$/.test(x))
+  return { brush: w.querySelector('.recharts-brush') !== null, first: t[0] ?? null, last: t[t.length - 1] ?? null }
+}))
+const sec = (mss) => { const [m, s] = mss.split(':').map(Number); return m * 60 + s }
+const draggedFrom = Number(dragged0?.[1] ?? 0) / 1000
+const plots = (await plotted()).filter((p) => p.first !== null)
+console.log(`plotted after the drag: ${JSON.stringify(plots.map((p) => `${p.brush ? 'B' : '-'} ${p.first}..${p.last}`))}`)
+check(plots.filter((p) => p.brush).length >= 2 && plots.every((p) => sec(p.first) >= Math.floor(draggedFrom) && sec(p.last) <= 120),
+  'every time chart plots only the range (the brushed ones, and the temperature stack through its sync id)')
+
+// a brush by keyboard: arrow keys on a handle move the range, and the address follows (#389: everything by keyboard)
+const keyHandle = (await page.$$('.recharts-brush .recharts-brush-traveller'))[0]
+await keyHandle.scrollIntoViewIfNeeded()
+await keyHandle.focus()
+const beforeKeys = { hash: await page.evaluate(() => location.hash), text: await readout(), steps: await page.evaluate(() => history.length) }
+await page.keyboard.press('ArrowLeft')
+await page.keyboard.press('ArrowLeft')
+await page.waitForFunction((t) => document.querySelector('[role=status][aria-label=Range]')?.textContent !== t, beforeKeys.text, { timeout: 15000 })
+await page.waitForFunction((h) => location.hash !== h, beforeKeys.hash, { timeout: 3000 }).catch(() => {})
+const afterKeys = { hash: await page.evaluate(() => location.hash), text: await readout(), steps: await page.evaluate(() => history.length) }
+console.log(`keys: ${beforeKeys.text} -> ${afterKeys.text}; ${afterKeys.hash.replace(drive, '<drive>')}`)
+check(afterKeys.text !== beforeKeys.text, 'arrow keys on a brush handle move the range')
+check(afterKeys.hash !== beforeKeys.hash && /\?range=\d+-\d+$/.test(afterKeys.hash) && afterKeys.steps === beforeKeys.steps,
+  'after arrow keys the address holds the new range, with no Back step')
+await page.reload()
+await page.waitForFunction(() => document.querySelectorAll('.recharts-brush').length >= 2, null, { timeout: 30000 })
+check(await readout() === afterKeys.text, 'a reload keeps the range the keys set')
+
 // Dashboard's numbers follow the range
 const avgRpm = () => page.$eval('main', (m) => [...m.querySelectorAll('span')].find((s) => s.textContent === 'Avg RPM')?.parentElement?.textContent)
+const onTrip = await page.evaluate(() => location.hash)
 await page.getByRole('button', { name: 'Dashboard', exact: true }).click()
 await page.waitForFunction(() => [...document.querySelectorAll('span')].some((s) => s.textContent === 'Avg RPM'), null, { timeout: 15000 })
 const rangedRpm = await avgRpm()
-check(await page.evaluate(() => location.hash) === after.hash.replace('/trip?', '?'), 'a change of view keeps the range')
+check(await page.evaluate(() => location.hash) === onTrip.replace('/trip?', '?'), 'a change of view keeps the range')
 
 // "Whole drive": every brush back at the ends, the address without a range, the Dashboard's stored figures
 await page.getByRole('button', { name: 'Whole drive', exact: true }).click()

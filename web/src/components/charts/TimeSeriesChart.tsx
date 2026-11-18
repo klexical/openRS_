@@ -90,7 +90,12 @@ export function TimeSeriesChart({
   const showLegend = series.length > 1
 
   return (
-    <div className="rounded-lg border border-brd bg-surf2 p-3">
+    // a brush handle moved by its arrow keys reports each step through onChange, but never a drag's end: the key's
+    // release settles it, as the end of a drag does, so the address is written then (#416 ticket 2)
+    <div className="rounded-lg border border-brd bg-surf2 p-3"
+      onKeyUp={showBrush ? (e) => {
+        if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && (e.target as Element).closest?.('.recharts-brush')) onRangeDone?.()
+      } : undefined}>
       <ResponsiveContainer width="100%" height={height + (showBrush ? 30 : 0)}>
         <LineChart
           data={rows}
