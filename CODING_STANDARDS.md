@@ -1,7 +1,7 @@
 # Coding standards for review
 
-What a reviewer can check from a pull request's diff. Each line is a rule with a pointer to where it lives in full; the
-pointer wins when the two differ. Paths under `.claude/rules/` are the per-area rule files of the `staging` branch.
+What a reviewer can check from a pull request's diff. Where a rule lives in full elsewhere, its line points there, and
+the pointer wins when the two differ. Paths under `.claude/rules/` are the per-area rule files of the `staging` branch.
 Comment only on lines the diff adds or changes, once per finding, with the file and line and the rule broken.
 
 ## Telemetry and VehicleState (`android/`)
@@ -77,5 +77,6 @@ Comment only on lines the diff adds or changes, once per finding, with the file 
 
 ## Workflows (`.github/`)
 
-- A new or changed `uses:` is in `.github/workflows/actions.lock` (`gh actions-lock`).
+- A new or changed `uses:` is in `.github/workflows/actions.lock` (`gh actions-lock`). `.claude/rules/build-release.md`,
+  "Workflow lockfile".
 - No `pull_request_target`; a job that holds a secret does not run code from a fork.
