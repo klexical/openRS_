@@ -7,7 +7,7 @@ name: Commit identity
 
 on:
   pull_request:                      # never pull_request_target
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, edited, ready_for_review]   # edited: a PR retargeted onto staging or main
     branches: [staging, main]
 
 permissions: {}
