@@ -105,8 +105,9 @@ check.(runs.include?("origin/staging") && runs.include?("origin/main") &&
 check.(steps.none? { |s| s.dig("with", "ref").to_s.include?("head") }, "the review checks out the base's merge ref, never the head ref")
 # The token's shape before the review, never its value: a stored token with a line break, a space or an invisible
 # character fails every review with an authentication error that the public log cannot show. Exactly one of four
-# lines; no part of the value, its length or a hash. A byte outside printable ASCII (a no-break or zero-width space, a
-# control byte) has its own line, since stripping spaces and line breaks does not remove it; it wins over whitespace.
+# lines; no part of the value, its length or a hash. A byte outside printable ASCII (a no-break or zero-width space, or
+# a control byte that is not whitespace) has its own line, since stripping spaces and line breaks does not remove it;
+# it wins over whitespace.
 SECRET = "${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}"
 tok = steps.find { |s| (s["env"] || {}).values.include?(SECRET) }
 tenv = tok ? (tok["env"] || {}) : {}
@@ -121,9 +122,9 @@ require "open3"
 require "tmpdir"
 LINES = { ok: "review token: ok", empty: "review token: empty", ws: "review token: has whitespace or a line break",
           ascii: "review token: has a character outside printable ASCII" }
-probe = "sk-ant-oat01-SHAPEPROBE_x-1"
+probe = "SHAPEPROBE-x_1"
 { probe => :ok, "" => :empty, "#{probe} x" => :ws, "\t#{probe}" => :ws, "#{probe}\r" => :ws, "#{probe}\n" => :ws,
-  "sk-ant-oat01-\nSHAPEPROBE" => :ws, " " => :ws, "#{probe}\v" => :ws, "#{probe}\u00a0" => :ascii, "#{probe}\u200b" => :ascii,
+  "SHAPEPROBE-x\n_1" => :ws, " " => :ws, "#{probe}\v" => :ws, "#{probe}\u00a0" => :ascii, "#{probe}\u200b" => :ascii,
   "#{probe}\x01" => :ascii, "#{probe}\x7f" => :ascii, "#{probe}\u00a0\n" => :ascii }.each do |val, want|
   out = nil; st = nil
   if tok

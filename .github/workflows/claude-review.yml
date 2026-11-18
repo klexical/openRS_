@@ -36,9 +36,9 @@ jobs:
 
       # The token's shape, never its value, its length or a hash: a stored token with a line break, a space or an
       # invisible character fails every review with an authentication error that the public log cannot show. "ok"
-      # means printable ASCII with no space. A byte outside printable ASCII (a no-break or zero-width space, a control
-      # byte) has its own line and wins over whitespace: stripping spaces and line breaks does not remove it. Its own
-      # step, so the secret reaches only this env and the review's input.
+      # means printable ASCII with no space. A byte outside printable ASCII (a no-break or zero-width space, or a
+      # control byte that is not whitespace) has its own line and wins over whitespace: stripping spaces and line
+      # breaks does not remove it. Its own step, so the secret reaches only this env and the review's input.
       - name: The review token's shape
         continue-on-error: true
         timeout-minutes: 1
