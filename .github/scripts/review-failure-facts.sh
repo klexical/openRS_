@@ -3,12 +3,14 @@
 # result message of the action's execution file (claude-execution-output.json: every SDK message of the run, the prompt
 # included, which is never printed) and prints its subtype, is_error, api_error_status, terminal_reason, turns, cost and
 # how many models used tokens. The result's message text (`result`, or `errors` on an error subtype) is printed only
-# when no model produced output (modelUsage empty), because then it is the API's or the SDK's text, not the model's: text
+# when no model produced output (modelUsage empty and no output tokens), because then it is the API's or the SDK's text, not the model's: text
 # in a diff could steer a model's words, never an API refusal. It is flattened to one line of printable characters,
 # token-shaped strings and long hex / base64 runs are redacted, and it is capped at 300 characters. Fields of the wrong
 # type print as `invalid`, never as their content. Always exits 0: it explains a failure, it is not a check.
 set -uo pipefail
 f=${1:-}
+# the action's output may be unset after a failed composite step; the file's place is fixed (execution-file.ts)
+[ -n "$f" ] || f=${RUNNER_TEMP:+$RUNNER_TEMP/claude-execution-output.json}
 say() { printf 'review %s\n' "$1"; }
 [ -n "$f" ] && [ -f "$f" ] || { say "result: no execution file"; exit 0; }
 jq -e . "$f" >/dev/null 2>&1 || { say "result: the execution file is not readable JSON"; exit 0; }
@@ -28,7 +30,8 @@ say "result: num_turns=$turns total_cost_usd=$cost models_with_usage=$models"
 if [ "$(q 'has("startup_failure_reason")')" = true ]; then
   say "startup_failure_reason=$(q ".startup_failure_reason | $word")"
 fi
-if [ "$models" != 0 ]; then
+out_tokens=$(q '.usage.output_tokens | if type == "number" then tostring else "0" end')
+if [ "$models" != 0 ] || [ "$out_tokens" != 0 ]; then       # any sign that a model answered: the text could be its own
   say "message: withheld (a model produced output, so the text could be the model's)"
   exit 0
 fi

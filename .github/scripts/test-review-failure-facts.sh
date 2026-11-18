@@ -46,6 +46,13 @@ case_ "an error subtype prints its errors and startup reason" "$f" \
   "review result: subtype=error_during_execution is_error=true api_error_status=none terminal_reason=none|review startup_failure_reason=auth_failed|review message (no model output, so it is the API's or the SDK's text): Credential refused by the server; second" ""
 f=$(w two.json '[{"type":"result","subtype":"success","is_error":false,"num_turns":1,"total_cost_usd":0,"modelUsage":{},"result":"FIRST-RESULT"},{"type":"result","subtype":"success","is_error":true,"api_error_status":503,"num_turns":2,"total_cost_usd":0,"modelUsage":{},"result":"overloaded"}]')
 case_ "the last result message is the one read" "$f" "review result: subtype=success is_error=true api_error_status=503 terminal_reason=none" "FIRST-RESULT"
+f=$(w usage.json '[{"type":"result","subtype":"success","is_error":true,"num_turns":2,"total_cost_usd":0,"modelUsage":{},"usage":{"output_tokens":12},"result":"MODEL-WORDS-HERE"}]')
+case_ "output tokens alone also withhold the text (zeroed modelUsage)" "$f" "review message: withheld (a model produced output, so the text could be the model's)" "MODEL-WORDS-HERE"
+f=$(w nousage.json '[{"type":"result","subtype":"success","is_error":true,"num_turns":1,"total_cost_usd":0,"result":"NO-USAGE-FIELD-TEXT"}]')
+case_ "no modelUsage at all withholds the text (it cannot be told apart)" "$f" "review result: num_turns=1 total_cost_usd=0 models_with_usage=none|review message: withheld (a model produced output, so the text could be the model's)" "NO-USAGE-FIELD-TEXT"
+mkdir -p "$T/rt"; cp "$T/auth.json" "$T/rt/claude-execution-output.json"
+out=$(RUNNER_TEMP="$T/rt" bash "$CHECK" "" 2>&1)
+if grep -q -F -x "review result: subtype=success is_error=true api_error_status=401 terminal_reason=api_error" <<<"$out"; then pass=$((pass+1)); echo "PASS with no path given, the fixed RUNNER_TEMP file is read"; else fail=$((fail+1)); echo "FAIL fixed-path fallback:"; sed 's/^/    /' <<<"$out"; fi
 case_ "no execution file" "$T/none.json" "review result: no execution file" ""
 case_ "no path at all" "" "review result: no execution file" ""
 f=$(w bad.json 'not json {')
