@@ -8,10 +8,15 @@ import { numReading, tempReading } from './readings'
 import { pointsInRange, type TimeRange } from './selection'
 
 /**
- * Under a narrowed range, in place of what cannot be cut to it, on the Dashboard and on Trip (#416 ticket 2; the owner's
- * Q152 with QA's C3: the figures are left out while a range is set, on both views).
+ * Under a narrowed range on the Dashboard, in place of the figures that cannot be cut to it (#416 ticket 2; the owner's
+ * Q152: they are left out while a range is set).
  */
 export const WHOLE_DRIVE_ONLY = 'Fuel, aggression, thermal progression and tyre pressures are for the whole drive.'
+/**
+ * Trip's own line under a narrowed range, in place of thermal progression (the owner's Q154). Trip's tyre-pressure
+ * charts follow the range, so the Dashboard's line, which names tyre pressures, would be wrong there.
+ */
+export const TRIP_WHOLE_DRIVE_ONLY = 'Thermal progression is for the whole drive.'
 
 export interface RangeSummary {
   /** The range's own length. */

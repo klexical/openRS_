@@ -205,18 +205,21 @@ describe('#416 ticket 2: one selection, held in the address', () => {
 })
 
 // The owner's Q152 with QA's C3: while a range is set, thermal progression (a start, peak and end of the whole drive) is
-// left out on Trip as on the Dashboard, under the same whole-drive line.
+// left out on Trip as on the Dashboard. Trip says so in its own line (the owner's Q154): its tyre-pressure charts follow
+// the range, so the Dashboard's line, which names tyre pressures, would be wrong there.
+const TRIP_LINE = 'Thermal progression is for the whole drive.'
 describe('#416 ticket 2: thermal progression is whole-drive on both views (Q152, QA C3)', () => {
   const thermal = { oil: { startC: 40, peakC: 101, endC: 96 }, coolant: { startC: 35, peakC: 92, endC: 90 } }
   const withThermal = () => { const d = drive('a', 'Invented loop'); d.trip!.thermalProgression = thermal; return d }
   const heading = () => screen.queryByRole('heading', { level: 3, name: 'Thermal Progression' })
 
-  it('Trip, while a range is set: no thermal progression, and the whole-drive line', async () => {
+  it('Trip, while a range is set: no thermal progression, and Trip\'s own line (Q154), not the Dashboard\'s', async () => {
     await seed([withThermal()])
     await boot('#/drive/a/trip?range=1000-2000')
     expect(await screen.findByRole('heading', { level: 3, name: 'Route' }, { timeout: 3000 })).toBeInTheDocument()
     expect(heading()).toBeNull()
-    expect(screen.getByText(WHOLE_LINE)).toBeInTheDocument()
+    expect(screen.getByText(TRIP_LINE)).toBeInTheDocument()
+    expect(screen.queryByText(WHOLE_LINE)).toBeNull()
   })
 
   it('Trip, on the whole drive: thermal progression as before, no line', async () => {
@@ -224,5 +227,6 @@ describe('#416 ticket 2: thermal progression is whole-drive on both views (Q152,
     await boot('#/drive/a/trip')
     expect(await screen.findByRole('heading', { level: 3, name: 'Thermal Progression' }, { timeout: 3000 })).toBeInTheDocument()
     expect(screen.queryByText(WHOLE_LINE)).toBeNull()
+    expect(screen.queryByText(TRIP_LINE)).toBeNull()
   })
 })
