@@ -32,8 +32,10 @@ export function DriveFrame({ id }: { id: string }) {
   const here = ours ? address : { place: 'drive' as const, id }
   const view = here.view ?? DRIVE_VIEWS[0]
   const addressed = here.range ?? null
-  const range = useStore((s) => s.selection.range)
+  const stored = useStore((s) => s.selection.range)
   const span = open ? driveSpanMs(open.trip?.points ?? []) : null
+  // what the page shows and carries: the selection clamped to the drive once it is shown (QA R3)
+  const range = open ? clampRange(stored, span) : stored
   const name = record?.name ?? open?.name
   const notChecked = record ? notCheckedLine(record) : null   // #384 ticket 04
 

@@ -2,6 +2,7 @@
 // A range is milliseconds from the drive's first point, both ends included; null is the whole drive. The cursor is one
 // moment, in the same units, or null. This file holds the arithmetic (pure) and the only writers of the selection's state
 // in the store; the address reads it and writes it through here (App.tsx, components/drive/).
+import { useMemo } from 'react'
 import { useStore } from '../store'
 import { currentAddress, go } from './address'
 
@@ -68,12 +69,26 @@ export function cursorWithin(cursor: number | null, range: TimeRange | null): nu
 
 // ── The selection's state (the store's `selection`): written only here ──
 
-/** Set the range (null: the whole drive), dropping a cursor that falls outside it. The address is written by the page. */
-export function setRange(range: TimeRange | null): void {
+/**
+ * Set the range (null: the whole drive), dropping a cursor that falls outside it. An empty or reversed range is the whole
+ * drive: the selection never holds one (QA's FINAL on delivery A, R3). The address is written by the page.
+ */
+export function setRange(asked: TimeRange | null): void {
+  const range = asked && asked.to > asked.from ? asked : null
   const s = useStore.getState().selection
   if (sameRange(s.range, range)) return
   useStore.setState({ selection: { range, cursor: cursorWithin(s.cursor, range) } })
 }
+/**
+ * The selection's range for a drive of these [points], clamped to it: what a view draws. The page stores an address's
+ * range as written until the drive is shown and clamps it then; a view drawn in between never sees a range the drive does
+ * not have (QA's FINAL on delivery A, R3).
+ */
+export function useDriveRange(points: readonly { ts: number }[] | undefined): TimeRange | null {
+  const range = useStore((s) => s.selection.range)
+  return useMemo(() => clampRange(range, driveSpanMs(points ?? [])), [range, points])
+}
+
 /** Move the cursor (null: none); a moment outside the range is none. */
 export function setCursor(cursor: number | null): void {
   const s = useStore.getState().selection

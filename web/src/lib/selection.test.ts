@@ -77,3 +77,19 @@ describe('#416 ticket 2: the selection', () => {
     expect(rangeOfIndices(xs, 3, 3)).toEqual({ from: 3, to: 3 })
   })
 })
+
+// QA's FINAL on delivery A, R3 (the spec review's C4): the selection never holds an empty or reversed range.
+describe('#416 ticket 2: setRange (QA R3)', () => {
+  it('an empty or reversed range is the whole drive; a real one is kept', async () => {
+    const { useStore } = await import('../store')
+    const { setRange } = await import('./selection')
+    setRange({ from: 5000, to: 1000 })
+    expect(useStore.getState().selection.range).toBeNull()
+    setRange({ from: 3000, to: 3000 })
+    expect(useStore.getState().selection.range).toBeNull()
+    setRange({ from: 1000, to: 3000 })
+    expect(useStore.getState().selection.range).toEqual({ from: 1000, to: 3000 })
+    setRange({ from: 4000, to: 2000 })
+    expect(useStore.getState().selection.range).toBeNull()
+  })
+})

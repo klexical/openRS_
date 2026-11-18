@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
-import { useCurrentDrive, useStore } from '../../store'
-import { clampRange, commitRangeToAddress, driveSpanMs, setRange, type TimeRange } from '../../lib/selection'
+import { useCurrentDrive } from '../../store'
+import { clampRange, commitRangeToAddress, driveSpanMs, setRange, useDriveRange, type TimeRange } from '../../lib/selection'
 import { EmptyState } from '../ui/EmptyState'
 import { SectionLabel } from '../ui/SectionLabel'
 import { ExportDropdown } from '../ui/ExportDropdown'
@@ -26,11 +26,11 @@ export function TripPanel() {
   // nothing to draw while the drive is read, or after its read failed (the drive's page says so; #384)
   const opening = state === 'being read' || state === 'read failed'
   const fmt = useUnitFormatters()
-  const range = useStore((s) => s.selection.range)
 
   const trip = session?.trip ?? null
   // Stable identity so the useMemo below doesn't rebuild every render
   const points = useMemo(() => trip?.points ?? [], [trip])
+  const range = useDriveRange(points)   // the selection, clamped to this drive (QA R3)
 
   // Chart rows with relative time in seconds; a missing reading is null → a gap, never a 0 dip
   const chartData = useMemo(() => tripChartData(points), [points])

@@ -18,7 +18,7 @@ import { isDistanceEstimate, DISTANCE_ESTIMATE_NOTE } from '../../lib/distance'
 import { exportSchemaNote } from '../../lib/exportSchema'
 import { colors } from '../../styles/tokens'
 import { go } from '../../lib/address'
-import { pointsInRange } from '../../lib/selection'
+import { pointsInRange, useDriveRange } from '../../lib/selection'
 import { summaryInRange, type RangeSummary } from '../../lib/rangeSummary'
 import type { TripSummary } from '../../types/session'
 
@@ -37,7 +37,7 @@ export function DashboardPanel() {
   const points = session?.trip?.points
   const diag = session?.diagnostics
   // #416 ticket 2: the summary numbers follow the page's range; the whole drive (null) keeps the stored summary
-  const range = useStore((s) => s.selection.range)
+  const range = useDriveRange(points)
   const ranged = useMemo(() => summaryInRange(points ?? [], range, trip?.peakBoostSource ?? null), [points, range, trip?.peakBoostSource])
   const shownPoints = useMemo(() => (points ? pointsInRange(points, range) : undefined), [points, range])
 
