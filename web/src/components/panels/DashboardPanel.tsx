@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { boostLabel, pressureDecimals, pressureSeries } from '../../lib/boost'
 import { convertBoost, convertSpeed } from '../../lib/units'
-import { useStore, useActiveSession, useOpeningDrive } from '../../store'
+import { useStore, useCurrentDrive } from '../../store'
 import { MetricCard } from '../ui/MetricCard'
 import { SectionLabel } from '../ui/SectionLabel'
 import { EmptyState } from '../ui/EmptyState'
@@ -21,8 +21,9 @@ import { go } from '../../lib/address'
 
 export function DashboardPanel() {
   // ── Hooks (must run on every render path — keep above any early return) ──
-  const session = useActiveSession()
-  const opening = useOpeningDrive()
+  const { state, session } = useCurrentDrive()
+  // nothing to draw while the drive is read, or after its read failed (the drive's page says so; #384)
+  const opening = state === 'being read' || state === 'read failed'
   const sessions = useStore((s) => s.drives)
   const fmt = useUnitFormatters()
 

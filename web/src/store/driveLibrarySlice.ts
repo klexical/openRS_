@@ -64,6 +64,18 @@ export interface DriveLibraryState {
   libraryAttachment: { count: number; stop: (() => void) | null; onNotStored: (() => void) | null }
 }
 
+/**
+ * The Current drive's state, derived from the store's fields (the whole-app tests set those directly):
+ * none, being read, shown, read failed. "Not stored here" is not a resting state: it is the `onNotStored` event, after
+ * which the app shell goes to the list and the state is none. Re-exported by lib/driveLibrary.ts.
+ */
+export type CurrentDriveState = 'none' | 'being read' | 'shown' | 'read failed'
+export function currentDriveState(s: { activeSessionId: string | null; activeSession: Session | null; openFailedId: string | null }): CurrentDriveState {
+  if (s.activeSessionId === null) return 'none'
+  if (s.openFailedId === s.activeSessionId) return 'read failed'
+  return s.activeSession?.id === s.activeSessionId ? 'shown' : 'being read'
+}
+
 /** A loaded session with the owner's own fields (name, tags, note) taken from its updated small record. */
 function withOwnFields(session: Session, drive: DriveRecord): Session {
   const { note: _old, ...rest } = session

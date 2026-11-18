@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { useShallow } from 'zustand/react/shallow'
 import type { Session } from '../types/session'
 import type { StorageStatus } from '../lib/storage'
-import { driveLibrarySlice, type DriveLibraryState } from './driveLibrarySlice'
+import { currentDriveState, driveLibrarySlice, type DriveLibraryState } from './driveLibrarySlice'
 
 /** An import as the page shows it (ticket 06). */
 export interface ImportJob {
@@ -80,15 +80,14 @@ export const useStore = create<SapphireState>((set) => ({
 }))
 
 /**
- * True while the selected drive is still being read from storage (#384): its panels show nothing then, rather than
- * "No Session Selected" or the drive that was open before.
+ * The Current drive as the Drive library holds it (#416 ticket 1, owner Q15): the drive the address names (`id`), its
+ * state (lib/driveLibrary.ts `currentDriveState`), and the drive itself, with its points and log, once it is shown (null
+ * otherwise). The one reading of it: the drive's page and its views all use this, and none keeps its own.
  */
-export const useOpeningDrive = () =>
-  useStore((s) => s.activeSessionId !== null && s.activeSession?.id !== s.activeSessionId)
-
-/** The open drive (points and log loaded); null while none is selected or it is still loading. */
-export const useActiveSession = () =>
-  useStore((s) => (s.activeSession && s.activeSession.id === s.activeSessionId ? s.activeSession : null))
+export const useCurrentDrive = () => useStore(useShallow((s) => {
+  const state = currentDriveState(s)
+  return { id: s.activeSessionId, state, session: state === 'shown' ? s.activeSession : null }
+}))
 
 /**
  * The drives being compared, in the order they were picked, loaded from storage. `useShallow` keeps the array

@@ -1,4 +1,4 @@
-import { useStore, type DriveView } from '../../store'
+import { useStore, useCurrentDrive, type DriveView } from '../../store'
 import { hrefOf } from '../../lib/address'
 import { notCheckedLine } from '../../lib/warningWords'
 import { ErrorBoundary } from '../ErrorBoundary'
@@ -13,12 +13,16 @@ const VIEWS: { id: DriveView; label: string }[] = [
 /**
  * One drive at `#/drive/<id>` (#384 ticket 03): its name, the way back to the list, and today's Dashboard, Trip and
  * Diagnostics views reached from the drive. The old views keep their own layout and colours (slice 3 replaces them).
+ * The drive is the Drive library's Current drive (#416 ticket 1): the page and its views read it through
+ * `useCurrentDrive`, and show it only once it is the drive this address names.
  */
 export function DriveFrame({ id }: { id: string }) {
   const record = useStore((s) => s.drives.find((d) => d.id === id))
-  const open = useStore((s) => (s.activeSession?.id === id ? s.activeSession : null))
+  const current = useCurrentDrive()
+  const mine = current.id === id                     // false for the moment between a new address and the library's read
+  const open = mine ? current.session : null
+  const failed = mine && current.state === 'read failed'
   const view = useStore((s) => s.driveView)
-  const failed = useStore((s) => s.openFailedId === id)
   const setView = useStore((s) => s.setDriveView)
   const name = record?.name ?? open?.name
   const notChecked = record ? notCheckedLine(record) : null   // #384 ticket 04
@@ -38,9 +42,11 @@ export function DriveFrame({ id }: { id: string }) {
         ))}
       </nav>
       <div className="old-view">
-        <ErrorBoundary key={view} fallbackLabel={`Error loading the ${view} view`}>
-          <Views view={view} />
-        </ErrorBoundary>
+        {mine ? (
+          <ErrorBoundary key={view} fallbackLabel={`Error loading the ${view} view`}>
+            <Views view={view} />
+          </ErrorBoundary>
+        ) : <div aria-busy="true" />}
       </div>
       </>)}
     </div>

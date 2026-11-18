@@ -1,0 +1,124 @@
+import 'fake-indexeddb/auto'
+import { IDBFactory } from 'fake-indexeddb'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { render, cleanup, waitFor, act, fireEvent, screen, within } from '@testing-library/react'
+import type { Session } from './types/session'
+
+// #416 slice 3: a drive's page. Ticket 1: the page shows the drive its address names, read from the Drive library, from
+// the list, from its address, after a reload, and from one drive's address straight to another's. The whole App over an
+// in-memory IndexedDB; what is checked is what the page shows. Invented data only, dated 2096.
+
+vi.mock('./components/charts/GpsMap', () => ({ GpsMap: () => null }))
+
+const T0 = new Date(2096, 10, 12, 18, 0).getTime()
+function drive(id: string, name: string, startOffsetMs = 0): Session {
+  const t0 = T0 + startOffsetMs
+  const points = Array.from({ length: 5 }, (_, i) => ({
+    ts: t0 + i * 1000, lat: 10 + id.charCodeAt(0) / 1000, lng: 20 + i / 1000, speedKph: 40 + i, rpm: 3000, boostPsi: null,
+    coolantC: 90, oilTempC: 95, driveMode: 'Normal',
+  }))
+  return {
+    id, name, importedAt: t0 + 3_600_000, tags: [],
+    trip: { points: points as never,
+      summary: { distanceKm: 1, distanceSource: 'recorded', durationMs: 4000, fuelUsedL: 0, avgSpeedKph: 42, peakRpm: 3000,
+        peakBoostPsi: null, peakLatG: 0, peakLongG: 0, peakSpeedKph: 44, peakCoolantC: 90, peakOilTempC: 95, avgRpm: 3000,
+        avgFuelEconomy: 0, modeBreakdown: {}, peakEvents: [] } },
+    diagnostics: null,
+    meta: { appVersion: '2.2.7', firmwareVersion: 'unknown', sessionStart: new Date(t0).toISOString(), generatedAt: '' },
+  }
+}
+
+function memoryStorage(): Storage {
+  const m = new Map<string, string>()
+  return {
+    get length() { return m.size }, clear: () => m.clear(), getItem: (k) => m.get(k) ?? null,
+    setItem: (k, v) => { m.set(k, String(v)) }, removeItem: (k) => { m.delete(k) }, key: (i) => [...m.keys()][i] ?? null,
+  }
+}
+async function seed(sessions: Session[]) {
+  vi.resetModules()
+  const storage = await import('./lib/storage')
+  await storage.storeImported(sessions)
+  storage.closeStorage()
+}
+/** Fresh modules and the App at [hash]: a reload. */
+async function boot(hash = '') {
+  cleanup()
+  window.history.replaceState(null, '', `/${hash}`)
+  vi.resetModules()
+  const { default: App } = await import('./App')
+  render(<App />)
+}
+async function list() {
+  const root = await screen.findByRole('region', { name: 'Drives' }, { timeout: 3000 })
+  await waitFor(() => expect(root).toHaveAttribute('aria-busy', 'false'), { timeout: 3000 })
+  return root
+}
+const pageName = () => screen.getByRole('heading', { level: 1 }).textContent
+/** The name the open view shows: the Dashboard's heading, drawn from the drive the view was given. */
+const viewName = () => screen.queryByRole('heading', { level: 2 })?.textContent ?? null
+async function shows(name: string) {
+  await waitFor(() => { expect(pageName()).toBe(name); expect(viewName()).toBe(name) }, { timeout: 3000 })
+}
+
+beforeEach(() => {
+  vi.stubGlobal('localStorage', memoryStorage())
+  localStorage.setItem('sapphire_whats_new_seen', 'slice-2')     // no dialog over the page
+  ;(globalThis as { indexedDB: IDBFactory }).indexedDB = new IDBFactory()
+})
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); window.history.replaceState(null, '', '/') })
+
+describe('#416 ticket 1: the page shows the drive its address names, read from the Drive library', () => {
+  it('from the list, from its address and after a reload: the same drive, in the page and in its view', async () => {
+    await seed([drive('a', 'Invented loop'), drive('b', 'Invented commute', -86_400_000)])
+    await boot()
+    const link = within(await list()).getByRole('link', { name: 'Invented commute' })
+    await act(async () => { fireEvent.click(link); window.location.hash = link.getAttribute('href')! })
+    await shows('Invented commute')
+    expect(window.location.hash).toBe('#/drive/b')
+
+    await boot('#/drive/b')                                    // the address, typed or after a reload
+    await shows('Invented commute')
+  })
+
+  it("from one drive's address straight to another's: the second drive, and the first one's view does not stay", async () => {
+    await seed([drive('a', 'Invented loop'), drive('b', 'Invented commute', -86_400_000)])
+    await boot('#/drive/a')
+    await shows('Invented loop')
+    const seen: string[] = []
+    const watch = new MutationObserver(() => {
+      const h1 = document.querySelector('h1')?.textContent
+      const h2 = document.querySelector('h2')?.textContent
+      if (h1 && h2 && h1 !== h2) seen.push(`${h1} / ${h2}`)
+    })
+    watch.observe(document.body, { childList: true, subtree: true, characterData: true })
+    await act(async () => { window.location.hash = '#/drive/b' })
+    await shows('Invented commute')
+    watch.disconnect()
+    expect(seen).toEqual([])                                   // never one drive's page over the other drive's view
+    await act(async () => { window.history.back() })
+    await shows('Invented loop')
+  })
+
+  it('an unknown drive address shows the list with a plain message', async () => {
+    await seed([drive('a', 'Invented loop')])
+    await boot('#/drive/not-stored-here')
+    await list()
+    await waitFor(() => expect(screen.getByText('That drive is not stored in this browser.')).toBeInTheDocument())
+    expect(window.location.hash).toBe('#/')
+  })
+
+  it("today's views still open from the drive", async () => {
+    await seed([drive('a', 'Invented loop')])
+    await boot('#/drive/a')
+    await shows('Invented loop')
+    const views = screen.getByRole('navigation', { name: 'Views of this drive' })
+    expect(within(views).getAllByRole('button').map((b) => b.textContent)).toEqual(['Dashboard', 'Trip', 'Diagnostics'])
+    fireEvent.click(within(views).getByRole('button', { name: 'Trip' }))
+    expect(await screen.findByRole('heading', { level: 3, name: 'Route' }, { timeout: 3000 })).toBeInTheDocument()
+    expect(viewName()).toBe('Invented loop')
+    fireEvent.click(within(views).getByRole('button', { name: 'Diagnostics' }))
+    // this invented drive has no diagnostic log: the view says so for this drive (not "No Session Selected")
+    expect(await screen.findByRole('heading', { level: 3, name: 'No Diagnostic Data' }, { timeout: 3000 })).toBeInTheDocument()
+  })
+})

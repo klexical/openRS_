@@ -145,17 +145,9 @@ export async function importDrives(files: File[], onProgress: (p: ImportProgress
 
 // ── The Current drive and Compare ──
 
-/**
- * The Current drive's state, derived from the store's fields (the whole-app tests set those directly):
- * none, being read, shown, read failed. "Not stored here" is not a resting state: it is the `onNotStored` event, after
- * which the app shell goes to the list and the state is none.
- */
-export type CurrentDriveState = 'none' | 'being read' | 'shown' | 'read failed'
-export function currentDriveState(s: { activeSessionId: string | null; activeSession: Session | null; openFailedId: string | null }): CurrentDriveState {
-  if (s.activeSessionId === null) return 'none'
-  if (s.openFailedId === s.activeSessionId) return 'read failed'
-  return s.activeSession?.id === s.activeSessionId ? 'shown' : 'being read'
-}
+// The Current drive's state lives beside the fields it is derived from (store/driveLibrarySlice.ts), so the store's one
+// reading of it (`useCurrentDrive`) needs no import from here (#416 ticket 1).
+export { currentDriveState, type CurrentDriveState } from '../store/driveLibrarySlice'
 
 type Channel = keyof ReturnType<typeof store>['libraryReads']
 /** The one guard against a late answer: a new token per read; an answer counts only while its token is the newest. */

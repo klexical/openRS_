@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { useActiveSession, useOpeningDrive } from '../../store'
+import { useCurrentDrive } from '../../store'
 import { EmptyState } from '../ui/EmptyState'
 import { SectionLabel } from '../ui/SectionLabel'
 import { ExportDropdown } from '../ui/ExportDropdown'
@@ -21,8 +21,9 @@ import { colors, chartColors } from '../../styles/tokens'
 
 export function TripPanel() {
   // ── Hooks (must run on every render path — keep above any early return) ──
-  const session = useActiveSession()
-  const opening = useOpeningDrive()
+  const { state, session } = useCurrentDrive()
+  // nothing to draw while the drive is read, or after its read failed (the drive's page says so; #384)
+  const opening = state === 'being read' || state === 'read failed'
   const fmt = useUnitFormatters()
 
   const trip = session?.trip ?? null
