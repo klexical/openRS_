@@ -1,0 +1,50 @@
+name: Commit identity
+
+# Every commit of a pull request to staging or main carries the owner's noreply address as author and committer, and no
+# `Claude-Session:` line (owner Q141), except that a merge made on GitHub may carry GitHub's committer address; commits
+# already on staging or main are not checked again (the integrator's four details of Q137 / Q141). Fails the PR
+# otherwise. No secret is used; the script and its test run here.
+
+on:
+  pull_request:                      # never pull_request_target
+    types: [opened, synchronize, reopened, edited, ready_for_review]   # edited: a PR retargeted onto staging or main
+    branches: [staging, main]
+
+permissions: {}
+
+jobs:
+  commit-identity:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      # The default ref: the run's merge commit, whose tree holds the workflow and the scripts together (QA's
+      # FINAL-failure-facts C1: a head checkout lacks any script added to the base after the PR was cut). fetch-depth 0
+      # brings every branch, and the PR head is the merge commit's second parent.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0             # the whole history: the check walks base..head
+          persist-credentials: false
+
+      - name: The check's own tests
+        run: bash .github/scripts/test-check-commit-identity.sh
+
+      - name: The review failure facts' own tests
+        run: bash .github/scripts/test-review-failure-facts.sh
+
+      - name: The review workflows' shape (Q137, Q141)
+        run: ruby .github/scripts/test-review-workflows.rb
+
+      - name: Every new commit in the pull request
+        # only commits on neither staging nor main: history already there is not checked again, so a promotion passes
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          # the commits checked are the PR head's, never the synthetic merge commit (HEAD, made by GitHub)
+          [ "$(git rev-parse HEAD^2)" = "$HEAD" ] || { echo "the merge commit's second parent is not the PR head $HEAD"; exit 1; }
+          STAGING=$(git rev-parse --verify origin/staging^{commit})
+          MAIN=$(git rev-parse --verify origin/main^{commit})
+          bash .github/scripts/check-commit-identity.sh "$BASE" "$HEAD" "$STAGING" "$MAIN"
