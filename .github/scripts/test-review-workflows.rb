@@ -10,6 +10,7 @@ check = lambda do |ok, what|
   fails += 1 unless ok
 end
 load_wf = ->(name) { YAML.safe_load(File.read(File.join(dir, name)), aliases: false) }
+on_of = ->(wf) { wf["on"] || wf[true] }                # YAML 1.1 reads a bare `on:` key as true
 NO_FORK = "github.event.pull_request.head.repo.full_name == github.repository"
 
 { "claude-review.yml" => { "contents" => "read", "pull-requests" => "write" },
@@ -37,6 +38,14 @@ args = with["claude_args"].to_s
 allowed = args[/--allowedTools "([^"]*)"/, 1].to_s.split(",")
 check.(!allowed.empty? && allowed.none? { |t| t =~ /\A(Edit|Write|NotebookEdit|Bash\((git|gh pr review|gh pr merge|gh api))/ },
        "the reviewer is allowed no editing, git, review, merge or api tool")
+# QA's C3: nothing a diff's text could steer into reading outside the checkout or posting a file
+check.(allowed.none? { |t| %w[Read Grep Glob].include?(t) || t.start_with?("Read(", "Grep(", "Glob(") },
+       "no Read / Grep / Glob rule: reads stay inside the checkout")
+check.(allowed.none? { |t| t.include?("gh pr comment") } && args.include?("Bash(gh pr comment:*)"),
+       "gh pr comment is not allowed and is denied outright (it could post a file)")
+num = "${{ github.event.pull_request.number }}"
+check.(allowed.select { |t| t.start_with?("Bash(") }.all? { |t| ["Bash(gh pr diff #{num})", "Bash(gh pr view #{num})"].include?(t) },
+       "the only commands are gh pr diff / view of this pull request, with no further arguments")
 denied = args[/--disallowedTools "([^"]*)"/, 1].to_s.split(",")
 check.(%w[Edit Write Bash(git\ push:*) Bash(gh\ pr\ review:*) Bash(gh\ pr\ merge:*)].all? { |t| denied.include?(t) },
        "editing, push, review and merge are denied outright")
@@ -44,6 +53,13 @@ check.(args =~ /^\s*--permission-mode default\s*$/ && args.scan(/--permission-mo
        "the allow list is the whole list: --permission-mode default (auto mode would let a review pass other calls)")
 check.(with["prompt"].to_s.include?("CODING_STANDARDS.md"), "the prompt reviews against CODING_STANDARDS.md")
 check.(act && act["continue-on-error"] == true, "a failed review step never fails the job (Q125: no Light merge waits on it)")
+job_t = wf["jobs"].values.first["timeout-minutes"].to_i
+check.(act && act["timeout-minutes"].is_a?(Integer) && act["timeout-minutes"] < job_t,
+       "the review step times out before the job does, so a hang fails the step, not the job (QA's C1)")
+check.(on_of.(wf).dig("pull_request", "types") == %w[opened synchronize reopened ready_for_review],
+       "the review runs on opened, synchronize, reopened and ready_for_review (not edited)")
+check.(on_of.(load_wf.("commit-identity.yml")).dig("pull_request", "types")&.include?("edited"),
+       "the identity check also runs when a PR is retargeted (edited)")
 check.(!with.key?("allowed_bots") && !with.key?("allowed_non_write_users"), "no bot and no user without write access can start it")
 idj = load_wf.("commit-identity.yml")["jobs"].values.first
 idsteps = idj["steps"]

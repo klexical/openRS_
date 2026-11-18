@@ -1,9 +1,10 @@
 # Coding standards for review
 
 What a reviewer can check from a pull request's diff. Where a rule lives in full elsewhere, its line points there, and
-the pointer wins when the two differ. Every pointer means the staging branch's file, CLAUDE.md included; on a pull
-request to main, read them on staging (https://github.com/klexical/openRS_/blob/staging/<path>) until the stable merge
-brings them to main. Lines with no pointer are this file's own team rules, and this file is their source.
+the pointer wins when the two differ. Every pointer means the staging branch's file, CLAUDE.md included. When the file a
+line points to is not in the checkout (a pull request to main, until the stable merge brings the rule files there), it is
+not read: the line's own words are the rule. Lines with no pointer are this file's own team rules, and this file is their
+source.
 Comment only on lines the diff adds or changes, once per finding, with the file and line and the rule broken.
 
 ## Telemetry and VehicleState (`android/`)
@@ -69,8 +70,8 @@ Comment only on lines the diff adds or changes, once per finding, with the file 
 ## Changelog (`android/CHANGELOG.md`)
 
 - Sections only `Added`, `Fixed`, `Changed`, `Removed`, in that order; entries after rc.8 go under `(nightlies)` sections.
-- Each entry is 1–3 sentences and ends with the issue link `([#N](https://github.com/klexical/openRS_/issues/N))`; never a
-  bare `(#N)`.
+- Each entry is 1–3 sentences; when it has an issue, it ends with its link, `([#N](https://github.com/klexical/openRS_/issues/N))`
+  or `(addresses [#N](https://github.com/klexical/openRS_/issues/N))`; never a bare `(#N)`.
 - A shipped entry is never edited; every fix in a commit has an entry. CLAUDE.md, "Changelog Format".
 
 ## Sapphire (`web/`)
@@ -80,6 +81,6 @@ Comment only on lines the diff adds or changes, once per finding, with the file 
 
 ## Workflows (`.github/`)
 
-- A new or changed `uses:` is in `.github/workflows/actions.lock` (`gh actions-lock`). `.claude/rules/build-release.md`,
+- A new or changed `uses:` is in `.github/workflows/actions.lock` (`gh actions-lock --no-narrow`). `.claude/rules/build-release.md`,
   "Workflow lockfile".
 - No `pull_request_target`; a job that holds a secret does not run code from a fork.

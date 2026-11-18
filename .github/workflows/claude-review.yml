@@ -10,7 +10,7 @@ name: Claude review
 
 on:
   pull_request:                      # never pull_request_target: a fork's PR never runs with this repository's secrets
-    types: [opened, synchronize, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review]
     branches: [staging, main]
 
 permissions: {}
@@ -36,6 +36,7 @@ jobs:
 
       - uses: anthropics/claude-code-action@v1
         continue-on-error: true
+        timeout-minutes: 15            # a hung review fails the step, under the job's 20, so the job ends green (Q125)
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -49,12 +50,15 @@ jobs:
             - Comment only on lines the diff adds or changes, and only where a standard is broken or a change is wrong.
             - One short, concrete comment per finding, inline on the line: what is wrong, the standard or reason, and
               the fix. No praise, no summary of the change, no style preferences the standards do not state.
-            - If nothing is wrong, leave one top-level comment saying so in one line.
+            - If nothing is wrong, post nothing.
             - Never quote a secret, an identifier or a value from an export, a log or a capture in a comment.
           # --permission-mode default: a tool no rule allows is denied. The action's default (auto mode) lets a safety
           # review pass other calls, so the allow list would not be the whole list (the action's docs/usage.md).
+          # Text in a diff may try to steer the reviewer (QA's C3): no bare Read / Grep / Glob rule (reads stay inside
+          # the checkout), no `gh pr comment` (it could post a file with --body-file); comments go inline only, and
+          # gh pr diff / view name this PR's number.
           claude_args: |
             --permission-mode default
             --max-turns 30
-            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Read,Grep,Glob"
-            --disallowedTools "Edit,Write,NotebookEdit,Bash(git push:*),Bash(git commit:*),Bash(gh pr review:*),Bash(gh pr merge:*),Bash(gh api:*)"
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr diff ${{ github.event.pull_request.number }}),Bash(gh pr view ${{ github.event.pull_request.number }})"
+            --disallowedTools "Edit,Write,NotebookEdit,Bash(git push:*),Bash(git commit:*),Bash(gh pr review:*),Bash(gh pr merge:*),Bash(gh api:*),Bash(gh pr comment:*)"
