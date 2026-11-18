@@ -74,3 +74,42 @@ paths:
   the wordmark, the 44 dp cog and the 7 dp REC dot. Never feed live mode, ESC, REC or link state into that decision: a header
   that changes height moves every page. The measured-only copies must stay out of the merged semantics tree, so TalkBack reads
   each pill once (`EscHeaderPillTest` walks the merged tree; `HeaderFitMatrixTest` sweeps link and mode at the switch points).
+
+## Theme Colors
+
+v2.2.7 "Daylight" ships three discrete palettes selected via `setThemeMode(ThemeMode)`.
+NIGHT is the default; DAY is legibility-tuned for bright ambient light; ULTRA is pure-black AMOLED.
+AUTO resolves to DAY from 06:00 to 18:59 local (`HOUR_OF_DAY in 6..18`), NIGHT otherwise — it does not follow the
+system dark/light setting. `Frost` is `Ink` — adaptive primary text.
+Accents and semantic colors (Ok/Warn/Orange) shift per mode to preserve contrast.
+
+```
+NIGHT:  Bg #05070A  Surf #0A0D12  Surf2 #0F141C  Surf3 #141B26  Brd #162030  Dim #7A9AB8  Mid #B0D0E8  Ink #E8F4FF
+DAY:    Bg #EFF3F8  Surf #FFFFFF  Surf2 #E4EAF2  Surf3 #D4DCE8  Brd #B8C4D4  Dim #556374  Mid #293748  Ink #080D16
+ULTRA:  Bg #000000  Surf #050505  Surf2 #080808  Surf3 #0C0C0C  Brd #1A2230  (Dim/Mid/Ink share NIGHT values)
+Accent  NIGHT #0091EA / DAY #0064B0    Orange  NIGHT #FF4D00 / DAY #D93900
+Ok      NIGHT #00FF88 / DAY #00A85A    Warn    NIGHT #FFCC00 / DAY #E09500
+```
+
+Adaptive alpha helpers (`borderAlpha()`, `textMutedAlpha()`, `pillBgAlpha()`) scale dim-on-dark tunings
+up on DAY so borders, muted labels, and status-pill fills stay above WCAG contrast on the white surface.
+
+RS paint themes (`themeId`): `cyan`=Nitrous Blue, `red`=Race Red, `orange`=Deep Orange,
+`grey`=Stealth Grey, `black`=Shadow Black, `white`=Frozen White
+
+## AppSettings Defaults
+
+```
+Speed: MPH  |  Temp: °F  |  Boost: PSI  |  Tire: PSI  |  TireLowPsi: 30
+MeatPi USB (C3): 192.168.80.1:80 (WebSocket)    MeatPi Pro (S3): 192.168.0.10:35000 (TCP)
+ScreenOn: true  |  AutoReconnect: true  |  MaxDiagZips: 5
+AdapterType: "MEATPI_USB"  (alt: "MEATPI_PRO")
+ConnectionMethod: "WIFI"  (alt: "BLUETOOTH")
+EdgeShiftLight: false  |  EdgeShiftColor: "accent"  |  EdgeShiftIntensity: "high"  |  EdgeShiftRpm: 6800
+AutoRecordDrives: false  |  MaxSavedDrives: 50
+UpdateChannel: "stable"  (alt: "beta")
+ThemeMode: NIGHT  (alt: DAY / AUTO / ULTRA)
+Prefs file: "openrs_settings"
+```
+
+**Adapter vs connection method:** `adapterType` identifies the hardware (determines protocol: WebSocket for USB, TCP for Pro). `connectionMethod` selects the transport (WiFi or BLE GATT). Both adapters support both WiFi and Bluetooth.

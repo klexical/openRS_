@@ -72,12 +72,12 @@ Comment only on lines the diff adds or changes, once per finding, with the file 
 - Sections only `Added`, `Fixed`, `Changed`, `Removed`, in that order; entries after rc.8 go under `(nightlies)` sections.
 - Each entry is 1–3 sentences; when it has an issue, it ends with its link, `([#N](https://github.com/klexical/openRS_/issues/N))`
   or `(addresses [#N](https://github.com/klexical/openRS_/issues/N))`; never a bare `(#N)`.
-- A shipped entry is never edited; every fix in a commit has an entry. CLAUDE.md, "Changelog Format".
+- A shipped entry is never edited; every fix in a commit has an entry. `.claude/rules/build-release.md`, "Changelog Format".
 
 ## Sapphire (`web/`)
 
 - Chart values: a sentinel or NaN becomes a gap (null); a genuine zero is kept (`web/src/lib/readings.ts`).
-- Tests that touch `localStorage` stub it per test. CLAUDE.md, "Sapphire".
+- Tests that touch `localStorage` stub it per test. `.claude/rules/sapphire.md`, "Testing notes".
 
 ## Workflows (`.github/`)
 
