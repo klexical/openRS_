@@ -62,6 +62,8 @@ rec = ai && steps[(ai + 1)..].find { |s| s["run"].to_s.include?("gh pr comment")
 renv = rec ? (rec["env"] || {}) : {}
 check.(rec && rec["if"] == "always()", "a step after the review, with if: always(), records that it ran")
 check.(rec && !rec["run"].include?("${{"), "the recording step's run has no ${{ }} in it (values come through env)")
+check.(rec && rec["continue-on-error"] == true && rec["timeout-minutes"].is_a?(Integer) && rec["timeout-minutes"] <= 2,
+       "a failed or hung recording never fails the job (continue-on-error, timeout-minutes 2; QA READ-addendum3 D1)")
 check.(act && act["id"] && renv["OUTCOME"] == "${{ steps.#{act["id"]}.outcome }}", "the recorded outcome is the review step's (its id)")
 check.(renv["HEAD_SHA"] == "${{ github.event.pull_request.head.sha }}" && renv["PR"] == "${{ github.event.pull_request.number }}" &&
        renv["GH_TOKEN"] == "${{ secrets.GITHUB_TOKEN }}", "the PR number, the head SHA and the job's own token come through env")

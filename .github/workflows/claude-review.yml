@@ -69,6 +69,8 @@ jobs:
       # (integrator's call, DECISIONS "on QA FINAL-claude-review"). Values come through env, never ${{ }} in run.
       - name: Record that the review ran
         if: always()
+        continue-on-error: true        # a failed or hung recording never holds a Light merge (Q125): it shows as no line
+        timeout-minutes: 2
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
