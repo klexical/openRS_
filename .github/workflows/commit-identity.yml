@@ -29,6 +29,9 @@ jobs:
       - name: The check's own tests
         run: bash .github/scripts/test-check-commit-identity.sh
 
+      - name: The review failure facts' own tests
+        run: bash .github/scripts/test-review-failure-facts.sh
+
       - name: The review workflows' shape (Q137, Q141)
         run: ruby .github/scripts/test-review-workflows.rb
 
