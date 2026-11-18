@@ -4,7 +4,9 @@ name: Claude review
 # approves or merges, and it is not a required check (the ruleset is unchanged). Its comments are data for the reader.
 # Authentication: the owner's subscription token (CLAUDE_CODE_OAUTH_TOKEN, `claude setup-token`), never an API key.
 # GitHub side: the job's own GITHUB_TOKEN, passed as github_token, so no GitHub App token is fetched (no id-token) and
-# the token can read contents but not write them.
+# the token can read contents but not write them. No bot may start it (allowed_bots is unset): if a cloud thread's
+# pull request shows a bot as its actor, that one bot is added by name, never '*'.
+# The review step may fail without failing the job: a review outage never holds a Light auto-merge (Q125).
 
 on:
   pull_request:                      # never pull_request_target: a fork's PR never runs with this repository's secrets
@@ -33,6 +35,7 @@ jobs:
           persist-credentials: false
 
       - uses: anthropics/claude-code-action@v1
+        continue-on-error: true
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ secrets.GITHUB_TOKEN }}

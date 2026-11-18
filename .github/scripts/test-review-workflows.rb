@@ -43,6 +43,17 @@ check.(%w[Edit Write Bash(git\ push:*) Bash(gh\ pr\ review:*) Bash(gh\ pr\ merge
 check.(args =~ /^\s*--permission-mode default\s*$/ && args.scan(/--permission-mode/).size == 1,
        "the allow list is the whole list: --permission-mode default (auto mode would let a review pass other calls)")
 check.(with["prompt"].to_s.include?("CODING_STANDARDS.md"), "the prompt reviews against CODING_STANDARDS.md")
+check.(act && act["continue-on-error"] == true, "a failed review step never fails the job (Q125: no Light merge waits on it)")
+check.(!with.key?("allowed_bots") && !with.key?("allowed_non_write_users"), "no bot and no user without write access can start it")
+idj = load_wf.("commit-identity.yml")["jobs"].values.first
+idsteps = idj["steps"]
+check.(idj["continue-on-error"].nil? && idsteps.none? { |s| s.key?("continue-on-error") }, "the identity check is a hard check")
+co = idsteps.find { |s| s["uses"].to_s.start_with?("actions/checkout@") }
+check.(co && co.dig("with", "fetch-depth") == 0, "the identity job fetches the whole history and the branches")
+runs = idsteps.map { |s| s["run"].to_s }.join("\n")
+check.(runs.include?("origin/staging") && runs.include?("origin/main") &&
+       runs =~ /check-commit-identity\.sh "\$BASE" "\$HEAD" "\$STAGING" "\$MAIN"/,
+       "the check excludes staging's and main's tips")
 check.(steps.none? { |s| s.dig("with", "ref").to_s.include?("head") }, "the review checks out the base's merge ref, never the head ref")
 
 puts "review workflow checks: #{fails.zero? ? "all passed" : "#{fails} failed"}"
