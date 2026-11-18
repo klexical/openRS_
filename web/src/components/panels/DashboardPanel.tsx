@@ -18,6 +18,12 @@ import { isDistanceEstimate, DISTANCE_ESTIMATE_NOTE } from '../../lib/distance'
 import { exportSchemaNote } from '../../lib/exportSchema'
 import { colors } from '../../styles/tokens'
 import { go } from '../../lib/address'
+import { pointsInRange } from '../../lib/selection'
+import { summaryInRange, type RangeSummary } from '../../lib/rangeSummary'
+import type { TripSummary } from '../../types/session'
+
+/** Under a narrowed range, in place of the figures that cannot be cut to it (#416 ticket 2; pending the owner's Q152). */
+const WHOLE_DRIVE_ONLY = 'Fuel, aggression, thermal progression and tyre pressures are for the whole drive.'
 
 export function DashboardPanel() {
   // ── Hooks (must run on every render path — keep above any early return) ──
@@ -30,15 +36,19 @@ export function DashboardPanel() {
   const trip = session?.trip?.summary
   const points = session?.trip?.points
   const diag = session?.diagnostics
+  // #416 ticket 2: the summary numbers follow the page's range; the whole drive (null) keeps the stored summary
+  const range = useStore((s) => s.selection.range)
+  const ranged = useMemo(() => summaryInRange(points ?? [], range, trip?.peakBoostSource ?? null), [points, range, trip?.peakBoostSource])
+  const shownPoints = useMemo(() => (points ? pointsInRange(points, range) : undefined), [points, range])
 
   // Sparkline data arrays
-  const rpmData = useMemo(() => points?.map((p) => p.rpm) ?? [], [points])
-  const speedData = useMemo(() => points?.map((p) => p.speedKph) ?? [], [points])
+  const rpmData = useMemo(() => shownPoints?.map((p) => p.rpm) ?? [], [shownPoints])
+  const speedData = useMemo(() => shownPoints?.map((p) => p.speedKph) ?? [], [shownPoints])
   // #207: the peak's own measurement, one position per sample — no reading / another source is a gap (never joined,
   // time never compressed), values in the selected unit
   const boostData = useMemo(
-    () => (points ? pressureSeries(points, trip?.peakBoostSource ?? null, fmt.boostUnit) : []),
-    [points, trip?.peakBoostSource, fmt.boostUnit])
+    () => (shownPoints ? pressureSeries(shownPoints, trip?.peakBoostSource ?? null, fmt.boostUnit) : []),
+    [shownPoints, trip?.peakBoostSource, fmt.boostUnit])
   const boostName = boostLabel(trip?.peakBoostSource) === 'TIP' ? 'TIP' : 'Boost'
 
   // Race Ready detection (T2I)
@@ -90,6 +100,7 @@ export function DashboardPanel() {
   }
 
   const schemaNote = exportSchemaNote(session.meta.exportSchemaVersion)
+  const peak = peaksOf(trip, ranged)
 
   return (
     <div className="max-w-6xl mx-auto">
@@ -137,20 +148,20 @@ export function DashboardPanel() {
           <SectionLabel>Route</SectionLabel>
           <GpsMap points={points} peakEvents={trip.peakEvents} bookmarks={session.trip?.bookmarks} height="30vh" />
 
-          {/* Trip KPIs with sparklines */}
+          {/* Trip KPIs with sparklines: the range's own figures while one is set (#416 ticket 2) */}
           <SectionLabel>Trip Summary</SectionLabel>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <MetricCard
               label="Distance"
-              value={fmt.distance(trip.distanceKm)}
-              sub={isDistanceEstimate(trip) ? DISTANCE_ESTIMATE_NOTE : undefined}
+              value={fmt.distance(ranged ? ranged.distanceKm : trip.distanceKm)}
+              sub={ranged || isDistanceEstimate(trip) ? DISTANCE_ESTIMATE_NOTE : undefined}
             />
-            <MetricCard label="Duration" value={fmtDuration(trip.durationMs)} />
-            <SparkMetricCard label="Avg Speed" value={fmt.speed(trip.avgSpeedKph)} sparkData={speedData} color={colors.ok} />
-            <SparkMetricCard label="Avg RPM" value={fmtNumber(trip.avgRpm, 0)} sparkData={rpmData} color={colors.cyan} />
+            <MetricCard label="Duration" value={fmtDuration(ranged ? ranged.durationMs : trip.durationMs)} />
+            <SparkMetricCard label="Avg Speed" value={orDash(ranged ? ranged.avgSpeedKph : trip.avgSpeedKph, fmt.speed)} sparkData={speedData} color={colors.ok} />
+            <SparkMetricCard label="Avg RPM" value={orDash(ranged ? ranged.avgRpm : trip.avgRpm, (v) => fmtNumber(v, 0))} sparkData={rpmData} color={colors.cyan} />
           </div>
 
-          {trip.fuelUsedL > 0 && (
+          {!ranged && trip.fuelUsedL > 0 && (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3">
               <MetricCard label="Fuel Used" value={`${fmtNumber(trip.fuelUsedL)} L`} color={colors.warn} />
               <MetricCard label="Economy" value={fmt.fuelEconomy(trip.avgFuelEconomy)} color={colors.warn} />
@@ -161,16 +172,22 @@ export function DashboardPanel() {
           <SectionLabel>Session Peaks</SectionLabel>
           <div className="rounded-lg border border-brd bg-surf2 p-4">
             <div className="flex flex-wrap justify-center gap-6">
-              <GaugeChart value={trip.peakRpm} max={7000} label="Peak RPM" unit="RPM" color={colors.orange} />
-              {trip.peakBoostPsi != null
-                ? <GaugeChart value={Number(convertBoost(trip.peakBoostPsi, fmt.boostUnit).toFixed(pressureDecimals(fmt.boostUnit)))}
+              {peak.rpm != null
+                ? <GaugeChart value={peak.rpm} max={7000} label="Peak RPM" unit="RPM" color={colors.orange} />
+                : <MetricCard label="Peak RPM" value="—" color={colors.dim} />}
+              {peak.boostPsi != null
+                ? <GaugeChart value={Number(convertBoost(peak.boostPsi, fmt.boostUnit).toFixed(pressureDecimals(fmt.boostUnit)))}
                     max={convertBoost(25, fmt.boostUnit)} label={`Peak ${boostName}`} unit={fmt.boostUnit} color={colors.cyan} />
                 : <MetricCard label="Peak Boost" value="— (no reading)" color={colors.dim} />}
-              <GaugeChart value={convertSpeed(trip.peakSpeedKph, fmt.unitSystem)} max={convertSpeed(270, fmt.unitSystem)}
-                label="Peak Speed" unit={fmt.speedUnit} color={colors.ok} />
-              <GaugeChart value={trip.peakLatG} max={1.5} label="Peak Lat G" unit="G" color={colors.warn} />
-              {/* Aggression Score (T2A) */}
-              {trip.aggressionScore != null && trip.aggressionScore > 0 && (
+              {peak.speedKph != null
+                ? <GaugeChart value={convertSpeed(peak.speedKph, fmt.unitSystem)} max={convertSpeed(270, fmt.unitSystem)}
+                    label="Peak Speed" unit={fmt.speedUnit} color={colors.ok} />
+                : <MetricCard label="Peak Speed" value="—" color={colors.dim} />}
+              {peak.latG != null
+                ? <GaugeChart value={peak.latG} max={1.5} label="Peak Lat G" unit="G" color={colors.warn} />
+                : <MetricCard label="Peak Lat G" value="—" color={colors.dim} />}
+              {/* Aggression Score (T2A): a whole-drive figure */}
+              {!ranged && trip.aggressionScore != null && trip.aggressionScore > 0 && (
                 <GaugeChart
                   value={trip.aggressionScore}
                   max={100}
@@ -182,16 +199,17 @@ export function DashboardPanel() {
             </div>
             {/* Detail row below gauges */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4 pt-4 border-t border-brd">
-              <MetricCard label="Peak Long G" value={`${fmtNumber(trip.peakLongG, 2)} G`} color={colors.warn} />
-              <MetricCard label="Peak Coolant" value={fmt.temp(trip.peakCoolantC)} color={trip.peakCoolantC > 105 ? colors.orange : colors.ok} />
-              <MetricCard label="Peak Oil" value={fmt.temp(trip.peakOilTempC)} color={trip.peakOilTempC > 130 ? colors.orange : colors.ok} />
-              <SparkMetricCard label={`${boostName} Trace`} value={trip.peakBoostPsi != null ? fmt.boost(trip.peakBoostPsi) : '—'}
+              <MetricCard label="Peak Long G" value={orDash(peak.longG, (v) => `${fmtNumber(v, 2)} G`)} color={colors.warn} />
+              <MetricCard label="Peak Coolant" value={fmt.temp(peak.coolantC)} color={peak.coolantC > 105 ? colors.orange : colors.ok} />
+              <MetricCard label="Peak Oil" value={fmt.temp(peak.oilTempC)} color={peak.oilTempC > 130 ? colors.orange : colors.ok} />
+              <SparkMetricCard label={`${boostName} Trace`} value={peak.boostPsi != null ? fmt.boost(peak.boostPsi) : '—'}
                 sparkData={boostData} color={colors.cyan} />
             </div>
+            {ranged && <p className="mt-3 text-xs font-mono text-mid">{WHOLE_DRIVE_ONLY}</p>}
           </div>
 
-          {/* Thermal Progression (T2B) */}
-          {session.trip?.thermalProgression && (
+          {/* Thermal Progression (T2B): a whole-drive record */}
+          {!ranged && session.trip?.thermalProgression && (
             <>
               <SectionLabel>Thermal Progression</SectionLabel>
               <ThermalProgressionChart data={session.trip.thermalProgression} />
@@ -239,8 +257,8 @@ export function DashboardPanel() {
             </>
           )}
 
-          {/* TPMS */}
-          {tpmsData && (
+          {/* TPMS: each corner's latest reading of the whole drive */}
+          {!ranged && tpmsData && (
             <>
               <SectionLabel>TPMS</SectionLabel>
               <TpmsSummaryCard data={tpmsData} />
@@ -266,6 +284,20 @@ export function DashboardPanel() {
       )}
     </div>
   )
+}
+
+/** A figure, or "—" when there is none (no reading in the range, #416 ticket 2). */
+function orDash(v: number | null | undefined, format: (v: number) => string): string {
+  return v == null || !Number.isFinite(v) ? '—' : format(v)
+}
+
+/** The peaks shown: the range's own while one is set, else the stored summary's (#416 ticket 2). Temperatures keep −99 for none. */
+function peaksOf(trip: TripSummary | undefined, ranged: RangeSummary | null) {
+  const s = ranged ?? trip
+  return {
+    rpm: s?.peakRpm ?? null, boostPsi: s?.peakBoostPsi ?? null, speedKph: s?.peakSpeedKph ?? null, latG: s?.peakLatG ?? null,
+    longG: s?.peakLongG ?? null, coolantC: s?.peakCoolantC ?? -99, oilTempC: s?.peakOilTempC ?? -99,
+  }
 }
 
 /** MetricCard with an inline sparkline below the value. */

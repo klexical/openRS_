@@ -1,10 +1,11 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid,
   Brush, ReferenceLine, Legend,
 } from 'recharts'
 import { colors } from '../../styles/tokens'
 import type { PeakEvent } from '../../types/session'
+import { indexWindow, rangeOfIndices, type TimeRange } from '../../lib/selection'
 
 interface Series {
   key: string
@@ -26,6 +27,18 @@ interface TimeSeriesChartProps {
   peakFilter?: string
   /** Peak line label (default: the value); pressure charts name the source and use the unit's decimals */
   peakLabel?: (peak: PeakEvent) => string
+  /**
+   * The page's one time range (#416 ticket 2), in [xKey]'s units; null = the whole drive. A chart with a brush shows it as
+   * the brush's window; one without shows only its rows.
+   */
+  range?: TimeRange | null
+  /**
+   * Given, a chart of more than 100 rows has a brush, and the brush is a writer of the page's selection: each move sets
+   * the range ([onRange]), and the drag's end ([onRangeDone]) lets the page write its address once. Not given: no brush,
+   * so the chart holds no range of its own (#416 ticket 2: nothing else on the page holds a range).
+   */
+  onRange?: (range: TimeRange | null) => void
+  onRangeDone?: () => void
 }
 
 export function TimeSeriesChart({
@@ -39,6 +52,9 @@ export function TimeSeriesChart({
   peakEvents,
   peakFilter,
   peakLabel,
+  range = null,
+  onRange,
+  onRangeDone,
 }: TimeSeriesChartProps) {
   // Track hidden series for legend toggle
   const [hidden, setHidden] = useState<Set<string>>(new Set())
@@ -52,6 +68,13 @@ export function TimeSeriesChart({
     })
   }, [])
 
+  // the rows' times, and the brush's window over them; without a brush, only the rows inside the range are drawn
+  const xs = useMemo(() => data.map((r) => Number(r[xKey])), [data, xKey])
+  const brushed = onRange !== undefined && data.length > 100
+  const brushWindow = brushed ? indexWindow(xs, range) : null
+  const rows = useMemo(() => (brushed || !range ? data : data.filter((_, i) => xs[i] >= range.from && xs[i] <= range.to)),
+    [brushed, range, data, xs])
+
   if (data.length === 0) {
     return (
       <div className="flex items-center justify-center h-[200px] text-dim text-sm font-mono">
@@ -63,14 +86,14 @@ export function TimeSeriesChart({
   // Filter peaks to only those relevant to this chart
   const relevantPeaks = peakEvents?.filter((p) => !peakFilter || p.type === peakFilter) ?? []
 
-  const showBrush = data.length > 100
+  const showBrush = brushed
   const showLegend = series.length > 1
 
   return (
     <div className="rounded-lg border border-brd bg-surf2 p-3">
       <ResponsiveContainer width="100%" height={height + (showBrush ? 30 : 0)}>
         <LineChart
-          data={data}
+          data={rows}
           syncId={syncId}
           margin={{ top: 5, right: 10, left: 0, bottom: showBrush ? 0 : 5 }}
         >
@@ -160,6 +183,10 @@ export function TimeSeriesChart({
               fill={colors.surf}
               tickFormatter={xFormatter}
               travellerWidth={8}
+              startIndex={brushWindow?.startIndex}
+              endIndex={brushWindow?.endIndex}
+              onChange={(w) => { if (w.startIndex != null && w.endIndex != null) onRange?.(rangeOfIndices(xs, w.startIndex, w.endIndex)) }}
+              onDragEnd={() => onRangeDone?.()}
             />
           )}
         </LineChart>

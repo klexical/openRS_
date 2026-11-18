@@ -3,6 +3,7 @@ import { useShallow } from 'zustand/react/shallow'
 import type { Session } from '../types/session'
 import type { StorageStatus } from '../lib/storage'
 import { currentDriveState, driveLibrarySlice, type DriveLibraryState } from './driveLibrarySlice'
+import type { TimeRange } from '../lib/selection'
 
 /** An import as the page shows it (ticket 06). */
 export interface ImportJob {
@@ -15,14 +16,16 @@ export interface ImportJob {
   notes?: string[]
 }
 
-/** The views of one drive, reached from the drive (#384 ticket 03). Kept in memory: the address names the drive only. */
-export type DriveView = 'dashboard' | 'trip' | 'diagnostics'
+/** The views of one drive, reached from the drive (#384 ticket 03); the address names the view (#416 ticket 2). */
+export type { DriveView } from '../lib/address'
 
 /** The page's state, and the Drive library's (store/driveLibrarySlice.ts), in one store. */
 interface SapphireState extends DriveLibraryState {
-  /** Which of today's views the open drive shows (in memory; ticket 03). */
-  driveView: DriveView
-  setDriveView: (view: DriveView) => void
+  /**
+   * The drive page's selection (#416 ticket 2): its time range (null: the whole drive) and its cursor (null: none), in
+   * milliseconds from the drive's first point. Written only by lib/selection.ts; the address reads and writes it there.
+   */
+  selection: { range: TimeRange | null; cursor: number | null }
 
   /** The running or last import (ticket 06): progress while it runs, each file's outcome after; null when none. */
   importJob: ImportJob | null
@@ -57,8 +60,7 @@ interface SapphireState extends DriveLibraryState {
 
 export const useStore = create<SapphireState>((set) => ({
   ...driveLibrarySlice(set),
-  driveView: 'dashboard',
-  setDriveView: (view) => set({ driveView: view }),
+  selection: { range: null, cursor: null },
   importJob: null,
   setImportJob: (job) => set({ importJob: job }),
   newIds: [],

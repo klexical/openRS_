@@ -10,7 +10,11 @@ A fix shipped after a slice goes into that slice's Fixed list until the next sli
 
 ## A drive's page (slice 3)
 
+### Added
+- **A drive's page keeps one time range, in its address** — a drive's address names its view and its time range, so a reload and the back button keep the place. Dragging the zoom bar under any Trip chart sets the one range for every chart, and the Dashboard's summary numbers follow it (fuel, aggression, thermal progression and tyre pressures stay for the whole drive, and the page says so). "Whole drive" resets it in one step. An address with an unknown view or an unreadable range opens the drive's first view on the whole drive (`lib/selection.ts`, `lib/address.ts`, `DriveFrame.tsx`). ([#416](https://github.com/klexical/openRS_/issues/416))
+
 ### Changed
+- **Diagnostics' frame-rate chart has no zoom bar of its own** — the page's time range belongs to the drive, and the frame-rate chart runs on the session's own time, so it shows the whole session until slice 4 rebuilds Diagnostics (`TimeSeriesChart.tsx`). ([#416](https://github.com/klexical/openRS_/issues/416))
 - **What's new shows the update it speaks of** — the dialog reads the changelog section whose heading names its own release, not simply the newest section, so it keeps showing slice 2's changes while slice 3's section grows (`lib/changelogSection.ts`). ([#416](https://github.com/klexical/openRS_/issues/416))
 - **Compare compares the drives that did open** — when a compared drive cannot be read, Compare still names it ("Couldn't open *name*.") and now compares the others; if the first ticked drive is the one that failed, the first that did open becomes the base (in the picker too) and one line says so, and with fewer than two open it says "Compare needs at least two drives that open." (`lib/driveLibrary.ts`, `ComparePanel.tsx`). ([#416](https://github.com/klexical/openRS_/issues/416))
 - **A Compare card stays when one drive lacks a reading** — each drive shows its own figure, "—" for the drive without it, and no difference or percentage for that pair. A reading never received (a −99 temperature, no boost reading, a fuel figure that could not be computed, no aggression score) is never shown as a figure (`lib/compare.ts`, `DeltaCard.tsx`). ([#416](https://github.com/klexical/openRS_/issues/416))

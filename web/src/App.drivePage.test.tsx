@@ -14,7 +14,7 @@ const T0 = new Date(2096, 10, 12, 18, 0).getTime()
 function drive(id: string, name: string, startOffsetMs = 0): Session {
   const t0 = T0 + startOffsetMs
   const points = Array.from({ length: 5 }, (_, i) => ({
-    ts: t0 + i * 1000, lat: 10 + id.charCodeAt(0) / 1000, lng: 20 + i / 1000, speedKph: 40 + i, rpm: 3000, boostPsi: null,
+    ts: t0 + i * 1000, lat: 10 + id.charCodeAt(0) / 1000, lng: 20 + i / 1000, speedKph: 40 + i, rpm: 3000 + 100 * i, boostPsi: null,
     coolantC: 90, oilTempC: 95, driveMode: 'Normal',
   }))
   return {
@@ -115,10 +115,91 @@ describe('#416 ticket 1: the page shows the drive its address names, read from t
     const views = screen.getByRole('navigation', { name: 'Views of this drive' })
     expect(within(views).getAllByRole('button').map((b) => b.textContent)).toEqual(['Dashboard', 'Trip', 'Diagnostics'])
     fireEvent.click(within(views).getByRole('button', { name: 'Trip' }))
+    // the view is in the address (ticket 2): the switch lands with the hash change; the Dashboard has a Route heading too
+    await waitFor(() => expect(within(views).getByRole('button', { name: 'Trip' })).toHaveAttribute('aria-pressed', 'true'))
     expect(await screen.findByRole('heading', { level: 3, name: 'Route' }, { timeout: 3000 })).toBeInTheDocument()
     expect(viewName()).toBe('Invented loop')
     fireEvent.click(within(views).getByRole('button', { name: 'Diagnostics' }))
+    await waitFor(() => expect(within(views).getByRole('button', { name: 'Diagnostics' })).toHaveAttribute('aria-pressed', 'true'))
     // this invented drive has no diagnostic log: the view says so for this drive (not "No Session Selected")
     expect(await screen.findByRole('heading', { level: 3, name: 'No Diagnostic Data' }, { timeout: 3000 })).toBeInTheDocument()
+  })
+})
+
+// Ticket 2: one selection holds the page's time range; the address carries the view and the range. Each invented drive
+// has five points a second apart (0:00 to 0:04), RPM 3000, 3100, 3200, 3300, 3400, and a stored Avg RPM of 3000.
+const card = (label: string) => screen.getByText(label, { selector: 'span' }).parentElement!.textContent
+const readout = () => screen.getByRole('status', { name: 'Range' }).textContent
+const WHOLE_LINE = 'Fuel, aggression, thermal progression and tyre pressures are for the whole drive.'
+
+describe('#416 ticket 2: one selection, held in the address', () => {
+  it('loading an address restores the view and the range (a reload keeps the place)', async () => {
+    await seed([drive('a', 'Invented loop')])
+    await boot('#/drive/a/trip?range=1000-3000')
+    expect(await screen.findByRole('heading', { level: 3, name: 'Route' }, { timeout: 3000 })).toBeInTheDocument()
+    expect(readout()).toBe('Range: 0:01 – 0:03 of 0:04')
+    expect(screen.getByRole('button', { name: 'Whole drive' })).toBeInTheDocument()
+    expect(window.location.hash).toBe('#/drive/a/trip?range=1000-3000')
+  })
+
+  it('the summary numbers follow the range; "Whole drive" resets it in one step, in place', async () => {
+    await seed([drive('a', 'Invented loop')])
+    await boot('#/drive/a?range=1000-2000')
+    await waitFor(() => expect(card('Avg RPM')).toMatch(/^Avg RPM3150$/), { timeout: 3000 })   // (3100 + 3200) / 2
+    expect(card('Duration')).toBe('Duration1s')
+    expect(screen.getByText(WHOLE_LINE)).toBeInTheDocument()
+    const steps = window.history.length
+    fireEvent.click(screen.getByRole('button', { name: 'Whole drive' }))
+    await waitFor(() => expect(card('Avg RPM')).toMatch(/^Avg RPM3000$/))                  // the stored summary, as before
+    expect(readout()).toBe('Range: Whole drive')
+    expect(screen.queryByRole('button', { name: 'Whole drive' })).toBeNull()
+    expect(screen.queryByText(WHOLE_LINE)).toBeNull()
+    expect(window.location.hash).toBe('#/drive/a')
+    expect(window.history.length).toBe(steps)                                              // no Back step for a range
+  })
+
+  it('a change of view keeps the range and adds a Back step; Back restores the view and the range', async () => {
+    await seed([drive('a', 'Invented loop')])
+    await boot('#/drive/a?range=1000-2000')
+    await waitFor(() => expect(card('Avg RPM')).toMatch(/3150$/), { timeout: 3000 })
+    const views = screen.getByRole('navigation', { name: 'Views of this drive' })
+    await act(async () => { fireEvent.click(within(views).getByRole('button', { name: 'Trip' })) })
+    await waitFor(() => expect(window.location.hash).toBe('#/drive/a/trip?range=1000-2000'))
+    expect(within(views).getByRole('button', { name: 'Trip' })).toHaveAttribute('aria-pressed', 'true')
+    expect(readout()).toBe('Range: 0:01 – 0:02 of 0:04')
+    await act(async () => { window.history.back() })
+    await waitFor(() => expect(window.location.hash).toBe('#/drive/a?range=1000-2000'))
+    await waitFor(() => expect(card('Avg RPM')).toMatch(/3150$/))
+  })
+
+  it('an unknown view or a garbled range: the first view on the whole drive, no message, the address put right in place', async () => {
+    await seed([drive('a', 'Invented loop')])
+    await boot('#/drive/a/engine?range=soon')
+    const steps = window.history.length
+    await shows('Invented loop')                                                           // the Dashboard: the first view
+    await waitFor(() => expect(window.location.hash).toBe('#/drive/a'))
+    expect(readout()).toBe('Range: Whole drive')
+    expect(screen.queryAllByRole('alert')).toEqual([])
+    expect(window.history.length).toBe(steps)
+  })
+
+  it('a range is clamped to the drive, in the address too; one that covers the drive is the whole drive', async () => {
+    await seed([drive('a', 'Invented loop')])
+    await boot('#/drive/a/trip?range=2000-90000')
+    await waitFor(() => expect(window.location.hash).toBe('#/drive/a/trip?range=2000-4000'), { timeout: 3000 })
+    expect(readout()).toBe('Range: 0:02 – 0:04 of 0:04')
+    await boot('#/drive/a?range=0-4000')
+    await waitFor(() => expect(window.location.hash).toBe('#/drive/a'), { timeout: 3000 })
+    expect(readout()).toBe('Range: Whole drive')
+  })
+
+  it('another drive opens on its whole drive: the range was the first drive\'s', async () => {
+    await seed([drive('a', 'Invented loop'), drive('b', 'Invented commute', -86_400_000)])
+    await boot('#/drive/a?range=1000-2000')
+    await waitFor(() => expect(card('Avg RPM')).toMatch(/3150$/), { timeout: 3000 })
+    await act(async () => { window.location.hash = '#/drive/b' })
+    await shows('Invented commute')
+    expect(readout()).toBe('Range: Whole drive')
+    await waitFor(() => expect(card('Avg RPM')).toMatch(/^Avg RPM3000$/))
   })
 })

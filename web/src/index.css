@@ -179,6 +179,8 @@
 .look-a .old-view { isolation: isolate; }
 .look-a .a-crumb { color: var(--a-dim); text-decoration: none; font-size: 0.9em; }
 .look-a .a-views { display: flex; gap: 8px; flex-wrap: wrap; border-bottom: 1px solid var(--a-brd2); padding-bottom: 10px; }
+.look-a .a-range { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 10px 0 0; color: var(--a-mid); font-size: 0.9em; }
+.look-a .a-range p { margin: 0; }
 /* Settings (#384 ticket 07; mock-up B): panels with a section index, your drives first; Clear all's two-step sheet (C) */
 .look-a .a-settings-index { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
 .look-a .a-chip-link { white-space: nowrap; border-radius: 999px; }

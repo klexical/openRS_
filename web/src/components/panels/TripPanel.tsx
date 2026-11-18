@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
-import { useCurrentDrive } from '../../store'
+import { useCurrentDrive, useStore } from '../../store'
+import { clampRange, commitRangeToAddress, driveSpanMs, setRange, type TimeRange } from '../../lib/selection'
 import { EmptyState } from '../ui/EmptyState'
 import { SectionLabel } from '../ui/SectionLabel'
 import { ExportDropdown } from '../ui/ExportDropdown'
@@ -25,6 +26,7 @@ export function TripPanel() {
   // nothing to draw while the drive is read, or after its read failed (the drive's page says so; #384)
   const opening = state === 'being read' || state === 'read failed'
   const fmt = useUnitFormatters()
+  const range = useStore((s) => s.selection.range)
 
   const trip = session?.trip ?? null
   // Stable identity so the useMemo below doesn't rebuild every render
@@ -81,6 +83,13 @@ export function TripPanel() {
   const hasLongG = points.some((p) => p.longG !== 0)
 
   const syncId = 'trip-charts'
+  // #416 ticket 2: every chart shows the page's one range; a brush is a writer of it (seconds here, as the rows' times)
+  const rangeProps = {
+    range: range ? { from: range.from / 1000, to: range.to / 1000 } : null,
+    onRange: (r: TimeRange | null) =>
+      setRange(clampRange(r ? { from: Math.round(r.from * 1000), to: Math.round(r.to * 1000) } : null, driveSpanMs(points))),
+    onRangeDone: commitRangeToAddress,
+  }
 
   return (
     <div className="max-w-6xl mx-auto space-y-2">
@@ -110,6 +119,7 @@ export function TripPanel() {
         series={[{ key: 'rpm', label: 'RPM', color: colors.cyan }]}   // data: fixed, never the paint (#384 ticket 08)
         xFormatter={fmtTime}
         syncId={syncId}
+        {...rangeProps}
         peakEvents={peakEvents}
         peakFilter="rpm"
       />
@@ -121,6 +131,7 @@ export function TripPanel() {
         series={boostSeries}
         xFormatter={fmtTime}
         syncId={syncId}
+        {...rangeProps}
         peakEvents={pressurePeaks(peakEvents, fmt.boostUnit)}
         peakFilter="boost"
         peakLabel={(p) => `▲ ${boostLabel(p.source)} ${p.value.toFixed(pressureDecimals(fmt.boostUnit))}`}
@@ -132,6 +143,7 @@ export function TripPanel() {
         series={[{ key: 'speedKph', label: 'Speed', color: chartColors[2] }]}
         xFormatter={fmtTime}
         syncId={syncId}
+        {...rangeProps}
         peakEvents={speedPeaks(peakEvents, fmt.unitSystem)}
         peakFilter="speed"
       />
@@ -144,6 +156,7 @@ export function TripPanel() {
             series={[{ key: 'throttlePct', label: 'Throttle', color: chartColors[5] }]}
             xFormatter={fmtTime}
             syncId={syncId}
+            {...rangeProps}
           />
         </>
       )}
@@ -157,6 +170,7 @@ export function TripPanel() {
             series={[{ key: 'brakePressure', label: 'Brake', color: chartColors[5] }]}
             xFormatter={fmtTime}
             syncId={syncId}
+            {...rangeProps}
           />
         </>
       )}
@@ -171,6 +185,7 @@ export function TripPanel() {
             xFormatter={fmtTime}
             yFormatter={(v) => `${v.toFixed(0)}°`}
             syncId={syncId}
+            {...rangeProps}
           />
         </>
       )}
@@ -188,6 +203,7 @@ export function TripPanel() {
         yFormatter={(v) => `${v}°`}
         height={220}
         syncId={syncId}
+        {...rangeProps}
       />
 
       <SectionLabel>Lateral G</SectionLabel>
@@ -197,6 +213,7 @@ export function TripPanel() {
         xFormatter={fmtTime}
         yFormatter={(v) => `${v.toFixed(2)}G`}
         syncId={syncId}
+        {...rangeProps}
         peakEvents={peakEvents}
         peakFilter="latG"
       />
@@ -211,6 +228,7 @@ export function TripPanel() {
             xFormatter={fmtTime}
             yFormatter={(v) => `${v.toFixed(2)}G`}
             syncId={syncId}
+            {...rangeProps}
           />
         </>
       )}
@@ -221,6 +239,7 @@ export function TripPanel() {
         series={[{ key: 'fuelPct', label: 'Fuel %', color: chartColors[6] }]}
         xFormatter={fmtTime}
         syncId={syncId}
+        {...rangeProps}
       />
 
       <SectionLabel>Wheel Speeds ({fmt.speedUnit})</SectionLabel>
@@ -235,6 +254,7 @@ export function TripPanel() {
         xFormatter={fmtTime}
         height={220}
         syncId={syncId}
+        {...rangeProps}
       />
 
       {hasTpmsPress && (
@@ -252,6 +272,7 @@ export function TripPanel() {
             yFormatter={(v) => v.toFixed(tirePressDecimals(fmt.tirePressUnit))}
             height={200}
             syncId={syncId}
+            {...rangeProps}
           />
         </>
       )}
@@ -271,6 +292,7 @@ export function TripPanel() {
             yFormatter={(v) => `${v}°`}
             height={200}
             syncId={syncId}
+            {...rangeProps}
           />
         </>
       )}
@@ -284,6 +306,7 @@ export function TripPanel() {
         ]}
         xFormatter={fmtTime}
         syncId={syncId}
+        {...rangeProps}
       />
 
       {/* ── Advanced Visualizations ── */}

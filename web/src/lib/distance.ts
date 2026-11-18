@@ -23,3 +23,14 @@ export const DISTANCE_ESTIMATE_NOTE = 'Estimate from GPS points'
 export function estimateSuffix(summary: Pick<TripSummary, 'distanceKm' | 'distanceSource'>): string {
   return isDistanceEstimate(summary) ? ' est.' : ''
 }
+
+/** The great-circle distance in km between two positions (moved here from lib/import.ts for the range summary, #416). */
+export function haversine(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371
+  const dLat = (lat2 - lat1) * Math.PI / 180
+  const dLon = (lon2 - lon1) * Math.PI / 180
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) ** 2
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
