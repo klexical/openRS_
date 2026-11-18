@@ -1,6 +1,7 @@
-import type { Session, TripSummary, TripPoint } from '../types/session'
+import type { Session, TripData, TripSummary, TripPoint } from '../types/session'
 import { tempReading, pctReading } from './readings'
 import { boostFor, boostLabel, primaryBoostSource, type BoostSource } from './boost'
+import { hasPosition } from './distance'
 
 /**
  * One card of Compare: a figure of two drives (the base and one other) and their difference. A drive without the reading
@@ -70,6 +71,18 @@ export function computeDeltas(base: TripSummary, comp: TripSummary): KpiDelta[] 
     })
     .filter((d): d is KpiDelta => d !== null)
     .concat(boostDelta(base, comp))
+}
+
+/**
+ * Compare's cards for two drives (the page's call). A drive whose points have no coordinates never received a distance:
+ * its summary's 0 is the sum of 0/0 points, so it has no distance reading here (QA's FINAL on delivery A, R2). Read from
+ * the points, so it holds for drives stored before as well.
+ */
+export function compareCards(base: TripData, comp: TripData): KpiDelta[] {
+  return computeDeltas(withDistanceReading(base), withDistanceReading(comp))
+}
+function withDistanceReading(trip: TripData): TripSummary {
+  return trip.points.some(hasPosition) ? trip.summary : { ...trip.summary, distanceKm: NaN }   // NaN: no reading
 }
 
 /** A value only above 0: the import stores 0 (or nothing) for a fuel figure or aggression score it could not compute. */

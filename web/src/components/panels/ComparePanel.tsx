@@ -6,7 +6,7 @@ import { SectionLabel } from '../ui/SectionLabel'
 import { DeltaCard } from '../ui/DeltaCard'
 import { ComparisonChart } from '../charts/ComparisonChart'
 import { GpsMap } from '../charts/GpsMap'
-import { computeDeltas, overlayBoostSource } from '../../lib/compare'
+import { compareCards, overlayBoostSource } from '../../lib/compare'
 import { boostLabel } from '../../lib/boost'
 import { estimateSuffix } from '../../lib/distance'
 import { fmtDateShort } from '../../lib/format'
@@ -40,7 +40,7 @@ export function ComparePanel() {
     if (!hasEnough || !baseSession?.trip) return []
     return compareSessions.slice(1).map((s) => {
       if (!s.trip) return []
-      return computeDeltas(baseSession.trip!.summary, s.trip.summary)
+      return compareCards(baseSession.trip!, s.trip)
     })
   }, [compareSessions, hasEnough, baseSession])
 

@@ -3,15 +3,18 @@
 // point does not have takes no part (#389: never 0); a figure with no reading in the range is null (the page shows "—").
 import type { TripPoint } from '../types/session'
 import { boostFor, type BoostSource } from './boost'
-import { haversine } from './distance'
+import { hasPosition, haversine } from './distance'
 import { numReading, tempReading } from './readings'
 import { pointsInRange, type TimeRange } from './selection'
 
 export interface RangeSummary {
   /** The range's own length. */
   durationMs: number
-  /** A sum of straight lines between the points inside the range: an estimate, never the app's recorded figure (#284). */
-  distanceKm: number
+  /**
+   * A sum of straight lines between the points inside the range that have a position: an estimate, never the app's
+   * recorded figure (#284). Null when none of them has one (QA's FINAL on delivery A, R2).
+   */
+  distanceKm: number | null
   distanceSource: 'estimate'
   avgSpeedKph: number | null
   avgRpm: number | null
@@ -35,8 +38,11 @@ export function summaryInRange(points: TripPoint[], range: TimeRange | null, boo
   const values = (f: (p: TripPoint) => number | null) => inside.map(f).filter((v): v is number => v !== null)
   const max = (v: number[]) => (v.length > 0 ? Math.max(...v) : null)
   const mean = (v: number[]) => (v.length > 0 ? v.reduce((a, b) => a + b, 0) / v.length : null)
-  let distanceKm = 0
-  for (let i = 1; i < inside.length; i++) distanceKm += haversine(inside[i - 1].lat, inside[i - 1].lng, inside[i].lat, inside[i].lng)
+  // a point at 0/0 has no position (the import's form for none): it never enters the sum
+  const placed = inside.filter(hasPosition)
+  let sum = 0
+  for (let i = 1; i < placed.length; i++) sum += haversine(placed[i - 1].lat, placed[i - 1].lng, placed[i].lat, placed[i].lng)
+  const distanceKm = placed.length > 0 ? sum : null
   const rpm = values((p) => numReading(p.rpm))
   const speed = values((p) => numReading(p.speedKph))
   const latG = values((p) => numReading(p.latG)).map(Math.abs)

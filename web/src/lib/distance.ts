@@ -34,3 +34,6 @@ export function haversine(lat1: number, lon1: number, lat2: number, lon2: number
     Math.sin(dLon / 2) ** 2
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }
+
+/** A position the app recorded: the import stores a point without one at 0/0 (QA's FINAL on delivery A, R2). */
+export const hasPosition = (p: { lat: number; lng: number }) => p.lat !== 0 || p.lng !== 0

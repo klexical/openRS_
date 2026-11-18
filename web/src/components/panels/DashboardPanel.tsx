@@ -153,7 +153,7 @@ export function DashboardPanel() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <MetricCard
               label="Distance"
-              value={fmt.distance(ranged ? ranged.distanceKm : trip.distanceKm)}
+              value={ranged ? orDash(ranged.distanceKm, fmt.distance) : fmt.distance(trip.distanceKm)}
               sub={ranged || isDistanceEstimate(trip) ? DISTANCE_ESTIMATE_NOTE : undefined}
             />
             <MetricCard label="Duration" value={fmtDuration(ranged ? ranged.durationMs : trip.durationMs)} />

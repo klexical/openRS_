@@ -22,10 +22,12 @@ vi.mock('./lib/storage', async (importOriginal) => {
 vi.mock('./components/charts/GpsMap', () => ({ GpsMap: () => null }))
 
 const T0 = 4_000_000_000_000
-function drive(id: string, n: number, summary: Record<string, unknown> = {}): Session {
+/** Invented drive [n]; [coords] false: an export with no coordinates (every point at 0/0, as the import stores it). */
+function drive(id: string, n: number, summary: Record<string, unknown> = {}, coords = true): Session {
   return {
     id, name: `Invented ${id}`, importedAt: T0 + n, tags: [],
-    trip: { points: [0, 1, 2].map((i) => ({ ts: T0 + n * 1e7 + i * 1000, lat: 10 + n / 100, lng: 20 + i / 1000, speedKph: 40 + i, rpm: 3000 + i })) as never,
+    trip: { points: [0, 1, 2].map((i) => ({ ts: T0 + n * 1e7 + i * 1000, lat: coords ? 10 + n / 100 : 0, lng: coords ? 20 + i / 1000 : 0,
+      speedKph: 40 + i, rpm: 3000 + i })) as never,
       summary: { distanceKm: 1, durationMs: 2000, fuelUsedL: 0, avgSpeedKph: 41, peakRpm: 3002 + n, peakBoostPsi: null, peakLatG: 0,
         peakLongG: 0, peakSpeedKph: 42, peakCoolantC: 90, peakOilTempC: 100, avgRpm: 3001, avgFuelEconomy: 0, modeBreakdown: {},
         peakEvents: [], ...summary } },
@@ -144,5 +146,19 @@ describe('#416 ticket 3: a card when one drive lacks a reading (Q82)', () => {
     expect(within(card).getByTestId('figure').textContent).toBe('64.0')
     expect(card.textContent).toMatch(/▲ \+24\.0/)
     expect(card.textContent).toMatch(/\(\+60\.0%\)/)
+  })
+})
+
+// QA's FINAL on delivery A, R2: a drive whose export has no coordinates never received a distance (its stored 0 is the
+// sum of 0/0 points): "—" in Compare, and no difference.
+describe('#416 ticket 3: a drive without coordinates has no distance reading (QA R2)', () => {
+  const cardOf = (label: string) => screen.getByRole('group', { name: label })
+  it('the Distance card: "—" for the drive without coordinates, the other\'s figure, no difference', async () => {
+    await compare([drive('a', 1, { distanceKm: 31.4 }), drive('b', 2, { distanceKm: 0 }, false)], ['a', 'b'])
+    await screen.findByText('Invented b vs Invented a', {}, { timeout: 5000 })
+    const card = cardOf('Distance')
+    expect(within(card).getByTestId('figure').textContent).toBe('—')
+    expect(within(card).getByTestId('base').textContent).toBe('base: 31.4')
+    expect(card.textContent).not.toMatch(/[▲▼%]|\+/)
   })
 })

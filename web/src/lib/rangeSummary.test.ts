@@ -58,3 +58,20 @@ describe('#416 ticket 2: the summary numbers in a range', () => {
     expect(summaryInRange(points, null, 'CAN_0F8')).toBeNull()
   })
 })
+
+// QA's FINAL on delivery A, R2 with the spec review's C8: a point at 0/0 is a point without coordinates; it never enters
+// a range's distance, and a range with no coordinates at all has no distance (the page shows "—").
+describe('#416 ticket 2: the distance of a range and points without coordinates (QA R2)', () => {
+  const at = (i: number, lat: number, lng: number) => ({ ts: T0 + i * 1000, lat, lng, rpm: 3000, speedKph: 50, latG: 0, longG: 0,
+    coolantC: -99, oilTempC: -99, boostPsi: null, boostSource: null }) as unknown as TripPoint
+  it('a 0/0 point between two positions adds nothing: the two positions\' own step only', () => {
+    const pts = [at(0, 10, 20), at(1, 0, 0), at(2, 10, 20.001)]
+    // one step of 0.001° of longitude at 10° N: 6371 km × 0.001 × π / 180 × cos 10° = 0.1095 km
+    expect(summaryInRange(pts, { from: 0, to: 2000 }, null)!.distanceKm).toBeCloseTo(0.1095, 3)
+  })
+
+  it('a range whose points have no coordinates: no distance', () => {
+    const pts = [at(0, 0, 0), at(1, 0, 0), at(2, 0, 0)]
+    expect(summaryInRange(pts, { from: 0, to: 1000 }, null)!.distanceKm).toBeNull()
+  })
+})
