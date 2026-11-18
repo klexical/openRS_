@@ -34,10 +34,11 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      # The token's shape, never its value, its length or a hash: a stored token with a line break or a space fails
-      # every review with an authentication error that the public log cannot show. "ok" means printable ASCII with no
-      # space; any other byte (a control character, a non-breaking space) reads as whitespace. Its own step, so the
-      # secret reaches only this env and the review's input.
+      # The token's shape, never its value, its length or a hash: a stored token with a line break, a space or an
+      # invisible character fails every review with an authentication error that the public log cannot show. "ok"
+      # means printable ASCII with no space. A byte outside printable ASCII (a no-break or zero-width space, a control
+      # byte) has its own line and wins over whitespace: stripping spaces and line breaks does not remove it. Its own
+      # step, so the secret reaches only this env and the review's input.
       - name: The review token's shape
         continue-on-error: true
         timeout-minutes: 1
@@ -48,7 +49,8 @@ jobs:
           export LC_ALL=C
           case "$TOKEN" in
             "") echo "review token: empty" ;;
-            *[!!-~]*) echo "review token: has whitespace or a line break" ;;
+            *[![:print:][:space:]]*) echo "review token: has a character outside printable ASCII" ;;
+            *[[:space:]]*) echo "review token: has whitespace or a line break" ;;
             *) echo "review token: ok" ;;
           esac
 

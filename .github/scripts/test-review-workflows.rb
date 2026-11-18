@@ -103,9 +103,10 @@ check.(runs.include?("origin/staging") && runs.include?("origin/main") &&
        runs =~ /check-commit-identity\.sh "\$BASE" "\$HEAD" "\$STAGING" "\$MAIN"/,
        "the check excludes staging's and main's tips")
 check.(steps.none? { |s| s.dig("with", "ref").to_s.include?("head") }, "the review checks out the base's merge ref, never the head ref")
-# The token's shape before the review, never its value: a stored token with a line break or a space fails every review
-# with an authentication error that the public log cannot show. Exactly one of three lines; no part of the value, its
-# length or a hash.
+# The token's shape before the review, never its value: a stored token with a line break, a space or an invisible
+# character fails every review with an authentication error that the public log cannot show. Exactly one of four
+# lines; no part of the value, its length or a hash. A byte outside printable ASCII (a no-break or zero-width space, a
+# control byte) has its own line, since stripping spaces and line breaks does not remove it; it wins over whitespace.
 SECRET = "${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}"
 tok = steps.find { |s| (s["env"] || {}).values.include?(SECRET) }
 tenv = tok ? (tok["env"] || {}) : {}
@@ -118,10 +119,12 @@ check.(File.read(File.join(dir, "claude-review.yml")).downcase.scan("secrets.cla
        "the token appears twice only: the shape step's env and the review's input")
 require "open3"
 require "tmpdir"
-LINES = { ok: "review token: ok", empty: "review token: empty", ws: "review token: has whitespace or a line break" }
+LINES = { ok: "review token: ok", empty: "review token: empty", ws: "review token: has whitespace or a line break",
+          ascii: "review token: has a character outside printable ASCII" }
 probe = "sk-ant-oat01-SHAPEPROBE_x-1"
 { probe => :ok, "" => :empty, "#{probe} x" => :ws, "\t#{probe}" => :ws, "#{probe}\r" => :ws, "#{probe}\n" => :ws,
-  "sk-ant-oat01-\nSHAPEPROBE" => :ws, " " => :ws, "#{probe}\u00a0" => :ws, "#{probe}\u200b" => :ws, "#{probe}\x01" => :ws }.each do |val, want|
+  "sk-ant-oat01-\nSHAPEPROBE" => :ws, " " => :ws, "#{probe}\v" => :ws, "#{probe}\u00a0" => :ascii, "#{probe}\u200b" => :ascii,
+  "#{probe}\x01" => :ascii, "#{probe}\x7f" => :ascii, "#{probe}\u00a0\n" => :ascii }.each do |val, want|
   out = nil; st = nil
   if tok
     Dir.mktmpdir do |d|
