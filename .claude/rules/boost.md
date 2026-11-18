@@ -18,8 +18,8 @@ paths:
     a 1 s tick in the HUD) — never `lastUpdate`. Peaks are per measurement (BoostSession), captions in the selected unit.
     TIP cells / sweep chart / TARGET read vs measured baro; by-gear stats use stored baro or say std atm.
   - **`read()` (recording, knock events, perf runs)** is a fixed order with **no inference between the channels** (the owner
-    rejected a vote on throttle; throttle is pedal on cars without 0x076): TIP − measured baro (TIP ≤ 2.5 s, rpm > 400 on a
-    CAN frame ≤ 2 s old, baro 60–115 kPa) labelled **TIP**; else CAN 0x0F8 (fresh) labelled **BOOST**; else none ("—",
+    rejected a vote on throttle; throttle is pedal on cars without 0x076): TIP − measured baro (TIP ≤ `BoostRule.TIP_FRESH_MS`, one missed reply
+    at the recording batch period + one gap = 2.85 s (#357), rpm > 400 on a CAN frame ≤ 2 s old, baro 60–115 kPa) labelled **TIP**; else CAN 0x0F8 (fresh) labelled **BOOST**; else none ("—",
     recorded as source NONE). `boostKpa` is CAN 0x0F8 byte 5 + 101.325 (gauge, std-atm form, independent of baro) and is a
     reading only once stamped (`boostKpa`, ≤ 3 s old); the 101.325 default is never a reading. The source is kept per point,
     so a drive can hold CAN stretches the gauge showed as "—" (by design, stated in What's New / #207). BOOST_SOURCE logs
@@ -38,7 +38,7 @@ paths:
   Custom Dashboard `boostKpa`, incl. saved layouts that say "TIP") is labelled plain **BOOST** — no qualifier, subtitle or
   help text (owner's direction; a "THROTTLE INLET" line was rejected) — via `liveGaugeLabel()` /
   `dashCellLabel()` in `ui/BoostLabels.kt`. It names the *live* rule only: TIP 0x033E − measured baro,
-  TIP ≤ 2.5 s, otherwise "—" — never CAN. Recorded / mixed-source views name each point's source (`read()`: **TIP** for
+  TIP ≤ `BoostRule.TIP_FRESH_MS` (2.85 s, #357), otherwise "—" — never CAN. Recorded / mixed-source views name each point's source (`read()`: **TIP** for
   0x033E, **BOOST** for CAN 0x0F8 when TIP isn't current), and exports keep the source IDs. So "BOOST" means TIP live but
   CAN 0x0F8 in a recorded drive — don't "unify" them by relabelling history or exports. Recorded views have no display-only
   "BOOST (CAN)" label. The label is display only: no decode, scale, baro, freshness,

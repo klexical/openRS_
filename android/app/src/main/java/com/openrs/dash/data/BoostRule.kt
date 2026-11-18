@@ -57,7 +57,13 @@ object BoostRule {
     /** Stored on each drive recorded under this rule; older drives have no policy (null) and no per-point source. */
     const val POLICY = "rc7-boost-v3"
     const val CAN_FRESH_MS = 3_000L
-    const val TIP_FRESH_MS = 2_500L
+    /**
+     * TIP counts as fresh for one missed reply at the recording batch period, plus one gap for a late reply: 2 × 1.35 s +
+     * 0.15 s = 2.85 s (#357: over Bluetooth 10–30 % of the fast group's replies were missing, and the former 2.5 s switched
+     * the recorded source to CAN 0x0F8 and back on every miss). A real loss of TIP still switches it, before the recorder's
+     * own 4 s limit (#279, 2 × PolledFreshness.FAST_REFRESH_MS).
+     */
+    val TIP_FRESH_MS: Long = 2 * com.openrs.dash.can.PcmPollSchedule.recordingBatchMs() + com.openrs.dash.can.ObdConstants.PCM_FAST_GAP_MS
     const val LINK_FRESH_MS = 2_000L
     const val ENGINE_RUNNING_RPM = 400.0
 

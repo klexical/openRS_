@@ -23,6 +23,13 @@ object PcmPollSchedule {
         val nextSlowIndex: Int
     )
 
+    /**
+     * One batch while a drive records, engine running: the fast group with MAP (#271), then one slow DID, at the fast gap
+     * (1.35 s). A missed reply makes a fast DID's interval two of these; [com.openrs.dash.data.BoostRule.TIP_FRESH_MS]
+     * is stated from it (#357).
+     */
+    fun recordingBatchMs(): Long = nextBatch(slowIndex = 0, engineRunning = true, mapPoll = true).let { it.queries.size * it.gapMs }
+
     fun nextBatch(
         slowIndex: Int,
         engineRunning: Boolean,
