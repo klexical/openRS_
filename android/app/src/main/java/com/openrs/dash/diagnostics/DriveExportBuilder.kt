@@ -205,8 +205,8 @@ internal object DriveExportBuilder {
     }
 
     fun buildSummary(drive: DriveEntity, points: List<DrivePointEntity>): String = buildString {
-        // endTime = 0 while the drive is still recording (diag export mid-drive): measure to the
-        // last point instead of printing 0 s; distance/fuel/peaks are only written at drive end.
+        // endTime = 0 while the drive is still recording (diag export mid-drive): measure to the last point instead of
+        // printing 0 s. The rest of the summary is STOP's at this moment (#321); only these three come at drive end.
         val inProgress = drive.endTime <= 0
         val endMs = if (!inProgress) drive.endTime else points.lastOrNull()?.timestamp ?: drive.startTime
         val durationMs = (endMs - drive.startTime).coerceAtLeast(0L)
@@ -215,7 +215,7 @@ internal object DriveExportBuilder {
         appendLine("  openRS_ Drive Summary")
         appendLine("  App         : v${appVersion} (build ${appBuild})")
         appendLine("  Points      : ${points.size}")
-        if (inProgress) appendLine("  Status      : IN PROGRESS — totals (fuel, peaks) are written at drive end")
+        if (inProgress) appendLine("  Status      : IN PROGRESS — end time, name and laps are written at drive end")
         appendLine("═══════════════════════════════════════════════════════════")
         appendLine()
         appendLine("  Distance    : ${"%.2f".format(drive.distanceKm)} km  (${"%.2f".format(drive.distanceKm * 0.621371)} mi)")
