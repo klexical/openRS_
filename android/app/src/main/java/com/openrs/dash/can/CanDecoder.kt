@@ -675,7 +675,6 @@ object CanDecoder {
                              ubyte(data, 5).toLong())
                 state.copy(
                     odometerKm = km24,
-                    engineStatus = ubyte(data, 0),
                     // byte 7 follows the engine (#328, one car's captures): 0x02 off, top bit set running
                     engineState360 = if (n >= 8) ubyte(data, 7) else state.engineState360,
                     lastUpdate = now
@@ -747,7 +746,8 @@ object CanDecoder {
      * Returns a short human-readable summary of the fields decoded from [id] in [state].
      * Used by DiagnosticLogger to populate the decode trace and frame inventory.
      */
-    fun describeDecoded(id: Int, state: VehicleState): String = when (id) {
+    /** One decode-trace line for a decoded frame; [data] is the frame, for raw bytes no field keeps (0x360 byte 0, #328). */
+    fun describeDecoded(id: Int, state: VehicleState, data: ByteArray = ByteArray(0)): String = when (id) {
         ID_ENGINE_RPM   -> "rpm=${state.rpm.toInt()}, baro=${"%.1f".format(state.barometricPressure)}kPa"
         ID_ENGINE_TEMPS -> "oilTempC=${"%.0f".format(state.oilTempC)}, boost=${"%.0f".format(state.boostKpa - 101.325)}kPa gauge, ptuTempC=${"%.0f".format(state.ptuTempC)}"
         ID_SPEED        -> "speedKph=${"%.2f".format(state.speedKph)}"
@@ -774,7 +774,7 @@ object CanDecoder {
         ID_CLUTCH       -> "clutchPct=${"%.1f".format(state.clutchPedalPct)}"
         ID_WHEEL_ROT    -> "rotFL=${state.wheelRotFL} FR=${state.wheelRotFR} RL=${state.wheelRotRL} RR=${state.wheelRotRR} avgFront=${"%.2f".format(state.avgFrontWheelSpeedKph)}kph"
         ID_FUEL_LEVEL   -> "fuelPct=${"%.1f".format(state.fuelLevelPct)} (0x380 Motorola)"
-        ID_ODOMETER     -> "odometerKm=${state.odometerKm} byte0=${state.engineStatus} engine=${state.engineState360} (0x360 passive)"
+        ID_ODOMETER     -> "odometerKm=${state.odometerKm} byte0=${data.getOrNull(0)?.let { it.toInt() and 0xFF } ?: "?"} engine=${state.engineState360} (0x360 passive)"
         ID_VIN_MUX      -> if (state.vin.isEmpty()) "vin=(assembling)" else "vin=<masked>"   // goes into exports (#260); DIAG reads the value
         ID_BUTTONS_260  -> "assBtn=${state.autoStartStopButtonPressed}"
         ID_DRIVE_MODE_BTN -> "modeBtn=${state.driveModeButtonPressed}"

@@ -40,11 +40,12 @@ class EngineState360Test {
         assertEquals(0x02, short.engineState360)
     }
 
-    @Test fun `byte 0, the old source, no longer decides the label`() {
+    @Test fun `byte 0, the old source, no longer decides the label - the decode trace prints it from the frame`() {
         // 0xC4 with the engine off (byte 7 = 0x02) used to read "0xC4"; the old names (183 Running…) never apply
-        val vs = CanDecoder.decode(0x360, withByte7(0x02), VehicleState())!!
-        assertEquals(0xC4, vs.engineStatus)
+        val frame = withByte7(0x02)
+        val vs = CanDecoder.decode(0x360, frame, VehicleState())!!
         assertEquals("Off", engineStatusLabel(vs.engineState360))
+        assertEquals(true, CanDecoder.describeDecoded(0x360, vs, frame).contains("byte0=196 engine=2"))
         assertEquals("Running", engineStatusLabel(0xBA))       // 186, seen after a start
     }
 }

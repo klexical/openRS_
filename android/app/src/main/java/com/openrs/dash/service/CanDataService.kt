@@ -797,6 +797,8 @@ class CanDataService : Service() {
         // SRS lamp (#199): unknown until this connection's first 0x040 frame — a value held from an earlier link is not a
         // reading. The IPC lamps are not reset here.
         OpenRSDashApp.instance.vehicleState.update { it.copy(lamps = it.lamps.copy(srs = null)) }
+        // Engine state (0x360 byte 7, #328): not received until this connection's first 0x360 frame
+        OpenRSDashApp.instance.vehicleState.update { it.copy(engineState360 = -1) }
         FuelEconomy.reset()
         PerformanceTimer.resetSession()
         OpenRSDashApp.instance.knockEventCount.value = 0

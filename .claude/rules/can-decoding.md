@@ -40,8 +40,7 @@ paths:
   "unrecognized (raw 3)"; the name "Launch" rests only on the community DBC); `UNKNOWN` is the default until this connection's
   first 0x1C0 frame (CanDataService resets it at connection start). Never show "Launch" for ESC, never infer launch control
   from ESC, and never map an unknown state to a firmware escMode (`firmwareMode` is null for both).
-- **0x360 engine state is byte 7, not byte 0 (#328)** — #106 quoted the DBC's `engine_status : 56|8` (byte 7) but read byte
-  0, and invented names for it (183 Running, 186 Kill…). On one car's captures byte 0 reads 0xC0 with the engine off and
-  0xC0 / 0xC4 while it runs; byte 7 reads 0x02 at 0 rpm and has its top bit set while running. DIAG's ENGINE reads
-  `engineState360` (byte 7): Off / Running, any other value raw and "unidentified"; `engineStatus` (byte 0) stays raw in the
-  decode trace only. The meaning of byte 7's other bits and of byte 0's bit 2 (a warm-up lead) is not identified
+- **0x360 engine state is byte 7, not byte 0 (#328)** — #106 mapped byte 7's names (the DBC's `engine_status`, 56|8) onto
+  byte 0. DIAG's ENGINE reads `engineState360` (byte 7): Off (0x02), Running (top bit set), any other value raw and
+  "unidentified"; it is cleared at every new connection. Byte 0 is in no field: the decode trace prints it raw from the
+  frame. Byte 7's other bits and byte 0's bit 2 are not identified (#328)

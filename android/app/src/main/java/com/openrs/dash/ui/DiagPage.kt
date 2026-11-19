@@ -1040,7 +1040,7 @@ import kotlin.math.roundToInt
 /**
  * DIAG's ENGINE readout (#328): 0x360 byte 7, which follows the engine on the captured car: 0x02 with the engine off, top
  * bit set while it runs. Any other value is shown raw and marked unidentified. Byte 0, which the old labels read, is not an
- * engine status (it reads 0xC0 off and running alike).
+ * engine status (0xC0 with the engine off, 0xC0 / 0xC4 while running).
  */
 internal fun engineStatusLabel(v: Int): String = when {
     v < 0          -> "—"
