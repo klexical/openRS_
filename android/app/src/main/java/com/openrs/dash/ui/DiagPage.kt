@@ -1050,16 +1050,15 @@ internal fun engineStatusLabel(v: Int): String = when {
 }
 
 /**
- * DIAG's VEHICLE panel: engine status, e-brake and the ignition (power mode) state. IGNITION has its own full-width row so
- * every power-mode name is one line at 360 dp (font 1.0 and 1.3) and the panel keeps its height at key-off (#327).
+ * DIAG's VEHICLE panel: engine state, e-brake and the ignition (power mode) state. ENGINE and IGNITION each have their own
+ * full-width row, so every engine state ("0xNN · unidentified" included, #328) and every power-mode name (#327) is one line
+ * at 360 dp (font 1.0 and 1.3), and the panel keeps its height as the car's state changes.
  */
 @Composable internal fun DiagVehiclePanel(vs: VehicleState) {
     ReadoutGrid(
         rows = listOf(
-            listOf(
-                Readout("ENGINE", engineStatusLabel(vs.engineState360)),
-                Readout("E-BRAKE", if (vs.eBrake) "ON" else "OFF", color = if (vs.eBrake) Warn else Color.Unspecified),
-            ),
+            listOf(Readout("ENGINE", engineStatusLabel(vs.engineState360))),
+            listOf(Readout("E-BRAKE", if (vs.eBrake) "ON" else "OFF", color = if (vs.eBrake) Warn else Color.Unspecified)),
             listOf(Readout("IGNITION", ignitionStatusLabel(vs.ignitionStatus))),
         ),
         level = if (vs.eBrake) Level.WARN else Level.NORMAL,
