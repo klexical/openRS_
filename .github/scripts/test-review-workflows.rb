@@ -168,8 +168,11 @@ check.(tst && tst.dig("env", "GITLEAKS_REAL") == "${{ runner.temp }}/gitleaks/gi
 last = pss.last || {}
 check.(last["run"].to_s.include?('[ "$(git rev-parse HEAD^2)" = "$HEAD" ] ||') &&
        last["run"].to_s =~ /privacy-scan\.sh "\$BASE" "\$HEAD" "\$STAGING" "\$MAIN"/ &&
-       %w[GITLEAKS BASE HEAD PR_TITLE PR_BODY PR_BRANCH].all? { |k| last["env"]&.key?(k) },
-       "privacy-scan: scans the PR head's new commits (staging's and main's tips excluded) and the PR's title, body and branch")
+       last["env"]&.keys&.sort == %w[BASE GITLEAKS HEAD PRIVACY_IDENTIFIERS],
+       "privacy-scan: scans the PR head's new commits (staging's and main's tips excluded); env holds the list, gitleaks and the two SHAs only")
+pstext = ps.to_s
+check.(%w[pull_request.title pull_request.body pull_request.head.ref].none? { |k| pstext.include?(k) },
+       "privacy-scan: the PR's title, body and branch name never pass through env or ${{ }} (the script reads the event file)")
 
 puts "review workflow checks: #{fails.zero? ? "all passed" : "#{fails} failed"}"
 exit(fails.zero? ? 0 : 1)

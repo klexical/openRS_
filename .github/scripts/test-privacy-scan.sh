@@ -16,7 +16,7 @@ LISTV=$(printf '# a comment line\n\n  %s  \r\n%s\n' "$ID1" "$ID2")
 STUB=$T/gitleaks-stub
 cat > "$STUB" <<'EOF'
 #!/usr/bin/env bash
-printf '%s\n' "$@" > "$STUB_ARGS"
+printf '%s\n' "$@" > "$STUB_ARGS"; printf '%s\n' "${GIT_ATTR_SOURCE:-}" > "$STUB_ARGS.attr"
 while [ $# -gt 0 ]; do [ "$1" = --report-path ] && { shift; cp "$STUB_REPORT" "$1"; }; shift; done
 exit "${STUB_RC:-0}"
 EOF
@@ -40,8 +40,10 @@ sha() { g rev-parse "$1"; }
 OUT=$T/out
 scan() { # scan [<base>]: runs the check as the workflow does; base defaults to main's tip, staging's and main's tips excluded
   local base; base=$(sha "${1:-main}")
-  (cd "$T/r" && PRIVACY_IDENTIFIERS=${LIST-$LISTV} GITLEAKS=${GL-$STUB} PR_TITLE=${TITLE:-} PR_BODY=${BODY:-} \
-    PR_BRANCH=${BRANCH:-feature/x} bash "$SCAN" "$base" "$(sha HEAD)" "$(sha staging)" "$(sha main)") > "$OUT" 2>&1
+  jq -n --arg t "${TITLE:-}" --arg b "${BODY:-}" --arg r "${BRANCH:-feature/x}" \
+    '{pull_request: {title: $t, body: $b, head: {ref: $r}}}' > "$T/event.json"
+  (cd "$T/r" && PRIVACY_IDENTIFIERS=${LIST-$LISTV} GITLEAKS=${GL-$STUB} GITHUB_EVENT_PATH=${EVENT-$T/event.json} \
+    bash "$SCAN" "$base" "$(sha HEAD)" "$(sha staging)" "$(sha main)") > "$OUT" 2>&1
 }
 leaks() { grep -q -i -F -e "$ID1" -e "$ID2" "$OUT" || { [ -n "${PLANTED:-}" ] && grep -q -F -e "$PLANTED" "$OUT"; }; }
 expect() { # expect <exit> <case name> [<text the output must hold>...]
@@ -96,6 +98,30 @@ repo; g checkout -q -b feature; put f.txt "one\ntwo # $ALLOW\nthree\n"; commit "
 run 1 "an added line with gitleaks' inline allow marker is a finding" \
   "FINDING $(c12): added line with a gitleaks allow marker f.txt:2"
 
+# ── what a .gitattributes or an awkward file name could hide (review of #449) ─────────────────────────────────────────
+for attr in -diff binary "diff=nope"; do
+  repo; g checkout -q -b feature; put .gitattributes "notes.txt $attr\n"; put notes.txt "$ID1\n"; commit "an attribute"
+  run 1 "a .gitattributes rule ($attr) in the PR does not hide a file's added lines" "added line notes.txt:1"
+done
+repo; put .gitattributes 'notes.txt -diff\n'; commit "an attribute already on main"; g checkout -q -b feature
+put notes.txt "x\n$ID2\n"; commit "a file the attribute names"
+run 1 "a .gitattributes rule already on the base does not hide added lines either" "added line notes.txt:2"
+for name in 'a"b.bin' 'back\\slash.bin' 'tab\there.bin' 'new\nline.bin'; do
+  nm=$(printf '%b' "$name")
+  repo; g checkout -q -b feature; printf '\000\001PNG\000%s\000' "$ID2" > "$T/r/$nm"; g add -- "$nm"; commit "an awkward name"
+  run 1 "a binary file named ${name} is scanned" "binary content"
+done
+repo; g checkout -q -b feature; printf 'x\000%s\n' "$ID1" > "$T/r/b.dat"; g add b.dat; commit "binary"; g rm -q b.dat; commit "removed"
+run 1 "a binary file a later commit removes is still scanned in the commit that added it" "binary content b.dat"
+
+for f in .gitleaksignore sub/.gitleaksignore .gitleaks.toml; do
+  repo; g checkout -q -b feature; put "$f" '0123456789abcdef:conf.txt:aws-access-token:2\n'; commit "a suppression"
+  run 1 "a new commit touching $f is a finding (gitleaks reads it from the checkout)" \
+    "FINDING $(c12): a change to a gitleaks ignore or config file $f"
+done
+repo; put .gitleaksignore 'x\n'; commit "on main"; g checkout -q -b feature; g rm -q .gitleaksignore; commit "removed"
+run 1 "removing a .gitleaksignore is a finding too" "a change to a gitleaks ignore or config file .gitleaksignore"
+
 # ── merges ───────────────────────────────────────────────────────────────────────────────────────────────────────────
 merge_case() { # a feature branch and a side branch that both change f.txt line 2; the merge resolves it to <resolution>
   repo; g checkout -q -b feature; put f.txt 'one\nfeature\nthree\n'; commit "feature"
@@ -115,12 +141,17 @@ run 1 "a merged branch's own new commit is scanned (the merge itself adds nothin
 repo; g checkout -q -b feature; commit "work"
 LIST=""; run 2 "a missing or empty list fails closed" "missing or empty: fails closed"
 LIST=$'# only a comment\n\n'; run 2 "a list of comments and blanks only fails closed" "has no entry"
-LIST=$'QZXV-FIXTURE-7731\nab'; run 2 "an entry under 4 characters fails closed" "shorter than 4 characters"; unset LIST
+LIST=$'QZXV-FIXTURE-7731\nab'; run 2 "an entry under 4 characters fails closed" "shorter than 4 characters"
+LIST=$'QZXV-FIXTURE-7731\n\u00e4\u00f6\u00fc'; run 2 "the minimum counts characters, not bytes (3 non-ASCII letters fail)" "shorter than 4 characters"
+unset LIST
 GL=""; run 2 "no gitleaks fails closed" "does not name an executable gitleaks"
 GL=$T/nowhere; run 2 "a gitleaks path that is not executable fails closed" "does not name an executable gitleaks"; unset GL
+EVENT=""; run 2 "no event file fails closed" "does not name a pull request event"
+echo '{"push": {}}' > "$T/push.json"; EVENT=$T/push.json; run 2 "an event that is not a pull request fails closed" \
+  "does not name a pull request event"; unset EVENT
 out=$(bash "$SCAN" 2>&1); rc=$?
 if [ "$rc" -eq 2 ]; then pass=$((pass+1)); echo "PASS no arguments is a usage error (exit 2)"; else fail=$((fail+1)); echo "FAIL no arguments: exit $rc"; fi
-(cd "$T/r" && PRIVACY_IDENTIFIERS=$LISTV GITLEAKS=$STUB bash "$SCAN" main "$(sha HEAD)") > "$OUT" 2>&1
+(cd "$T/r" && PRIVACY_IDENTIFIERS=$LISTV GITLEAKS=$STUB GITHUB_EVENT_PATH=$T/event.json bash "$SCAN" main "$(sha HEAD)") > "$OUT" 2>&1
 expect 2 "a ref name is not taken for a SHA" $? "every argument a 40-hex SHA"
 
 # ── gitleaks, stubbed: what it is given, and what of its report is printed ──────────────────────────────────────────
@@ -135,7 +166,8 @@ for a in git --redact --exit-code --report-format json --gitleaks-ignore-path --
 done
 printf '%s\n' "$args" | grep -q -x -F -e "$(sha HEAD) --not $(sha main) $(sha staging) $(sha main)" || ok=0
 case "$cfg" in "$T/r/"*|"") ok=0 ;; esac    # the config is the scan's own, never a file of the checkout
-if [ "$ok" = 1 ]; then pass=$((pass+1)); echo "PASS gitleaks gets the new commits only, redaction, its own config and ignore file"
+[ "$(cat "$STUB_ARGS.attr")" = 4b825dc642cb6eb9a060e54bf8d69288fbee4904 ] || ok=0   # git under gitleaks reads no .gitattributes
+if [ "$ok" = 1 ]; then pass=$((pass+1)); echo "PASS gitleaks gets the new commits only, redaction, its own config and ignore file, and no attributes"
 else fail=$((fail+1)); echo "FAIL gitleaks arguments: $(printf '%s ' "$args" | tr '\n' ' ')"; fi
 printf '[{"RuleID":"aws-access-token","File":"f.txt","StartLine":4,"Commit":"%s","Secret":"%s","Match":"%s","Email":"%s"}]\n' \
   "$(sha HEAD)" "$PLANTED" "$PLANTED" "$OWNER" > "$STUB_REPORT"
