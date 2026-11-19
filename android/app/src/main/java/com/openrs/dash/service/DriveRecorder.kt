@@ -1082,6 +1082,9 @@ class DriveRecorder(
                 // finalizing this drive meanwhile waits for these points before its thumbnail (#241); a failed
                 // insert fails the export.
                 val r = run
+                // The run read here must be the drive whose state was read above: a STOP and a START in between make it
+                // the next drive's, and its points and parts must not go on this drive's export (#321)
+                if (r.driveId != state.driveId) return@withContext null
                 if (!r.outsideLoopWrites.withLock { flushBuffer(r) }) return@withContext null
 
                 val drive = dao.getDrive(state.driveId) ?: return@withContext null
@@ -1270,13 +1273,9 @@ class DriveRecorder(
     // ── Thermal record ───────────────────────────────────────────────────
 
     /**
-     * Per-sensor peaks + the limits each part of the drive was judged against (DriveThermalRecord).
-     * Replaces the fixed 140 / 115 / 120 / 120 °C snapshot, which matched no profile and stored the
-     * drive-end reading as its "peak".
-     */
-    /**
-     * The summary's in-memory parts of one drive at one moment (#321): the thermal record with its climb rates, the fuel
-     * trim averages and the pull counts. Immutable: built by the drive's loop (the only writer of what it reads) after each
+     * The summary's in-memory parts of one drive at one moment (#321): the thermal record (DriveThermalRecord: per-sensor
+     * peaks with the limits each part of the drive was judged against) with its climb rates, the fuel trim averages and the
+     * pull counts. Immutable: built by the drive's loop (the only writer of what it reads) after each
      * point, or by STOP after the loop has ended.
      */
     private class SummaryParts(

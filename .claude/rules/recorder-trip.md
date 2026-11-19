@@ -106,6 +106,6 @@ paths:
   from start to finish keeps its wander). Every fix is still stored. `ParkedDistanceTest`, `SpeedStampConnectResetTest`
 - **A drive's summary is built one way (#321)** — STOP, the export of a drive still recording (`snapshotActiveDrive`) and a
   drive closed at the next launch (`closedOrphan`, #262) all go through `DriveRecorder.summarize`. The aggression score
-  covers every stored point of the drive on every path (owner, 2026-11-11), never the in-memory `recentPoints` window. The
+  covers every stored point of the drive on every path (the owner, on #321), never the in-memory `recentPoints` window. The
   in-memory parts an export reads (thermal record, trims, pulls) are the loop's immutable `SummaryParts`, published after
   each point; never read the run's accumulators from outside the loop while it runs. `DriveSummaryOneRuleTest`
