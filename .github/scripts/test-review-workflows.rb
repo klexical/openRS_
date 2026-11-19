@@ -1,7 +1,8 @@
 #!/usr/bin/env ruby
 # test-review-workflows.rb [<workflows dir>] — pins the shape of claude-review.yml and commit-identity.yml:
-# pull_request only, never pull_request_target; every job skips a fork's branch; the least permissions; the
-# subscription token, never an API key; the reviewer holds no write tool. Exit 0 when every check passes.
+# pull_request only, never pull_request_target; every job skips a fork's branch (privacy-scan instead fails a fork's
+# PR before any checkout); the least permissions; the subscription token, never an API key; the reviewer holds no
+# write tool; the privacy scan's list reaches one step only. Exit 0 when every check passes.
 require "yaml"
 dir = ARGV[0] || File.join(__dir__, "..", "workflows")
 fails = 0
@@ -21,6 +22,7 @@ NO_FORK = "github.event.pull_request.head.repo.full_name == github.repository"
   check.(on.dig("pull_request", "branches")&.sort == %w[main staging], "#{name}: pull requests to staging and main")
   check.(wf["permissions"] == {}, "#{name}: no permission at the workflow level")
   wf["jobs"].each do |jn, job|
+    next check.(job["permissions"] == perms, "#{name} #{jn}: permissions exactly #{perms}") if jn == "privacy-scan"
     check.(job["if"].to_s.include?(NO_FORK), "#{name} #{jn}: skips a fork's branch")
     check.(job["permissions"] == perms, "#{name} #{jn}: permissions exactly #{perms}")
   end
@@ -136,6 +138,38 @@ probe = "SHAPEPROBE-x_1"
   check.(tok && st&.success? && out == LINES[want] + "\n" && !out.include?("SHAPEPROBE"),
          "the shape step prints exactly \"#{LINES[want]}\" for a token #{val.inspect.sub("SHAPEPROBE", "…")}, and exits 0")
 end
+
+# The privacy scan (A4): a required check, so it is never skipped (a skipped job counts as passed): a fork's PR fails in
+# its first step, before any checkout; the identifier list reaches one step only, through env; gitleaks is pinned by
+# digest; the scan's tests run the real gitleaks; the scan walks the PR head and excludes staging's and main's tips.
+ps = load_wf.("commit-identity.yml")["jobs"]["privacy-scan"] || {}
+pss = ps["steps"] || []
+check.(!ps.empty? && !ps.key?("if") && ps["continue-on-error"].nil? && pss.none? { |s| s.key?("continue-on-error") || s.key?("if") },
+       "privacy-scan: no condition and no continue-on-error anywhere (never skipped, a hard check)")
+first = pss.first || {}
+check.(first["run"].to_s.include?('[ "$HEAD_REPO" = "$REPO" ] ||') && first["run"].to_s.include?("exit 1") &&
+       first["env"] == { "HEAD_REPO" => "${{ github.event.pull_request.head.repo.full_name }}", "REPO" => "${{ github.repository }}" },
+       "privacy-scan: the first step fails a fork's PR")
+pco = pss.index { |s| s["uses"].to_s.start_with?("actions/checkout@") }
+check.(pco && pco > 0 && pss[pco].dig("with", "fetch-depth") == 0 && pss[pco].dig("with", "persist-credentials") == false &&
+       !(pss[pco]["with"] || {}).key?("ref"), "privacy-scan: checks out the default merge ref, whole history, after the fork step")
+PSEC = "${{ secrets.PRIVACY_IDENTIFIERS }}"
+holders = pss.select { |s| s.to_s.include?("secrets.") }
+check.(holders.size == 1 && holders.first["env"]&.dig("PRIVACY_IDENTIFIERS") == PSEC && holders.first.equal?(pss.last) &&
+       File.read(File.join(dir, "commit-identity.yml")).scan("secrets.").size == 1,
+       "privacy-scan: the list reaches the last step only, through env, and no other secret is read")
+check.(pss.none? { |s| s["run"].to_s.include?("${{") }, "privacy-scan: no ${{ }} in any run (values come through env)")
+glstep = pss.find { |s| s["run"].to_s.include?("sha256sum -c") }
+check.(glstep && glstep.dig("env", "GL_SHA256").to_s =~ /\A[0-9a-f]{64}\z/ && glstep.dig("env", "GL_VERSION").to_s =~ /\A\d+\.\d+\.\d+\z/ &&
+       glstep["run"].index("sha256sum -c") < glstep["run"].index("tar -xzf"), "privacy-scan: gitleaks is checked against its pinned digest before it is unpacked")
+tst = pss.find { |s| s["run"].to_s.strip == "bash .github/scripts/test-privacy-scan.sh" }
+check.(tst && tst.dig("env", "GITLEAKS_REAL") == "${{ runner.temp }}/gitleaks/gitleaks" && pss.index(tst) < pss.size - 1,
+       "privacy-scan: the scan's own tests run with the real gitleaks, before the scan")
+last = pss.last || {}
+check.(last["run"].to_s.include?('[ "$(git rev-parse HEAD^2)" = "$HEAD" ] ||') &&
+       last["run"].to_s =~ /privacy-scan\.sh "\$BASE" "\$HEAD" "\$STAGING" "\$MAIN"/ &&
+       %w[GITLEAKS BASE HEAD PR_TITLE PR_BODY PR_BRANCH].all? { |k| last["env"]&.key?(k) },
+       "privacy-scan: scans the PR head's new commits (staging's and main's tips excluded) and the PR's title, body and branch")
 
 puts "review workflow checks: #{fails.zero? ? "all passed" : "#{fails} failed"}"
 exit(fails.zero? ? 0 : 1)

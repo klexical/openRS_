@@ -3,6 +3,7 @@ name: Commit identity
 # Every commit of a pull request to staging or main carries the owner's noreply address as author and committer, and no
 # `Claude-Session:` line, except that a merge made on GitHub may carry GitHub's committer address; commits already on
 # staging or main are not checked again. Fails the PR otherwise. No secret is used; the script and its test run here.
+# The second job, privacy-scan, is the one job here that reads a secret (the identifier list); see its comment below.
 
 on:
   pull_request:                      # never pull_request_target
@@ -47,3 +48,58 @@ jobs:
           STAGING=$(git rev-parse --verify origin/staging^{commit})
           MAIN=$(git rev-parse --verify origin/main^{commit})
           bash .github/scripts/check-commit-identity.sh "$BASE" "$HEAD" "$STAGING" "$MAIN"
+
+  # The privacy scan (a required check of its own name): the PR's new commits and its text against the identifier list
+  # (the PRIVACY_IDENTIFIERS secret) and gitleaks; prints counts and places only, never a match. It has no fork
+  # condition on purpose: a skipped job counts as passed, so a fork's PR fails in its first step instead, before any
+  # checkout (a fork's run gets no secret, and no fork code runs here).
+  privacy-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: A fork's pull request fails closed
+        env:
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          [ "$HEAD_REPO" = "$REPO" ] || { echo "privacy scan: a fork's pull request gets no identifier list: fails closed"; exit 1; }
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0             # the whole history: the scan walks the new commits, as the identity check does
+          persist-credentials: false
+
+      - name: gitleaks, pinned by version and digest
+        env:
+          GL_VERSION: 8.28.0
+          GL_SHA256: a65b5253807a68ac0cafa4414031fd740aeb55f54fb7e55f386acb52e6a840eb
+        run: |
+          mkdir -p "$RUNNER_TEMP/gitleaks"
+          cd "$RUNNER_TEMP/gitleaks"
+          curl -fsSL --retry 3 -o gl.tar.gz "https://github.com/gitleaks/gitleaks/releases/download/v${GL_VERSION}/gitleaks_${GL_VERSION}_linux_x64.tar.gz"
+          echo "$GL_SHA256  gl.tar.gz" | sha256sum -c --quiet
+          tar -xzf gl.tar.gz gitleaks
+          ./gitleaks version
+
+      - name: The scan's own tests (a seeded list and a seeded key; the real gitleaks included)
+        env:
+          GITLEAKS_REAL: ${{ runner.temp }}/gitleaks/gitleaks
+        run: bash .github/scripts/test-privacy-scan.sh
+
+      - name: The pull request's new commits and text
+        # the only step that holds the list; values reach it through env, never ${{ }} in run
+        env:
+          PRIVACY_IDENTIFIERS: ${{ secrets.PRIVACY_IDENTIFIERS }}
+          GITLEAKS: ${{ runner.temp }}/gitleaks/gitleaks
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          [ "$(git rev-parse HEAD^2)" = "$HEAD" ] || { echo "the merge commit's second parent is not the PR head $HEAD"; exit 1; }
+          STAGING=$(git rev-parse --verify origin/staging^{commit})
+          MAIN=$(git rev-parse --verify origin/main^{commit})
+          bash .github/scripts/privacy-scan.sh "$BASE" "$HEAD" "$STAGING" "$MAIN"
