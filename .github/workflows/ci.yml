@@ -77,7 +77,7 @@ jobs:
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     needs: [ build ]
-    environment: release   # the release secrets live only in this environment: main and android-v* tags (Q182)
+    environment: release   # main only (Q182)
     defaults:
       run:
         working-directory: android
@@ -101,7 +101,7 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           if [ -z "$KEYSTORE_BASE64" ]; then
-            echo "::error::Keystore secrets not configured (release environment, Q182): refusing to build an unsigned release APK"
+            echo "::error::Keystore secrets not configured (release environments, Q182): refusing to build an unsigned release APK"
             exit 1
           fi
           echo "$KEYSTORE_BASE64" | base64 -d > openrs-release.jks
@@ -133,7 +133,7 @@ jobs:
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/android-v')
     needs: [ build ]
-    environment: release   # the release secrets live only in this environment: main and android-v* tags (Q182)
+    environment: release-tag   # android-v* tags only, with the owner's approval (Q182)
     permissions:
       contents: write
       id-token: write
@@ -161,7 +161,7 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           if [ -z "$KEYSTORE_BASE64" ]; then
-            echo "::error::Keystore secrets not configured (release environment, Q182): refusing to build an unsigned release APK"
+            echo "::error::Keystore secrets not configured (release environments, Q182): refusing to build an unsigned release APK"
             exit 1
           fi
           echo "$KEYSTORE_BASE64" | base64 -d > openrs-release.jks
