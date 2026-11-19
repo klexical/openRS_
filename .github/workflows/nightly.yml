@@ -4,6 +4,8 @@ name: Nightly
 # main that builds publishes the nightly. The two jobs that hold a token able to write contents (publish, cleanup) run
 # only when PUBLISH is true AND the run is on main; a manual run on another ref runs that ref's copy of this file and is
 # a dry run: it stops after the attestation, and no release or tag is made. With PUBLISH false every run is a dry run.
+# Since Q182 the recipe's job runs in the "release" environment, whose deployment refs are main and android-v* tags: a
+# manual run on any other ref now fails at the release job (GitHub refuses the environment) instead of building.
 #
 # GitHub runs the schedule (and offers "Run workflow") only from this file on the default branch, main, whose tree is
 # the 2.2.6 one. So every step that runs a repository script or Gradle runs in a checkout of staging's tip, the commit
@@ -138,7 +140,7 @@ jobs:
       name: ${{ needs.gate.outputs.name }}
       tag: ${{ needs.gate.outputs.tag }}
       nightly_date: ${{ needs.gate.outputs.date }}
-    secrets: inherit
+    # No secrets passed: the recipe's job reads the release environment, open to main only among branches (Q182)
 
   launch:
     name: Launch check (API 36 emulator)

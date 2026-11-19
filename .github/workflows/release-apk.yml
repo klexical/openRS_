@@ -9,6 +9,10 @@ name: Release APK (shared recipe)
 # any secret's value, the caller builds the artifact and file names itself (the file name from its tag). It re-checks the
 # digest before it attests and attaches the file.
 # Every input reaches the shell through env, never inside a run line (android/scripts/test-release-workflows.rb).
+# The release secrets (keystore, key alias and passwords, Maps and weather keys) live only in the GitHub environment
+# "release", whose deployment refs are main and android-v* tags (owner Q182). The job below declares it; callers pass no
+# secrets, so this job sees the environment's copies and nothing else. GitHub checks the caller's run ref against the
+# environment's rules: a nightly on main and an android-v tag push pass; a run on any other ref stops at this job.
 
 on:
   workflow_call:
@@ -43,6 +47,7 @@ jobs:
     name: Build and verify the release APK
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    environment: release   # the only place the release secrets are readable (Q182)
     # Never for a pull request's head: the keystore and the API keys are in this job
     if: ${{ !startsWith(github.event_name, 'pull_request') }}
     outputs:
@@ -81,7 +86,7 @@ jobs:
           printf 'storeFile=openrs-release.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
             "$KEYSTORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" > keystore.properties
 
-      # API keys come from repository secrets as environment variables (#235) — no file, never echoed. Maps is required
+      # API keys come from the release environment's secrets as environment variables (#235, Q182) — no file, never echoed. Maps is required
       # for a published release (the job stops here without it); weather is optional.
       - name: Check release configuration (API keys)
         env:

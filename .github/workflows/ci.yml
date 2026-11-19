@@ -77,6 +77,7 @@ jobs:
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     needs: [ build ]
+    environment: release   # the release secrets live only in this environment: main and android-v* tags (Q182)
     defaults:
       run:
         working-directory: android
@@ -132,6 +133,7 @@ jobs:
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/android-v')
     needs: [ build ]
+    environment: release   # the release secrets live only in this environment: main and android-v* tags (Q182)
     permissions:
       contents: write
       id-token: write
