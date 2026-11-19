@@ -150,7 +150,7 @@ data class VehicleState(
     val autoStartStopButtonPressed: Boolean = false, // 0x260 byte0 bit0: ASS button (held)
     // unknown: neither 0x260 byte 5 candidate (0x10, 0x08) is it on the one car checked; bit not identified (#304)
     val escOffButtonPressed: Boolean? = null,
-    val engineStatus: Int = -1,            // 0x360 byte 0: 0=Idle, 2=Off, 183=Running, 186=Kill, 191=RecentStart
+    val engineState360: Int = -1,          // 0x360 byte 7, raw: 0x02 = engine off, top bit set = running (#328); -1 = not received
     val ignitionStatus: Int = -1,          // 0x0C8 byte2 bits 3-6: power mode, 0=Key Out..7=Running, 9=Crank (names: ignitionStatusLabel, #327)
 
     // ── BCM OBD (Mode 22 via BCM 0x726) ────────────────────

@@ -888,6 +888,7 @@ class DriveRecorder(
                         rpmSum               = if (vs.rpm > 400) s.rpmSum + vs.rpm else s.rpmSum,
                         rpmSamples           = if (vs.rpm > 400) s.rpmSamples + 1 else s.rpmSamples,
                         speedSum             = s.speedSum + vs.speedKph,
+                        fuelBasePct          = com.openrs.dash.data.FuelUsed.rebase(s.fuelBaseOrStartPct, vs.fuelLevelPct),
                         speedSamples         = s.speedSamples + 1,
                         modeCounts           = s.modeCounts.toMutableMap().also {
                             it[vs.driveMode] = (it[vs.driveMode] ?: 0) + 1

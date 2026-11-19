@@ -1037,28 +1037,28 @@ import kotlin.math.roundToInt
     }
 }
 
-internal fun engineStatusLabel(v: Int): String = when (v) {
-    -1  -> "—"
-    0   -> "Idle"
-    2   -> "Off"
-    183 -> "Running"
-    186 -> "Kill"
-    191 -> "Start"
-    196 -> "Warmup"
-    else -> "0x%02X".format(v)
+/**
+ * DIAG's ENGINE readout (#328): 0x360 byte 7, which follows the engine on the captured car: 0x02 with the engine off, top
+ * bit set while it runs. Any other value is shown raw and marked unidentified. Byte 0, which the old labels read, is not an
+ * engine status (0xC0 with the engine off, 0xC0 / 0xC4 while running).
+ */
+internal fun engineStatusLabel(v: Int): String = when {
+    v < 0          -> "—"
+    v == 0x02      -> "Off"
+    (v and 0x80) != 0 -> "Running"
+    else           -> "0x%02X · unidentified".format(v)
 }
 
 /**
- * DIAG's VEHICLE panel: engine status, e-brake and the ignition (power mode) state. IGNITION has its own full-width row so
- * every power-mode name is one line at 360 dp (font 1.0 and 1.3) and the panel keeps its height at key-off (#327).
+ * DIAG's VEHICLE panel: engine state, e-brake and the ignition (power mode) state. ENGINE and IGNITION each have their own
+ * full-width row, so every engine state ("0xNN · unidentified" included, #328) and every power-mode name (#327) is one line
+ * at 360 dp (font 1.0 and 1.3), and the panel keeps its height as the car's state changes.
  */
 @Composable internal fun DiagVehiclePanel(vs: VehicleState) {
     ReadoutGrid(
         rows = listOf(
-            listOf(
-                Readout("ENGINE", engineStatusLabel(vs.engineStatus)),
-                Readout("E-BRAKE", if (vs.eBrake) "ON" else "OFF", color = if (vs.eBrake) Warn else Color.Unspecified),
-            ),
+            listOf(Readout("ENGINE", engineStatusLabel(vs.engineState360))),
+            listOf(Readout("E-BRAKE", if (vs.eBrake) "ON" else "OFF", color = if (vs.eBrake) Warn else Color.Unspecified)),
             listOf(Readout("IGNITION", ignitionStatusLabel(vs.ignitionStatus))),
         ),
         level = if (vs.eBrake) Level.WARN else Level.NORMAL,

@@ -50,7 +50,7 @@ class DiagIgnitionFitTest {
             val base = LocalDensity.current
             CompositionLocalProvider(LocalDensity provides Density(base.density, fontScale)) {
                 Box(Modifier.fillMaxWidth().padding(horizontal = Tokens.PagePad)) {
-                    DiagVehiclePanel(VehicleState(isConnected = true, ignitionStatus = code, engineStatus = 183))
+                    DiagVehiclePanel(VehicleState(isConnected = true, ignitionStatus = code, engineState360 = 0xB2))
                 }
             }
         }

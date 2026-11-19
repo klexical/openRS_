@@ -721,7 +721,7 @@ class CanDecoderTest {
         val result = CanDecoder.decode(0x360, data, blank)
         assertNotNull(result)
         assertEquals(67500L, result!!.odometerKm)
-        assertEquals(0xC4, result.engineStatus)
+        assertEquals(0xB2, result.engineState360)          // byte 7, the engine state (#328)
     }
 
     @Test

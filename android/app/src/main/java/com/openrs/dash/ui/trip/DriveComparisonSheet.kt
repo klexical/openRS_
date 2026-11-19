@@ -200,13 +200,14 @@ fun DriveComparisonSheet(
 
             Spacer(Modifier.height(6.dp))
 
+            val fuel = fuelUsedCompare(driveA.fuelUsedL, driveB.fuelUsedL)
             ComparisonRow(
                 label = "FUEL USED",
-                valueA = "%.2f L".format(driveA.fuelUsedL),
-                valueB = "%.2f L".format(driveB.fuelUsedL),
-                direction = DeltaDirection.LOWER_BETTER,
-                rawDelta = driveB.fuelUsedL - driveA.fuelUsedL,
-                delta = formatFuelDelta(driveB.fuelUsedL - driveA.fuelUsedL)
+                valueA = fuel.valueA,
+                valueB = fuel.valueB,
+                direction = if (fuel.comparable) DeltaDirection.LOWER_BETTER else DeltaDirection.NEUTRAL,
+                rawDelta = fuel.rawDelta,
+                delta = fuel.delta
             )
 
             ComparisonRow(
@@ -359,6 +360,19 @@ private fun formatTempDelta(peakB: Double, peakA: Double, prefs: UserPrefs): Str
     val deltaDisplay = if (prefs.tempUnit == "C") deltaC else deltaC * 9.0 / 5.0
     val prefix = if (deltaDisplay > 0) "+" else ""
     return "$prefix%.0f%s".format(deltaDisplay, prefs.tempLabel)
+}
+
+/** The FUEL USED row's texts (#336). */
+internal data class FuelCompare(val valueA: String, val valueB: String, val delta: String, val rawDelta: Double, val comparable: Boolean)
+
+/**
+ * The FUEL USED row for two drives (#336): a stored 0.0 is no figure (the gauge never dropped by enough steps to be fuel),
+ * shown "—", and a pair where either drive has none shows no difference, as Sapphire's Compare does.
+ */
+internal fun fuelUsedCompare(aL: Double, bL: Double): FuelCompare {
+    fun text(l: Double) = if (l > 0) "%.2f L".format(l) else "—"
+    val comparable = aL > 0 && bL > 0
+    return FuelCompare(text(aL), text(bL), if (comparable) formatFuelDelta(bL - aL) else "", if (comparable) bL - aL else 0.0, comparable)
 }
 
 private fun formatFuelDelta(deltaL: Double): String {

@@ -116,7 +116,7 @@ internal class LinkSession(
             // #194 — stamp CAN-sourced fields (unchanged reports ≤1/s per ID, see stampFresh) so THERMAL availability works
             val updated = decoded?.let { CanDecoder.stampFresh(canId, current, it, System.currentTimeMillis()) }
             if (updated != null) {
-                val desc  = CanDecoder.describeDecoded(canId, updated)
+                val desc  = CanDecoder.describeDecoded(canId, updated, data)
                 val issue = CanDecoder.validateDecoded(canId, updated)
                 DiagnosticLogger.logFrame(canId, data, updated, desc, issue)
                 val withPeaks = updated.withPeaksUpdated().copy(framesPerSecond = fps)

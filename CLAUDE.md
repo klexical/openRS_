@@ -63,7 +63,8 @@ under `android/` is read or edited.
 0x2F0  coolant + intake air temp (10-bit each)
 0x300  battery/charging fault — reserved; bit mapping unknown
 0x340  PCM ambient (byte7 signed × 0.25°C) — NOT TPMS
-0x360  odometer (bytes [3:5] 24-bit BE) + engine status (byte0)
+0x360  odometer (bytes [3:5] 24-bit BE) + engine state (byte7: 0x02 off, top bit set running; one car, #328) — byte0 is NOT an
+       engine status (0xC0 with the engine off, 0xC0 / 0xC4 while running); the decode trace prints it raw from the frame
 0x380  fuel level (Motorola 10-bit × 0.4%, clamped 0-100)
 0x420  drive mode detail + launch control flag (byte6/7, ~600 ms broadcast; bit0=0→Sport, bit0=1→Track). The flag, byte 6
        bit 2 (DBC LaunchControlStatus, unverified against the cluster), is the only source of the one "LC" (header, DRIVE,
