@@ -186,7 +186,7 @@ jobs:
       name: ${{ needs.release-name.outputs.name }}
       tag: ${{ github.ref_name }}
       nightly_date: ''   # an RC or stable: no -PnightlyDate at all (the build refuses an empty one, #362)
-    secrets: inherit
+    # No secrets passed: the recipe's job reads the release environment, open to android-v* tags (Q182)
 
   publish-release:
     name: Attach APK to GitHub Release
