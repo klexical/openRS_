@@ -1074,11 +1074,7 @@ class DriveRecorder(
      * position a note or the start/finish line may be placed at. Null before the drive's first fix, after STOP, when
      * not recording, and during a GPS gap (the last fix is then not where the car is).
      */
-    fun freshFix(nowMs: Long = clock()): Location? {
-        val state = _driveState.value
-        if (!state.isRecording) return null
-        return state.currentLocation?.takeIf { fixAgeMs(it, nowMs) <= LapTimer.MAX_FIX_AGE_MS }
-    }
+    fun freshFix(nowMs: Long = clock()): Location? = currentFix(_driveState.value, nowMs)
 
     @SuppressLint("MissingPermission")
     private suspend fun fusedLastLocation(): Location? =
@@ -1332,6 +1328,15 @@ class DriveRecorder(
         private const val TAG = "DriveRecorder"
 
         /** How old a fix is at [nowMs] — on the monotonic clock when the fix carries it, else the wall clock. */
+        /**
+         * [state]'s own last fix while it records, if it is at most [LapTimer.MAX_FIX_AGE_MS] old at [nowMs]; null otherwise
+         * (#311). The one rule for a position shown or placed as current: notes, the start/finish line, TRIP's live dot
+         * and its ALT / HDG / accuracy readout (#318).
+         */
+        internal fun currentFix(state: DriveState, nowMs: Long): Location? =
+            if (!state.isRecording) null
+            else state.currentLocation?.takeIf { fixAgeMs(it, nowMs) <= LapTimer.MAX_FIX_AGE_MS }
+
         internal fun fixAgeMs(location: Location, nowMs: Long): Long =
             if (location.elapsedRealtimeNanos > 0L) (SystemClock.elapsedRealtimeNanos() - location.elapsedRealtimeNanos) / 1_000_000L
             else nowMs - location.time

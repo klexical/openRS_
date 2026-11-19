@@ -235,6 +235,36 @@ class DriveStartLocationTest {
         assertNull(com.openrs.dash.ui.trip.tripDot(rec.driveState.value, idle, stamp))
     }
 
+    // ── #318: a GPS gap while recording — no dot and "—" in the readout until a fresh fix ───────────────────────────
+
+    @Test fun `in a GPS gap TRIP draws no dot - the drive's last fix older than the 2 s limit is not where the car is`() {
+        startDrive()
+        fix(30.0, 40.0, ageMs = 2_100)
+        assertNull(com.openrs.dash.ui.trip.tripDot(rec.driveState.value, loc(1.0), System.currentTimeMillis()))
+    }
+
+    @Test fun `in a GPS gap the ALT - HDG - accuracy readout shows a dash and no accuracy dot`() {
+        startDrive()
+        fix(30.0, 40.0, ageMs = 2_100)
+        val r = com.openrs.dash.ui.trip.fixReadout(rec.driveState.value, 60.0, false, System.currentTimeMillis())
+        assertEquals(com.openrs.dash.ui.trip.FixReadout("ALT —", "HDG —", "±—", null), r)
+    }
+
+    @Test fun `the dot and the readout return with the next fresh fix`() {
+        startDrive()
+        fix(30.0, 40.0, ageMs = 2_100)
+        fix(31.0, 41.0)
+        val now = System.currentTimeMillis()
+        assertEquals(31.0, com.openrs.dash.ui.trip.tripDot(rec.driveState.value, null, 0L, now)!!.latitude, 0.0)
+        assertEquals("±0m", com.openrs.dash.ui.trip.fixReadout(rec.driveState.value, 60.0, false, now)!!.accuracy)
+    }
+
+    @Test fun `control - a fix 1,5 s old is still current`() {
+        startDrive()
+        fix(30.0, 40.0, ageMs = 1_500)
+        assertEquals(30.0, com.openrs.dash.ui.trip.tripDot(rec.driveState.value, null, 0L, System.currentTimeMillis())!!.latitude, 0.0)
+    }
+
     @Test fun `before any drive TRIP draws the idle fetch`() {
         assertEquals(1.0, com.openrs.dash.ui.trip.tripDot(rec.driveState.value, loc(1.0), System.currentTimeMillis())!!.latitude, 0.0)
     }
