@@ -151,7 +151,7 @@ data class VehicleState(
     // unknown: neither 0x260 byte 5 candidate (0x10, 0x08) is it on the one car checked; bit not identified (#304)
     val escOffButtonPressed: Boolean? = null,
     val engineStatus: Int = -1,            // 0x360 byte 0: 0=Idle, 2=Off, 183=Running, 186=Kill, 191=RecentStart
-    val ignitionStatus: Int = -1,          // 0x0C8 byte2 bits 3-6: 0=KeyOut..7=Running..9=Cranking
+    val ignitionStatus: Int = -1,          // 0x0C8 byte2 bits 3-6: power mode, 0=Key Out..7=Running, 9=Crank (names: ignitionStatusLabel, #327)
 
     // ── BCM OBD (Mode 22 via BCM 0x726) ────────────────────
     val odometerKm: Long = -1L,            // 0x360 bytes[3:5] 24-bit, or 0x22DD01 24-bit (once on connect)
