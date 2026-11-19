@@ -9,10 +9,10 @@ name: Release APK (shared recipe)
 # any secret's value, the caller builds the artifact and file names itself (the file name from its tag). It re-checks the
 # digest before it attests and attaches the file.
 # Every input reaches the shell through env, never inside a run line (android/scripts/test-release-workflows.rb).
-# The release secrets (keystore, key alias and passwords, Maps and weather keys) live only in the GitHub environment
-# "release", whose deployment refs are main and android-v* tags (owner Q182). The job below declares it; callers pass no
-# secrets, so this job sees the environment's copies and nothing else. GitHub checks the caller's run ref against the
-# environment's rules: a nightly on main and an android-v tag push pass; a run on any other ref stops at this job.
+# The six release secrets live in the GitHub environment "release" (deployment refs: main, android-v* tags; owner Q182).
+# The job below declares it, and each caller passes the six by name (never inherit): a called workflow sees a secret only
+# when it is passed, and the environment's copy then wins over a repository one. GitHub checks the caller's run ref: a
+# nightly on main and an android-v tag pass; a run on any other ref stops at this job.
 
 on:
   workflow_call:
@@ -34,6 +34,19 @@ on:
         required: false
         type: string
         default: ''
+    secrets:
+      KEYSTORE_BASE64:
+        required: false
+      KEYSTORE_PASSWORD:
+        required: false
+      KEY_ALIAS:
+        required: false
+      KEY_PASSWORD:
+        required: false
+      MAPS_API_KEY:
+        required: false
+      OPENWEATHER_API_KEY:
+        required: false
     outputs:
       sha256:
         description: The APK's SHA-256
@@ -86,8 +99,7 @@ jobs:
           printf 'storeFile=openrs-release.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
             "$KEYSTORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" > keystore.properties
 
-      # API keys come from the release environment's secrets as environment variables (#235, Q182) — no file, never echoed. Maps is required
-      # for a published release (the job stops here without it); weather is optional.
+      # API keys from the release environment (#235, Q182): no file, never echoed. Maps required; weather optional.
       - name: Check release configuration (API keys)
         env:
           MAPS_API_KEY: ${{ secrets.MAPS_API_KEY }}

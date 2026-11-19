@@ -140,7 +140,14 @@ jobs:
       name: ${{ needs.gate.outputs.name }}
       tag: ${{ needs.gate.outputs.tag }}
       nightly_date: ${{ needs.gate.outputs.date }}
-    # No secrets passed: the recipe's job reads the release environment, open to main only among branches (Q182)
+    # The six release secrets by name, never inherit; the recipe's job reads them from the release environment (Q182)
+    secrets:
+      KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+      KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+      KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+      KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+      MAPS_API_KEY: ${{ secrets.MAPS_API_KEY }}
+      OPENWEATHER_API_KEY: ${{ secrets.OPENWEATHER_API_KEY }}
 
   launch:
     name: Launch check (API 36 emulator)

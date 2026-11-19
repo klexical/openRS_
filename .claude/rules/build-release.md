@@ -111,12 +111,17 @@ paths:
   key, so it rejects keyless local builds and the published rc.6 asset (blank TRIP map). Scripts print lengths only — never a
   key value. `OPENWEATHER_API_KEY` empty means published builds have no weather — expected, not a bug
 - **Release secrets live in the `release` environment (Q182)** — `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`,
-  `KEY_PASSWORD`, `MAPS_API_KEY` and `OPENWEATHER_API_KEY` are environment secrets whose deployment refs are main and
-  `android-v*` tags only, so a push to any other branch cannot read them. `release-apk.yml`'s one job declares
-  `environment: release`; ci.yml and nightly.yml call it with no `secrets:` (no `inherit`), so the recipe sees only the
-  environment's copies. GitHub checks the caller's run ref: a nightly on main and an `android-v` tag push pass, while a
-  nightly "Run workflow" on another ref now fails at the release job rather than dry-running. Don't add `secrets: inherit`
-  back or name these secrets in any other workflow (`test-release-workflows.rb`)
+  `KEY_PASSWORD`, `MAPS_API_KEY` and `OPENWEATHER_API_KEY` are environment secrets whose deployment refs are main (a
+  Branch rule) and `android-v*` (a Tag rule), so a push to any other branch cannot read them; a tag matching `android-v*`
+  passes on whatever commit it points at. `release-apk.yml`'s one job declares `environment: release` and its
+  `workflow_call` declares the six; ci.yml's `release-apk` and nightly.yml's `release` pass exactly those six by name. A
+  called workflow sees a secret only when the caller passes its name (an unpassed environment secret is empty, with no
+  error), and the environment's copy then wins; while a repository copy exists, a name missing from the environment
+  falls back to it, so a green run proves the environment only once the repository copies are gone. Never `inherit`: it
+  would also hand over the review token. GitHub checks the caller's run ref: the nightly runs under main's ref (it builds
+  staging's tip, but the ref is main's) and passes, as does an `android-v` tag push; a nightly "Run workflow" on another
+  ref fails at the release job rather than dry-running. Don't name these secrets in any other job
+  (`test-release-workflows.rb`)
 - **RC maintenance assets** — the rc.7 release carries `openrs-2.2.7-rc.7-build38.apk` beside the tag's own asset. Its
   name is not the release's exact `openRS_v<name>.apk`, the only asset the updater takes (#364, `VersionIdentityTest`), so
   the in-app updater never offers it, and What's New is once per release NAME. The one-shot publisher that added it was
