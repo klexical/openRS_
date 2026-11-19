@@ -676,6 +676,8 @@ object CanDecoder {
                 state.copy(
                     odometerKm = km24,
                     engineStatus = ubyte(data, 0),
+                    // byte 7 follows the engine (#328, one car's captures): 0x02 off, top bit set running
+                    engineState360 = if (n >= 8) ubyte(data, 7) else state.engineState360,
                     lastUpdate = now
                 )
             } else null
@@ -772,7 +774,7 @@ object CanDecoder {
         ID_CLUTCH       -> "clutchPct=${"%.1f".format(state.clutchPedalPct)}"
         ID_WHEEL_ROT    -> "rotFL=${state.wheelRotFL} FR=${state.wheelRotFR} RL=${state.wheelRotRL} RR=${state.wheelRotRR} avgFront=${"%.2f".format(state.avgFrontWheelSpeedKph)}kph"
         ID_FUEL_LEVEL   -> "fuelPct=${"%.1f".format(state.fuelLevelPct)} (0x380 Motorola)"
-        ID_ODOMETER     -> "odometerKm=${state.odometerKm} engStatus=${state.engineStatus} (0x360 passive)"
+        ID_ODOMETER     -> "odometerKm=${state.odometerKm} byte0=${state.engineStatus} engine=${state.engineState360} (0x360 passive)"
         ID_VIN_MUX      -> if (state.vin.isEmpty()) "vin=(assembling)" else "vin=<masked>"   // goes into exports (#260); DIAG reads the value
         ID_BUTTONS_260  -> "assBtn=${state.autoStartStopButtonPressed}"
         ID_DRIVE_MODE_BTN -> "modeBtn=${state.driveModeButtonPressed}"

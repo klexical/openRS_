@@ -443,7 +443,7 @@ object DemoSimulator {
             batteryVoltage = m.battV, fuelLevelPct = m.fuelPct, ambientTempC = 21.0,
             gaugeIllumination = 12, eBrake = m.eBrake, reverseStatus = false,
             launchControlActive = m.lcOn,
-            engineStatus = 183, ignitionStatus = 7,
+            engineStatus = 0xC0, engineState360 = 0xB2, ignitionStatus = 7,   // 0x360 as captured with the engine running (#328)
             odometerKm = if (obd) ODOMETER_KM else -1L,
             batterySoc = if (obd) m.battSoc else -1.0, batteryTempC = if (obd) 27.0 else -99.0,
             cabinTempC = if (obd) 22.0 else -99.0,

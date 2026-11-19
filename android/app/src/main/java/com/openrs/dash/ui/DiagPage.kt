@@ -1037,15 +1037,16 @@ import kotlin.math.roundToInt
     }
 }
 
-internal fun engineStatusLabel(v: Int): String = when (v) {
-    -1  -> "—"
-    0   -> "Idle"
-    2   -> "Off"
-    183 -> "Running"
-    186 -> "Kill"
-    191 -> "Start"
-    196 -> "Warmup"
-    else -> "0x%02X".format(v)
+/**
+ * DIAG's ENGINE readout (#328): 0x360 byte 7, which follows the engine on the captured car: 0x02 with the engine off, top
+ * bit set while it runs. Any other value is shown raw and marked unidentified. Byte 0, which the old labels read, is not an
+ * engine status (it reads 0xC0 off and running alike).
+ */
+internal fun engineStatusLabel(v: Int): String = when {
+    v < 0          -> "—"
+    v == 0x02      -> "Off"
+    (v and 0x80) != 0 -> "Running"
+    else           -> "0x%02X · unidentified".format(v)
 }
 
 /**
@@ -1056,7 +1057,7 @@ internal fun engineStatusLabel(v: Int): String = when (v) {
     ReadoutGrid(
         rows = listOf(
             listOf(
-                Readout("ENGINE", engineStatusLabel(vs.engineStatus)),
+                Readout("ENGINE", engineStatusLabel(vs.engineState360)),
                 Readout("E-BRAKE", if (vs.eBrake) "ON" else "OFF", color = if (vs.eBrake) Warn else Color.Unspecified),
             ),
             listOf(Readout("IGNITION", ignitionStatusLabel(vs.ignitionStatus))),
