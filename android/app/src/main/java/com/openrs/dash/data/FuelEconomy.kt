@@ -110,7 +110,9 @@ object FuelEconomy {
         }
 
         // ── Session average ──────────────────────────────────────────────
-        val sessionFuelUsedL = (sessionStartFuelPct - fuelPct) / 100.0 * TANK_CAPACITY_L
+        // Only from a fuel-used figure (#336, owner Q165): under four gauge steps there is none, and no average either
+        // (0.0, the existing "no average"); the stored drive average and DRIVE's AVERAGE read this
+        val sessionFuelUsedL = FuelUsed.litres(sessionStartFuelPct, fuelPct, TANK_CAPACITY_L) ?: 0.0
         var avgL100 = 0.0
         var avgMpg = 0.0
         if (sessionDistanceKm > 0.1 && sessionFuelUsedL > 0.01) {
@@ -129,7 +131,7 @@ object FuelEconomy {
             avgL100km = avgL100.coerceIn(0.0, 99.9),
             avgMpg = avgMpg.coerceIn(0.0, 999.0),
             distanceToEmptyKm = dte.coerceIn(0.0, 9999.0),
-            fuelUsedL = FuelUsed.litres(sessionStartFuelPct, fuelPct, TANK_CAPACITY_L) ?: 0.0,   // #336: no figure yet = 0
+            fuelUsedL = sessionFuelUsedL,   // #336: no figure yet = 0
             sessionDistanceKm = sessionDistanceKm,
             idleFuelLPerHr = idleLPerHr.coerceIn(0.0, 20.0),
             isValid = sessionDistanceKm > 0.1 || (now - samples.first().timeMs > 10_000)

@@ -75,7 +75,10 @@ class FuelUsedNoiseTest {
     }
 
     /** A drive whose fuel level reads [levels] at START and at each recorded point (one point per level after the first). */
-    private fun storedFuelUsed(vararg levels: Double): Double {
+    private fun storedFuelUsed(vararg levels: Double): Double = storedDrive(*levels).fuelUsedL
+
+    /** The same drive's stored row. */
+    private fun storedDrive(vararg levels: Double): DriveEntity {
         val rec = DriveRecorder(app, vs, WeatherRepository(""), db, dao, { _, _ -> null }, gps, { }).also { recorders += it }
         vs.value = VehicleState(isConnected = true, rpm = 850.0, fuelLevelPct = levels[0])
         rec.startDrive()
@@ -88,7 +91,14 @@ class FuelUsedNoiseTest {
         }
         val id = rec.driveState.value.driveId
         runBlocking { withTimeout(15_000) { rec.stopDrive().join() } }
-        return dao.getDrive(id)!!.fuelUsedL
+        return dao.getDrive(id)!!
+    }
+
+    /** DRIVE's session economy over about 1 km (36,000 km/h for 0.1 s, integrated from the speed) with the level falling [fromPct] → [toPct]. */
+    private fun sessionOverOneKm(fromPct: Double, toPct: Double) {
+        FuelEconomy.onUpdate(fromPct, 36_000.0)
+        Thread.sleep(100)
+        FuelEconomy.onUpdate(toPct, 36_000.0)
     }
 
     @Test fun `the issue's run - a start on the clamp, four steps down while idling - gives no figure`() {
@@ -107,6 +117,41 @@ class FuelUsedNoiseTest {
     @Test fun `a start on the clamp is measured from the first reading below it`() {
         // 100 (clamp) → 99.6 is the start; 99.6 → 97.6 = 2.0 % = 0.996 L. Before: 100 → 97.6 = 1.195 L
         assertEquals(0.996, storedFuelUsed(100.0, 99.6, 99.2, 98.8, 98.4, 98.0, 97.6), 1e-9)
+    }
+
+    @Test fun `exactly four steps from an unclamped start give a figure, three give none (Q161)`() {
+        assertEquals(0.7968, storedFuelUsed(80.0, 79.6, 79.2, 78.8, 78.4), 1e-9)       // 1.6 % of 49.8 L
+        assertEquals(0.0, storedFuelUsed(80.0, 79.6, 79.2, 78.8), 0.0)
+    }
+
+    @Test fun `a start before the level was received (0) is measured from the first reading`() {
+        // START at 0 (not received), then 79.6 → 78.0: four steps from the first reading
+        assertEquals(0.7968, storedFuelUsed(0.0, 79.6, 79.2, 78.8, 78.4, 78.0), 1e-9)
+    }
+
+    @Test fun `TRIP's compare sheet shows a dash and no difference for a drive with no figure`() {
+        val none = com.openrs.dash.ui.trip.fuelUsedCompare(0.0, 1.25)
+        assertEquals(listOf("—", "1.25 L", ""), listOf(none.valueA, none.valueB, none.delta))
+        assertEquals(false, none.comparable)
+        val both = com.openrs.dash.ui.trip.fuelUsedCompare(1.00, 1.25)
+        assertEquals(listOf("1.00 L", "1.25 L", "+0.25 L"), listOf(both.valueA, both.valueB, both.delta))
+    }
+
+    @Test fun `no average economy without a fuel-used figure - 1 km on a two-step drop (owner Q165)`() {
+        // Before: 0.8 % of 49.8 L over about 1 km read about 39.8 L/100 km
+        sessionOverOneKm(80.0, 79.2)
+        assertEquals("DRIVE's AVERAGE", 0.0 to 0.0, FuelEconomy.state.value.avgL100km to FuelEconomy.state.value.avgMpg)
+    }
+
+    @Test fun `the drive stores no average economy without a fuel-used figure`() {
+        sessionOverOneKm(80.0, 79.2)                                         // what STOP reads, as at the car
+        val d = storedDrive(80.0, 79.6, 79.2)
+        assertEquals(0.0 to 0.0, d.avgFuelL100km to d.avgFuelMpg)
+    }
+
+    @Test fun `control - with a fuel-used figure the average is as before`() {
+        sessionOverOneKm(80.0, 78.0)                                         // five steps: 0.996 L over about 1 km
+        assertEquals(true, FuelEconomy.state.value.avgL100km > 10.0)
     }
 
     @Test fun `DRIVE's session figure takes the same rule`() {
