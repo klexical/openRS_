@@ -61,10 +61,10 @@ class FuelEconomyTest {
     @Test fun `session start fuel is tracked`() {
         FuelEconomy.onUpdate(80.0, 60.0)
         Thread.sleep(5) // small delta for distance integration
-        FuelEconomy.onUpdate(79.5, 60.0)
-        // fuelUsedL should be (80 - 79.5) / 100 * 49.8 = 0.249
+        FuelEconomy.onUpdate(78.0, 60.0)
+        // fuelUsedL should be (80 - 78) / 100 * 49.8 = 0.996 (a drop of five gauge steps; under four there is none, #336)
         val s = FuelEconomy.state.value
-        assertEquals(0.249, s.fuelUsedL, 0.01)
+        assertEquals(0.996, s.fuelUsedL, 0.01)
     }
 
     @Test fun `economy values are clamped`() {

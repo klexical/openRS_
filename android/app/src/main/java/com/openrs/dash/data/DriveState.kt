@@ -21,6 +21,9 @@ data class DriveState(
     val recentPoints: List<DrivePointEntity> = emptyList(),
     val totalPointCount: Int = 0,
     val startFuelPct: Double = 0.0,
+    /** The level fuel used is measured from (#336, [FuelUsed.rebase]): -1 = [startFuelPct]; moved by the recording loop
+     *  to the first reading below the 100 % clamp when the start sat on it (or was not received). */
+    val fuelBasePct: Double = -1.0,
     val startTime: Long = 0L,
     val currentWeather: WeatherData? = null,
     val currentLocation: Location? = null,
@@ -60,8 +63,13 @@ data class DriveState(
     val latestFuelPct: Double
         get() = recentPoints.lastOrNull()?.fuelLevelPct ?: startFuelPct
 
+    /** The level fuel used is measured from (#336). */
+    val fuelBaseOrStartPct: Double
+        get() = if (fuelBasePct >= 0.0) fuelBasePct else startFuelPct
+
+    /** Fuel used by the drive (#336, [FuelUsed]): 0.0 until the level has dropped by enough gauge steps to be fuel. */
     val fuelUsedL: Double
-        get() = ((startFuelPct - latestFuelPct) / 100.0 * TANK_L).coerceAtLeast(0.0)
+        get() = FuelUsed.litres(fuelBaseOrStartPct, latestFuelPct, TANK_L) ?: 0.0
 
     val avgFuelL100km: Double
         get() = if (cumulativeDistanceKm < 0.1) 0.0

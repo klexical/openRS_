@@ -83,12 +83,13 @@ class DriveStateTest {
         assertEquals(0.0, s.fuelUsedL, 0.01)
     }
 
-    @Test fun `fuelUsedL full tank to empty`() {
+    @Test fun `fuelUsedL nearly full to nearly empty`() {
+        // #336: 100 % is the gauge's clamp and 0 is "not received", so neither is a level fuel is measured from or to
         val s = DriveState(
-            startFuelPct = 100.0,
-            recentPoints = listOf(point(fuelLevelPct = 0.0))
+            startFuelPct = 99.6,
+            recentPoints = listOf(point(fuelLevelPct = 0.4))
         )
-        assertEquals(49.8, s.fuelUsedL, 0.01)
+        assertEquals(49.4, s.fuelUsedL, 0.01)              // 99.2 % of 49.8 L
     }
 
     // ═════════════════════════════════════════════════════════════════════════
@@ -358,14 +359,12 @@ class DriveStateTest {
     }
 
     @Test fun `fuel economy with very short drive`() {
-        // 0.5 km driven, 0.2% fuel used
+        // 0.5 km driven, a drop of 0.2 % — under four gauge steps (#336): no fuel figure, so no economy either
         val s = DriveState(
             startFuelPct = 50.0,
             recentPoints = listOf(point(fuelLevelPct = 49.8)),
             cumulativeDistanceKm = 0.5
         )
-        // fuelUsed = 0.2/100*49.8 = 0.0996 L
-        // L/100km = 0.0996/0.5*100 = 19.92
-        assertEquals(19.92, s.avgFuelL100km, 0.1)
+        assertEquals(0.0, s.avgFuelL100km, 0.0)
     }
 }

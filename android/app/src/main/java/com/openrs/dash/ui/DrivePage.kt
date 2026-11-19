@@ -359,7 +359,7 @@ import kotlin.math.roundToInt
             else Triple("AVERAGE", num(econState.avgL100km, "%.1f", valid && econState.avgL100km > 0), "L/100 km"),
             if (mph) Triple("TO EMPTY", num(econState.distanceToEmptyKm * UnitConversions.KM_TO_MI, "%.0f", valid && econState.distanceToEmptyKm > 0), "mi")
             else Triple("TO EMPTY", num(econState.distanceToEmptyKm, "%.0f", valid && econState.distanceToEmptyKm > 0), "km"),
-            Triple("FUEL USED", num(econState.fuelUsedL, "%.1f", valid), "L"),
+            Triple("FUEL USED", num(econState.fuelUsedL, "%.1f", valid && econState.fuelUsedL > 0), "L"),   // #336: "—" until a figure
         ),
     )
 }

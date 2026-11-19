@@ -223,7 +223,8 @@ internal object DriveExportBuilder {
         appendLine("  Avg Speed   : ${"%.1f".format(drive.avgSpeedKph)} km/h")
         appendLine("  Max Speed   : ${"%.1f".format(drive.maxSpeedKph)} km/h")
         appendLine()
-        appendLine("  Fuel Used   : ${"%.2f".format(drive.fuelUsedL)} L")
+        // #336: 0.0 stored = no figure (the level never dropped by enough gauge steps to be fuel), never "0.00 L"
+        appendLine("  Fuel Used   : " + if (drive.fuelUsedL > 0) "${"%.2f".format(drive.fuelUsedL)} L" else "—")
         appendLine("  Peak RPM    : ${drive.peakRpm}")
         // #207: only a drive recorded under a rule says which source — an older drive's peak is as recorded, source
         // unknown; a drive with no reading says so (never "0.0")
