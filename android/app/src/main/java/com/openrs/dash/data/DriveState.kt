@@ -100,6 +100,14 @@ data class DriveState(
     companion object {
         const val TANK_L = 49.8
 
+        /**
+         * The driven distance of one step between two consecutive stored fixes: counted only while the car's own speed
+         * (CAN 0x130) at the later fix is above zero (#335). Parked, GPS noise wanders a few metres between fixes and
+         * was counted as distance; no step threshold is tuned, the car's speed decides.
+         */
+        fun drivenStepKm(lat1: Double, lon1: Double, lat2: Double, lon2: Double, speedKph: Double): Double =
+            if (speedKph > 0.0) haversineKm(lat1, lon1, lat2, lon2) else 0.0
+
         fun haversineKm(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
             val r = 6371.0
             val dLat = Math.toRadians(lat2 - lat1)
