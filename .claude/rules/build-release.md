@@ -164,3 +164,84 @@ paths:
   workflow is listed under that workflow's key at the ref it names, and that every pin a composite action itself uses
   has its own entry. A job that ran locked logs "Using locked action versions from the workflow's lockfile"; reading
   that line is how a run shows the lockfile was used, and its absence in a job that runs an action means it was not
+
+## Releases: RCs, nightlies, stable and the release checklist
+
+**RC publication:** merge the feature PR into staging → wait for CI on the staging merge commit →
+`gh release create android-v<ver>-rc.N --target <full staging SHA> --prerelease --title "openRS_ v<ver>-rc.N"
+--notes-file <notes>` (creates the lightweight tag; the tag push runs `publish-release`, which attaches the signed APK
+to that release) → download the asset and check name, `apksigner verify --print-certs` (cert `c99b6f26…`), versionCode /
+RC label, SHA-256, `gh attestation verify`. Never force-move a tag or delete an older RC release.
+
+No further RC is cut after rc.8: builds after it are nightlies, published by the nightly pipeline (#363).
+
+**Nightlies (#363).** `.github/workflows/nightly.yml` is scheduled for 08:17 UTC and can be run by hand ("Run
+workflow"), but GitHub runs it only from the copy on main: it builds staging's tip through the shared
+recipe `release-apk.yml`. Its gate
+builds only when files under `android/` changed since the newest published nightly (rc.8 for the first) and today's UTC
+date has no nightly. Its `PUBLISH` constant is true, the same on main and staging (owner Q127), so a run on main that
+builds publishes; a run on another ref is a dry run and stops after the attestation, as is every run while `PUBLISH` is
+false. Only two jobs can write contents, the publish (`scripts/nightly-publish.sh`: draft, one asset checked, then a pre-release, never
+Latest) and the deletion of a failed publish's draft (`scripts/nightly-cleanup.sh`), and they run only when `PUBLISH` is
+true and the run is on main. They run the scripts of the gate's commit, staging's tip (main has no copy), so while
+`PUBLISH` is true a staging change to `nightly-publish.sh`, `nightly-cleanup.sh` or `nightly-gate.sh` changes how main
+publishes: such a change is owner-only. GitHub disables a schedule in a public repository after
+60 days without activity: a run that stops arriving may need re-enabling on the Actions page.
+
+**A bad nightly.** On the owner's word (a deletion, owner-only) the integrator turns that release back into a draft and
+then deletes its APK file from it; the draft, its tag and its notes stay as the record (Q122). A draft alone is not
+enough: in the Q116 trial (run 44005524480) the old public download URL still answered HTTP 200 without a login after
+the draft-back. The commands: `gh release edit <tag> -R klexical/openRS_ --draft=true`, then
+`gh release delete-asset <tag> openRS_v<name>.apk -R klexical/openRS_ --yes`; then read back
+`gh release view <tag> -R klexical/openRS_ --json isDraft,assets --jq '{isDraft, assets: [.assets[].name]}'`, which must
+print `{"assets":[],"isDraft":true}`, and record what the old download URL answers without a login. The fix goes into
+staging the normal way and the next night's build replaces it. This works only while the repository's
+immutable-releases setting is off.
+
+**Stable and the base after it.** Stable is cut by hand: staging merged into main, tag on main, with `releaseStage` empty
+and a versionCode in slot 9 of its date. The same change sets the next base on staging, so the first nightly after stable
+sorts above it.
+
+**Release checklist (staging → main):**
+0. Read the Sapphire staging ↔ main merge runbook first (`.claude/rules/sapphire.md`, "Release merge checklist": which side to
+   take, the `ci.yml` hand-merge, the checks to run after the merge).
+1. Scan open GitHub issues for any fixed by commits in the release (`gh issue list --state open` vs commit history)
+2. Close standalone issues that shipped — comment with commit SHA
+3. Update umbrella issue checklists — check off shipped sub-items with version annotation
+4. Close umbrella issues only when ALL sub-items are checked off
+5. Add/update the highlights entry in `WhatsNewDialog.kt` for the new base version — since #214 there is no fallback: a base
+   version without highlights shows nothing (`shouldShowWhatsNew`). It auto-opens once per release name
+   (`BuildInfo.releaseName`, e.g. rc.6 → rc.7 shows it), with content per base version — extend the entry per RC
+   (Settings also opens it)
+6. Keep Latest on the newest Android stable (`gh release edit android-vX.Y.Z --latest`; firmware never Latest): the Stable
+   updater trusts `/releases/latest` only for an Android stable (#364)
+
+## Changelog Format (`android/CHANGELOG.md`)
+
+Every release follows the same structure.
+
+**Entry template:**
+```
+- **Short title** — Description of what changed and why. ([#N](https://github.com/klexical/openRS_/issues/N))
+```
+
+**Rules:**
+1. **Sections** — use only these four, in this order: `Added`, `Fixed`, `Changed`, `Removed`. No synonyms (not "Improved", "Refactored", "Stability", "Performance").
+2. **Sub-sections** — entries after rc.8 go under the version's heading in sections labelled `(nightlies)`, above the rc.8 sections: `### Added (nightlies)`, `### Fixed (nightlies)`. Up to rc.8 a version with several RCs appended `(rc.N)` to the section header (`### Fixed (rc.3)`, with a short label for context: `### Added (rc.4 — visual polish)`); those sections stay as written.
+3. **Issue links are mandatory** — every entry that originated from or addresses a GitHub issue MUST end with the issue link: `([#N](url))`. If it addresses a sub-item in an umbrella issue, use: `(addresses [#N](url))`. Bugs found and fixed in the same RC or nightly also get a tracking issue and link.
+4. **One format for links** — always `[#N](https://github.com/klexical/openRS_/issues/N)`. Never bare `(#N)`, never `Fixes #N` or `Addresses sub-item in #N` inline.
+5. **Entry length** — 1-3 sentences. Lead with what changed, then why. Include the file/class name when it helps locate the change. Do not write paragraphs — the commit message has the full detail.
+6. **Never shorten or rewrite a shipped entry** — an entry that has shipped in a published build (a release candidate or a nightly) is not edited, condensed or rephrased. Add new entries; do not change the ones already published.
+7. **Every fix shipped in a commit gets a changelog entry** — if a commit touches code that fixes something, it goes in the changelog, even if the commit's primary purpose was a feature.
+
+## GitHub Release Notes
+
+Release notes are a **condensed highlight reel**, not a copy of the changelog.
+
+**Format:**
+- "What's new in rc.N" — bullet list of user-facing highlights (1 line each, no implementation details)
+- "Previous RCs" — one-liner per prior RC summarizing its theme, with issue links
+- "Testing notes" — quick checklist of what to verify
+- Link back to `android/CHANGELOG.md` for full detail
+
+**Rule:** `CHANGELOG.md` is the authoritative record. Release notes summarize it. Never put detail in release notes that isn't in the changelog.

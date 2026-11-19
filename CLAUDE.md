@@ -129,49 +129,11 @@ holds this repository in a subfolder. Rules for editing them:
 | `ble.md` | BLE GATT transport and picker | `Ble*.kt`, `BleDevicePickerDialog.kt`, `SlcanConnection.kt`, `*Ledger*`, `WriteOutcome.kt`, their tests |
 | `recorder-trip.md` | Drive recorder, laps and the TRIP tab | `DriveRecorder.kt`, `data/Drive*.kt`, lap files, `ui/trip/` (incl. `TripPage.kt`), `TripPreview.kt`, `MainActivity.kt`, `DriveExportBuilder.kt`, their tests |
 | `diagnostics.md` | DTC scans, DID prober, diagnostic export | `diagnostics/`, `DiagPage.kt`, `SlcanConnection.kt`, `*Ledger*`, `CanDataService.kt`, `DidProberSection.kt`, `PidBrowserSection.kt`, `data/Dtc*.kt`, their tests |
-| `ui-compose.md` | Compose UI (layout, theme, navigation) | any file under `ui/` or `res/`, `HudOverlayService.kt` |
+| `ui-compose.md` | Compose UI (layout, theme, navigation); theme colours, AppSettings defaults | any file under `ui/` or `res/`, `HudOverlayService.kt` |
 | `thermal.md` | Thermal readiness, temperature freshness, drive thermal record | any `*Thermal*` file, `TempsPage.kt` (home of `TempAvail`), `ChassisPage.kt`, `DrivePage.kt`, `DriveRecorder.kt`, their tests |
 | `demo-mode.md` | Demo mode (debug builds) | any file under `com/openrs/dash/` (its rules bind every writer of live telemetry) |
-| `build-release.md` | Build, release identity, CI, private builds, test runtime | Gradle files, `android/scripts/`, `android/CHANGELOG.md`, `robolectric.properties`, `update/`, `BuildInfo*`, `*Version*`, `.github/workflows/` |
-
-## Theme Colors
-
-v2.2.7 "Daylight" ships three discrete palettes selected via `setThemeMode(ThemeMode)`.
-NIGHT is the default; DAY is legibility-tuned for bright ambient light; ULTRA is pure-black AMOLED.
-AUTO resolves to DAY from 06:00 to 18:59 local (`HOUR_OF_DAY in 6..18`), NIGHT otherwise — it does not follow the
-system dark/light setting. `Frost` is `Ink` — adaptive primary text.
-Accents and semantic colors (Ok/Warn/Orange) shift per mode to preserve contrast.
-
-```
-NIGHT:  Bg #05070A  Surf #0A0D12  Surf2 #0F141C  Surf3 #141B26  Brd #162030  Dim #7A9AB8  Mid #B0D0E8  Ink #E8F4FF
-DAY:    Bg #EFF3F8  Surf #FFFFFF  Surf2 #E4EAF2  Surf3 #D4DCE8  Brd #B8C4D4  Dim #556374  Mid #293748  Ink #080D16
-ULTRA:  Bg #000000  Surf #050505  Surf2 #080808  Surf3 #0C0C0C  Brd #1A2230  (Dim/Mid/Ink share NIGHT values)
-Accent  NIGHT #0091EA / DAY #0064B0    Orange  NIGHT #FF4D00 / DAY #D93900
-Ok      NIGHT #00FF88 / DAY #00A85A    Warn    NIGHT #FFCC00 / DAY #E09500
-```
-
-Adaptive alpha helpers (`borderAlpha()`, `textMutedAlpha()`, `pillBgAlpha()`) scale dim-on-dark tunings
-up on DAY so borders, muted labels, and status-pill fills stay above WCAG contrast on the white surface.
-
-RS paint themes (`themeId`): `cyan`=Nitrous Blue, `red`=Race Red, `orange`=Deep Orange,
-`grey`=Stealth Grey, `black`=Shadow Black, `white`=Frozen White
-
-## AppSettings Defaults
-
-```
-Speed: MPH  |  Temp: °F  |  Boost: PSI  |  Tire: PSI  |  TireLowPsi: 30
-MeatPi USB (C3): 192.168.80.1:80 (WebSocket)    MeatPi Pro (S3): 192.168.0.10:35000 (TCP)
-ScreenOn: true  |  AutoReconnect: true  |  MaxDiagZips: 5
-AdapterType: "MEATPI_USB"  (alt: "MEATPI_PRO")
-ConnectionMethod: "WIFI"  (alt: "BLUETOOTH")
-EdgeShiftLight: false  |  EdgeShiftColor: "accent"  |  EdgeShiftIntensity: "high"  |  EdgeShiftRpm: 6800
-AutoRecordDrives: false  |  MaxSavedDrives: 50
-UpdateChannel: "stable"  (alt: "beta")
-ThemeMode: NIGHT  (alt: DAY / AUTO / ULTRA)
-Prefs file: "openrs_settings"
-```
-
-**Adapter vs connection method:** `adapterType` identifies the hardware (determines protocol: WebSocket for USB, TCP for Pro). `connectionMethod` selects the transport (WiFi or BLE GATT). Both adapters support both WiFi and Bluetooth.
+| `build-release.md` | Build, release identity, CI, private builds, test runtime; RCs, nightlies, stable, the release checklist, changelog format, release notes | Gradle files, `android/scripts/`, `android/CHANGELOG.md`, `robolectric.properties`, `update/`, `BuildInfo*`, `*Version*`, `.github/workflows/` |
+| `sapphire.md` | Sapphire, the web dashboard | any file under `web/` |
 
 ## Assets
 
@@ -265,40 +227,8 @@ staging and main: a change lands on both in one round (two PRs), or on staging a
 Commits carry the committer's GitHub noreply e-mail (`<id>+<login>@users.noreply.github.com`). The owner's account blocks
 pushes that would publish a private address (GH007), and fixing that afterwards means rewriting commits.
 
-**RC publication:** merge the feature PR into staging → wait for CI on the staging merge commit →
-`gh release create android-v<ver>-rc.N --target <full staging SHA> --prerelease --title "openRS_ v<ver>-rc.N"
---notes-file <notes>` (creates the lightweight tag; the tag push runs `publish-release`, which attaches the signed APK
-to that release) → download the asset and check name, `apksigner verify --print-certs` (cert `c99b6f26…`), versionCode /
-RC label, SHA-256, `gh attestation verify`. Never force-move a tag or delete an older RC release.
-
-No further RC is cut after rc.8: builds after it are nightlies, published by the nightly pipeline (#363).
-
-**Nightlies (#363).** `.github/workflows/nightly.yml` is scheduled for 08:17 UTC and can be run by hand ("Run
-workflow"), but GitHub runs it only from the copy on main: it builds staging's tip through the shared
-recipe `release-apk.yml`. Its gate
-builds only when files under `android/` changed since the newest published nightly (rc.8 for the first) and today's UTC
-date has no nightly. Its `PUBLISH` constant is true, the same on main and staging (owner Q127), so a run on main that
-builds publishes; a run on another ref is a dry run and stops after the attestation, as is every run while `PUBLISH` is
-false. Only two jobs can write contents, the publish (`scripts/nightly-publish.sh`: draft, one asset checked, then a pre-release, never
-Latest) and the deletion of a failed publish's draft (`scripts/nightly-cleanup.sh`), and they run only when `PUBLISH` is
-true and the run is on main. They run the scripts of the gate's commit, staging's tip (main has no copy), so while
-`PUBLISH` is true a staging change to `nightly-publish.sh`, `nightly-cleanup.sh` or `nightly-gate.sh` changes how main
-publishes: such a change is owner-only. GitHub disables a schedule in a public repository after
-60 days without activity: a run that stops arriving may need re-enabling on the Actions page.
-
-**A bad nightly.** On the owner's word (a deletion, owner-only) the integrator turns that release back into a draft and
-then deletes its APK file from it; the draft, its tag and its notes stay as the record (Q122). A draft alone is not
-enough: in the Q116 trial (run 44005524480) the old public download URL still answered HTTP 200 without a login after
-the draft-back. The commands: `gh release edit <tag> -R klexical/openRS_ --draft=true`, then
-`gh release delete-asset <tag> openRS_v<name>.apk -R klexical/openRS_ --yes`; then read back
-`gh release view <tag> -R klexical/openRS_ --json isDraft,assets --jq '{isDraft, assets: [.assets[].name]}'`, which must
-print `{"assets":[],"isDraft":true}`, and record what the old download URL answers without a login. The fix goes into
-staging the normal way and the next night's build replaces it. This works only while the repository's
-immutable-releases setting is off.
-
-**Stable and the base after it.** Stable is cut by hand: staging merged into main, tag on main, with `releaseStage` empty
-and a versionCode in slot 9 of its date. The same change sets the next base on staging, so the first nightly after stable
-sorts above it.
+The RC, nightly and stable procedures, the release checklist, the changelog format and the release-note rules are in
+`.claude/rules/build-release.md`.
 
 **Release records.** Release facts live in `android/CHANGELOG.md` and on the GitHub Releases page; open work lives in the
 issue tracker. This file takes no dated status or work-log entries.
@@ -310,112 +240,6 @@ under `android/` that describes a code change travels with that code, through st
 repository's root `README.md`, `assets/` and `docs/`; `android/README.md` and `android/CONTRIBUTING.md` follow the clause
 before it when they describe the code change.
 
-**Release checklist (staging → main):**
-0. Read the Sapphire staging ↔ main merge runbook first (see the Sapphire section: which side to take, the `ci.yml` hand-merge,
-   the checks to run after the merge).
-1. Scan open GitHub issues for any fixed by commits in the release (`gh issue list --state open` vs commit history)
-2. Close standalone issues that shipped — comment with commit SHA
-3. Update umbrella issue checklists — check off shipped sub-items with version annotation
-4. Close umbrella issues only when ALL sub-items are checked off
-5. Add/update the highlights entry in `WhatsNewDialog.kt` for the new base version — since #214 there is no fallback: a base
-   version without highlights shows nothing (`shouldShowWhatsNew`). It auto-opens once per release name
-   (`BuildInfo.releaseName`, e.g. rc.6 → rc.7 shows it), with content per base version — extend the entry per RC
-   (Settings also opens it)
-6. Keep Latest on the newest Android stable (`gh release edit android-vX.Y.Z --latest`; firmware never Latest): the Stable
-   updater trusts `/releases/latest` only for an Android stable (#364)
+## Sapphire (`web/`)
 
-## Changelog Format (`android/CHANGELOG.md`)
-
-Every release follows the same structure.
-
-**Entry template:**
-```
-- **Short title** — Description of what changed and why. ([#N](https://github.com/klexical/openRS_/issues/N))
-```
-
-**Rules:**
-1. **Sections** — use only these four, in this order: `Added`, `Fixed`, `Changed`, `Removed`. No synonyms (not "Improved", "Refactored", "Stability", "Performance").
-2. **Sub-sections** — entries after rc.8 go under the version's heading in sections labelled `(nightlies)`, above the rc.8 sections: `### Added (nightlies)`, `### Fixed (nightlies)`. Up to rc.8 a version with several RCs appended `(rc.N)` to the section header (`### Fixed (rc.3)`, with a short label for context: `### Added (rc.4 — visual polish)`); those sections stay as written.
-3. **Issue links are mandatory** — every entry that originated from or addresses a GitHub issue MUST end with the issue link: `([#N](url))`. If it addresses a sub-item in an umbrella issue, use: `(addresses [#N](url))`. Bugs found and fixed in the same RC or nightly also get a tracking issue and link.
-4. **One format for links** — always `[#N](https://github.com/klexical/openRS_/issues/N)`. Never bare `(#N)`, never `Fixes #N` or `Addresses sub-item in #N` inline.
-5. **Entry length** — 1-3 sentences. Lead with what changed, then why. Include the file/class name when it helps locate the change. Do not write paragraphs — the commit message has the full detail.
-6. **Never shorten or rewrite a shipped entry** — an entry that has shipped in a published build (a release candidate or a nightly) is not edited, condensed or rephrased. Add new entries; do not change the ones already published.
-7. **Every fix shipped in a commit gets a changelog entry** — if a commit touches code that fixes something, it goes in the changelog, even if the commit's primary purpose was a feature.
-
-## GitHub Release Notes
-
-Release notes are a **condensed highlight reel**, not a copy of the changelog.
-
-**Format:**
-- "What's new in rc.N" — bullet list of user-facing highlights (1 line each, no implementation details)
-- "Previous RCs" — one-liner per prior RC summarizing its theme, with issue links
-- "Testing notes" — quick checklist of what to verify
-- Link back to `android/CHANGELOG.md` for full detail
-
-**Rule:** `CHANGELOG.md` is the authoritative record. Release notes summarize it. Never put detail in release notes that isn't in the changelog.
-
-## Sapphire — Web Analytics Dashboard (`web/`)
-
-Post-session analysis dashboard.
-Named after the Ford Sierra Sapphire RS Cosworth + Nitrous Blue gemstone connection.
-
-**Tech stack:** Vite + React 19 + TypeScript + Tailwind CSS + Recharts + Zustand.
-Pure client-side (no server). Deployed as static files to GitHub Pages.
-
-**Data contract:** Android app exports ZIP → user imports into Sapphire via drag-and-drop.
-ZIP contains: `drive_*.csv` and `drive_summary_*.txt` (legacy `trip_*` names still import), `diagnostic_detail_*.json`, `diagnostic_summary_*.txt`, `did_probe_*.csv`.
-Sapphire parses these and stores sessions in browser IndexedDB.
-
-**Design:** Dark "Void" aesthetic matching the openRS_ in-app palette. Nav rail + panel layout.
-
-```
-web/
-  src/
-    components/
-      layout/          — Shell, NavRail, Header
-      panels/          — DashboardPanel, TripPanel, DiagnosticsPanel, ComparePanel,
-                         SessionsPanel, ImportPanel, SettingsPanel
-      charts/          — TimeSeriesChart, GpsMap, ComparisonChart, GaugeChart, Sparkline,
-                         ModeTimeline (Recharts + Leaflet)
-      ui/              — MetricCard, SectionLabel, SearchBar, ExportDropdown, DeltaCard,
-                         TpmsSummaryCard, EmptyState
-    store/
-      index.ts         — Zustand store (sessions, panels, compare, nav); panel + session remembered (`sapphire_view`)
-      settings.ts      — Settings store (units, theme) — localStorage persisted
-    lib/
-      import.ts        — ZIP import pipeline (drive_*.csv + drive_summary_*)
-      db.ts            — IndexedDB (idb) CRUD
-      format.ts        — Formatters + useUnitFormatters() hook
-      units.ts         — Metric/imperial conversion (speed, distance, temp, boost, tire, fuel)
-      export.ts        — CSV/JSON session export + browser download
-      compare.ts       — Multi-session KPI deltas + time normalization
-      mapColors.ts     — GPS map color mode thresholds (fixed cyan, never the paint accent)
-      readings.ts      — Chart values: sentinel / NaN → null (gap), genuine zeros kept; per-corner latest TPMS
-      gforce.ts        — G-force scatter downsampling (keeps the lat-G peaks)
-    styles/            — Design tokens (openRS_ palette)
-    types/             — Session, trip, diagnostic, vehicle state types
-```
-
-Scripts are in `web/package.json` (`dev`, `build`, `preview`, `test`, `lint`); CI installs with `npm ci`.
-
-**Testing notes:**
-- Sapphire tests touching `localStorage` (store / App): Node 25's own `localStorage` global (non-functional without
-  `--localstorage-file`) shadows jsdom's — stub one per test (`vi.stubGlobal('localStorage', …)`, see `App.test.tsx`)
-- Sapphire browser smoke (prod build, chart gaps / paints / remembered view): Playwright, same setup as
-  `web/scripts/idb-check/check.mjs`; build with `--outDir` outside the repo; IndexedDB is per origin, so each run
-  (random port) starts empty
-- Sapphire import contract: `web/src/lib/import.androidExport.test.tsx` imports complete Android exports from
-  `__fixtures__/android-export-rc6/`; regenerate with `OPENRS_EXPORT_SAMPLES=<dir> ./gradlew test --tests '*DriveExportThermalTest'`
-
-**Release merge checklist (staging ↔ main):** a one-time runbook for the stable promotion (which side to take per file,
-the `ci.yml` hand-merge, the checks to run after the merge). Read it before merging staging into main:
-`git show 743230fb:CLAUDE.md`, section Sapphire.
-
-*Separate follow-ups (noted when the merge checklist was written; not release blockers):*
-- `DriveRecorder` stores points only from location updates, so a drive without GPS records no telemetry (the export
-  fix for drive CSVs without GPS covers seeded / legacy data and any later recorder change).
-- TRIP's map draws a marker at a no-GPS drive's stored coordinates — only reachable with seeded data (real no-GPS
-  drives have no points).
-- thermalRecord visualisation in Sapphire (the block imports and is ignored today).
-- Thermal Soak is a stacked chart: while one layer is missing, the layers above it sit lower (stack total). Inherent to
-  stacking (main's 0-floor shifts them the same way); a non-stacked view would be a design change.
+The Sapphire web dashboard's guidance (data contract, design, scripts, testing notes, the staging ↔ main merge runbook) is in `.claude/rules/sapphire.md`.
