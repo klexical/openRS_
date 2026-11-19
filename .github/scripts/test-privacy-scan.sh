@@ -107,7 +107,8 @@ run 0 "a merge whose resolution is clean passes"
 merge_case "one\nfeature and $ID2\nthree\n"
 run 1 "a line a merge's own resolution adds fails" "FINDING $(c12): added line f.txt:2"
 repo; g checkout -q -b side; put g.txt "$ID1\n"; commit "an identifier on a side branch"; g checkout -q main
-g checkout -q -b feature; commit "work"; g merge -q --no-ff -m "merge side" side
+g checkout -q -b feature; commit "work"
+GIT_AUTHOR_NAME=o GIT_AUTHOR_EMAIL=$OWNER GIT_COMMITTER_NAME=o GIT_COMMITTER_EMAIL=$OWNER g merge -q --no-ff -m "merge side" side
 run 1 "a merged branch's own new commit is scanned (the merge itself adds nothing)" "added line g.txt:1" "1 finding(s) in all"
 
 # ── fails closed ─────────────────────────────────────────────────────────────────────────────────────────────────────
