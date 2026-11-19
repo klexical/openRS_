@@ -393,7 +393,10 @@ private fun TripPageContent(
                 emptyList()
             }
 
-            val dot = tripDot(driveState, idleLocation, idleFetchedAtMs, com.openrs.dash.ui.wallClockMs())
+            // The 1 s tick (a fix ages out of the dot, #318) runs only while TRIP is seen and a drive records: off screen
+            // and idle the dot needs no clock (recorder-trip rule: TRIP's endless work gates on visible)
+            val fixClockMs = if (visible && driveState.isRecording) com.openrs.dash.ui.wallClockMs() else System.currentTimeMillis()
+            val dot = tripDot(driveState, idleLocation, idleFetchedAtMs, fixClockMs)
             val currentLat = dot?.latitude
             val currentLng = dot?.longitude
 
@@ -652,7 +655,7 @@ private fun TripPageContent(
 
                         // 1.4 — Altitude + heading (live only)
                         if (driveState.isRecording) {
-                            fixReadout(driveState, vehicleState.speedKph, prefs.speedUnit == "MPH", com.openrs.dash.ui.wallClockMs())?.let { r ->
+                            fixReadout(driveState, vehicleState.speedKph, prefs.speedUnit == "MPH", fixClockMs)?.let { r ->
                                 r.alt?.let { MonoText(it, 10.sp, Dim) }
                                 r.hdg?.let { MonoText(it, 10.sp, Dim) }
                                 Row(
