@@ -20,7 +20,7 @@
 # is itself a finding, as is an added line carrying gitleaks' inline allow marker. gitleaks reads a merge's diff
 # against its first parent (--diff-merges=first-parent), so a secret added in a merge's own resolution is found; a
 # merge of the base into the branch is read whole, which can re-flag a base commit (none should hold a secret).
-# No .gitattributes applies (GIT_ATTR_SOURCE is the empty tree, for git under gitleaks too): a -diff, binary or textconv
+# No .gitattributes applies (GIT_ATTR_SOURCE is the empty tree, for git under gitleaks too; git 2.40 or later is required): a -diff, binary or textconv
 # rule cannot hide a file's lines; a file is binary only by git's own content test, and its content is then scanned whole.
 # Paths are read NUL-separated, so a name that git would quote is scanned like any other.
 #
@@ -32,6 +32,11 @@ export LC_ALL=C.UTF-8
 export GIT_ATTR_SOURCE=4b825dc642cb6eb9a060e54bf8d69288fbee4904   # the empty tree: no .gitattributes applies
 die() { echo "privacy scan: $1" >&2; exit 2; }
 [ $# -ge 2 ] || die "usage: privacy-scan.sh <base sha> <head sha> [<also-exclude sha>...]"
+# git 2.40 or later: an older git ignores GIT_ATTR_SOURCE without a word, and a .gitattributes rule could hide lines again
+gv=$(git version | sed -n 's/^git version \([0-9][0-9]*\)\.\([0-9][0-9]*\).*/\1 \2/p')
+[ -n "$gv" ] || die "cannot read git's version: fails closed"
+set -- $gv "$@"; [ "$1" -gt 2 ] || { [ "$1" -eq 2 ] && [ "$2" -ge 40 ]; } || die "git $1.$2 is older than 2.40 (GIT_ATTR_SOURCE): fails closed"
+shift 2
 for s in "$@"; do
   [[ $s =~ ^[0-9a-f]{40}$ ]] || die "every argument a 40-hex SHA"
   git cat-file -e "$s^{commit}" 2>/dev/null || die "${s:0:12} is not a commit here (fetch the history first)"
