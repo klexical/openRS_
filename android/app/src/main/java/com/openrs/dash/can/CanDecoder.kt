@@ -743,10 +743,9 @@ object CanDecoder {
     // ── Diagnostic helpers ────────────────────────────────────────────────────
 
     /**
-     * Returns a short human-readable summary of the fields decoded from [id] in [state].
-     * Used by DiagnosticLogger to populate the decode trace and frame inventory.
+     * Returns a short human-readable summary of the fields decoded from [id] in [state], for DiagnosticLogger's decode trace
+     * and frame inventory. [data] is the frame, for raw bytes no field keeps (0x360 byte 0, #328).
      */
-    /** One decode-trace line for a decoded frame; [data] is the frame, for raw bytes no field keeps (0x360 byte 0, #328). */
     fun describeDecoded(id: Int, state: VehicleState, data: ByteArray = ByteArray(0)): String = when (id) {
         ID_ENGINE_RPM   -> "rpm=${state.rpm.toInt()}, baro=${"%.1f".format(state.barometricPressure)}kPa"
         ID_ENGINE_TEMPS -> "oilTempC=${"%.0f".format(state.oilTempC)}, boost=${"%.0f".format(state.boostKpa - 101.325)}kPa gauge, ptuTempC=${"%.0f".format(state.ptuTempC)}"

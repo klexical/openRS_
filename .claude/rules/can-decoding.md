@@ -41,6 +41,6 @@ paths:
   first 0x1C0 frame (CanDataService resets it at connection start). Never show "Launch" for ESC, never infer launch control
   from ESC, and never map an unknown state to a firmware escMode (`firmwareMode` is null for both).
 - **0x360 engine state is byte 7, not byte 0 (#328)** — #106 mapped byte 7's names (the DBC's `engine_status`, 56|8) onto
-  byte 0. DIAG's ENGINE reads `engineState360` (byte 7): Off (0x02), Running (top bit set), any other value raw and
+  byte 0. DIAG's ENGINE reads `engineState360` (byte 7; one car's captures): Off (0x02), Running (top bit set), any other value raw and
   "unidentified"; it is cleared at every new connection. Byte 0 is in no field: the decode trace prints it raw from the
   frame. Byte 7's other bits and byte 0's bit 2 are not identified (#328)
