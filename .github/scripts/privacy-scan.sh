@@ -17,8 +17,9 @@
 # committer names and addresses and its message, and the pull request's title, description and branch name.
 # gitleaks: the new commits' patches, with gitleaks' default rules only (its config is the scan's own). gitleaks still
 # reads a .gitleaksignore from the checkout, so a new commit that touches a .gitleaksignore or .gitleaks.toml anywhere
-# is itself a finding, as is an added line carrying gitleaks' inline allow marker. gitleaks reads no merge's diff; the
-# list scan above covers a merge's own resolution lines.
+# is itself a finding, as is an added line carrying gitleaks' inline allow marker. gitleaks reads a merge's diff
+# against its first parent (--diff-merges=first-parent), so a secret added in a merge's own resolution is found; a
+# merge of the base into the branch is read whole, which can re-flag a base commit (none should hold a secret).
 # No .gitattributes applies (GIT_ATTR_SOURCE is the empty tree, for git under gitleaks too): a -diff, binary or textconv
 # rule cannot hide a file's lines; a file is binary only by git's own content test, and its content is then scanned whole.
 # Paths are read NUL-separated, so a name that git would quote is scanned like any other.
@@ -133,7 +134,7 @@ if [ "$n" -gt 0 ]; then
   rc=0
   "$GITLEAKS" git --no-banner --redact --exit-code 0 --log-level error --config "$T/gitleaks.toml" \
     --gitleaks-ignore-path "$T/gitleaksignore" --report-format json --report-path "$T/gl.json" \
-    --log-opts "$head --not $base $*" . > "$T/gl.log" 2>&1 || rc=$?
+    --log-opts "--diff-merges=first-parent $head --not $base $*" . > "$T/gl.log" 2>&1 || rc=$?
   [ "$rc" -eq 0 ] || die "gitleaks failed (exit $rc; its output is not shown): fails closed"
   jq -e 'type == "array"' "$T/gl.json" > /dev/null 2>&1 || die "gitleaks wrote no readable report: fails closed"
   jq -r '.[] | [(.Commit // "" | .[0:12]), ("gitleaks rule " + (.RuleID // "?")), (.File // ""), ((.StartLine // "") | tostring)] | @tsv' \

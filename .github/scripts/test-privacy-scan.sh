@@ -173,10 +173,10 @@ ok=1
 for a in git --redact --exit-code --report-format json --gitleaks-ignore-path --no-banner; do
   printf '%s\n' "$args" | grep -q -x -F -e "$a" || ok=0
 done
-printf '%s\n' "$args" | grep -q -x -F -e "$(sha HEAD) --not $(sha main) $(sha staging) $(sha main)" || ok=0
+printf '%s\n' "$args" | grep -q -x -F -e "--diff-merges=first-parent $(sha HEAD) --not $(sha main) $(sha staging) $(sha main)" || ok=0
 case "$cfg" in "$T/r/"*|"") ok=0 ;; esac    # the config is the scan's own, never a file of the checkout
 [ "$(cat "$STUB_ARGS.attr")" = 4b825dc642cb6eb9a060e54bf8d69288fbee4904 ] || ok=0   # git under gitleaks reads no .gitattributes
-if [ "$ok" = 1 ]; then pass=$((pass+1)); echo "PASS gitleaks gets the new commits only, redaction, its own config and ignore file, and no attributes"
+if [ "$ok" = 1 ]; then pass=$((pass+1)); echo "PASS gitleaks gets the new commits only (merges against their first parent), redaction, its own config and ignore file, and no attributes"
 else fail=$((fail+1)); echo "FAIL gitleaks arguments: $(printf '%s ' "$args" | tr '\n' ' ')"; fi
 printf '[{"RuleID":"aws-access-token","File":"f.txt","StartLine":4,"Commit":"%s","Secret":"%s","Match":"%s","Email":"%s"}]\n' \
   "$(sha HEAD)" "$PLANTED" "$PLANTED" "$OWNER" > "$STUB_REPORT"
@@ -200,6 +200,9 @@ if [ -n "${GITLEAKS_REAL:-}" ]; then
     "FINDING $(c12): gitleaks rule aws-access-token conf.txt:2"
   repo; g checkout -q -b feature; put f.txt 'one\ntwo\nthree\nfour\n'; commit "work"
   GL=$GITLEAKS_REAL run 0 "the real gitleaks passes a clean commit"
+  merge_case "one\nkey = $PLANTED\nthree\n"
+  GL=$GITLEAKS_REAL run 1 "the real gitleaks finds a key added in a merge's own resolution" \
+    "FINDING $(c12): gitleaks rule aws-access-token f.txt:2"
   PLANTED=
 else
   echo "SKIP the real gitleaks cases (GITLEAKS_REAL is not set; the workflow sets it)"
