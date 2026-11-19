@@ -110,17 +110,20 @@ paths:
   a notice); `verify-release.sh` step 5 (`check-apk-maps-key.sh`) fails an APK with an absent / empty / placeholder Maps
   key, so it rejects keyless local builds and the published rc.6 asset (blank TRIP map). Scripts print lengths only — never a
   key value. `OPENWEATHER_API_KEY` empty means published builds have no weather — expected, not a bug
-- **Release secrets live in the `release` environment (Q182)** — `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`,
-  `KEY_PASSWORD`, `MAPS_API_KEY` and `OPENWEATHER_API_KEY` are environment secrets whose deployment refs are main (a
-  Branch rule) and `android-v*` (a Tag rule), so a push to any other branch cannot read them; a tag matching `android-v*`
-  passes on whatever commit it points at. `release-apk.yml`'s one job declares `environment: release` and its
-  `workflow_call` declares the six; ci.yml's `release-apk` and nightly.yml's `release` pass exactly those six by name. A
-  called workflow sees a secret only when the caller passes its name (an unpassed environment secret is empty, with no
-  error), and the environment's copy then wins; while a repository copy exists, a name missing from the environment
-  falls back to it, so a green run proves the environment only once the repository copies are gone. Never `inherit`: it
-  would also hand over the review token. GitHub checks the caller's run ref: the nightly runs under main's ref (it builds
-  staging's tip, but the ref is main's) and passes, as does an `android-v` tag push; a nightly "Run workflow" on another
-  ref fails at the release job rather than dry-running. Don't name these secrets in any other job
+- **Release secrets live in two environments (Q182)** — `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`,
+  `KEY_PASSWORD`, `MAPS_API_KEY` and `OPENWEATHER_API_KEY` are held, the same six in each, by `release` (deployment refs:
+  the branch main only, no reviewer: the nightly and main pushes) and `release-tag` (deployment refs: tags `android-v*`
+  only, the owner as required reviewer: RC and stable). A run on a tag uses the tagged commit's own workflow files, so a
+  tag run waits for the owner's approval; a ruleset blocks creating, moving and deleting `android-v*` tags, with GitHub
+  Actions as the only bypass (the nightly tags itself). `release-apk.yml` takes the environment name as a required input
+  and its one job declares it; nightly.yml's `release` passes `release`, ci.yml's tag-path `release-apk` passes
+  `release-tag`, and both pass exactly the six secrets by name. A called workflow sees a secret only when the caller
+  passes its name (an unpassed environment secret is empty, with no error), and the environment's copy then wins; while
+  a repository copy exists, a name missing from the environment falls back to it, so a green run proves the
+  environments only once the repository copies are gone. Never `inherit`: it would also hand over the review token. A
+  missing keystore fails the recipe (never an unsigned APK). GitHub checks the caller's run ref: the nightly runs under
+  main's ref (it builds staging's tip, but the ref is main's), so a nightly "Run workflow" on another ref fails at the
+  release job rather than dry-running. No other job declares either environment or names these secrets
   (`test-release-workflows.rb`)
 - **RC maintenance assets** — the rc.7 release carries `openrs-2.2.7-rc.7-build38.apk` beside the tag's own asset. Its
   name is not the release's exact `openRS_v<name>.apk`, the only asset the updater takes (#364, `VersionIdentityTest`), so

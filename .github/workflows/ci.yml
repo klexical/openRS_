@@ -186,6 +186,7 @@ jobs:
       name: ${{ needs.release-name.outputs.name }}
       tag: ${{ github.ref_name }}
       nightly_date: ''   # an RC or stable: no -PnightlyDate at all (the build refuses an empty one, #362)
+      environment: release-tag   # android-v* tags only, with the owner's approval (Q182)
     # The six release secrets by name, never inherit; the recipe's job reads them from the release environment (Q182)
     secrets:
       KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}

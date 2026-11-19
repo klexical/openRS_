@@ -4,7 +4,7 @@ name: Nightly
 # main that builds publishes the nightly. The two jobs that hold a token able to write contents (publish, cleanup) run
 # only when PUBLISH is true AND the run is on main; a manual run on another ref runs that ref's copy of this file and is
 # a dry run: it stops after the attestation, and no release or tag is made. With PUBLISH false every run is a dry run.
-# Since Q182 the recipe's job runs in the "release" environment, whose deployment refs are main and android-v* tags: a
+# Since Q182 the recipe's job runs in the "release" environment, whose only deployment ref is main: a
 # manual run on any other ref now fails at the release job (GitHub refuses the environment) instead of building.
 #
 # GitHub runs the schedule (and offers "Run workflow") only from this file on the default branch, main, whose tree is
@@ -140,6 +140,7 @@ jobs:
       name: ${{ needs.gate.outputs.name }}
       tag: ${{ needs.gate.outputs.tag }}
       nightly_date: ${{ needs.gate.outputs.date }}
+      environment: release   # main only (Q182)
     # The six release secrets by name, never inherit; the recipe's job reads them from the release environment (Q182)
     secrets:
       KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
