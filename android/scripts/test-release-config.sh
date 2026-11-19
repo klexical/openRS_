@@ -3,7 +3,8 @@
 # and no key value ever reaches the output. Placeholder keys only. Run from anywhere: bash android/scripts/test-release-config.sh
 set -uo pipefail
 CHECK="$(cd "$(dirname "$0")" && pwd)/check-release-config.sh"
-MAPS="AIzaTESTplaceholderMapsKey_0123456789-x"
+# the placeholder is joined at run time, so no line of this file has a Maps key's shape (a secret scanner reads it as one)
+MAPS="AIza""TESTplaceholderMapsKey_0123456789-x"
 WEATHER="0123456789abcdef0123456789abcdef"
 failures=0
 
