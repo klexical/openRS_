@@ -65,7 +65,7 @@ object DemoSimulator {
 
     /** Freshness tags the simulator writes — CAN-sourced THERMAL tags + every polled Mode 22 tag. */
     // Every tag CanDecoder stamps from CAN — incl. "driveMode", which drive-mode confirmation needs (demo dock)
-    val CAN_TAGS = arrayOf(com.openrs.dash.data.LaunchControl.TAG_420, com.openrs.dash.data.LaunchControl.TAG_225, "oilTempC", "ptuTempC", "boostKpa", "escStatus", "driveMode", "coolantTempC", "intakeTempC", "ambientTempC",
+    val CAN_TAGS = arrayOf(com.openrs.dash.data.LaunchControl.TAG_420, com.openrs.dash.data.LaunchControl.TAG_225, "oilTempC", "ptuTempC", "boostKpa", "escStatus", "driveMode", "coolantTempC", "intakeTempC", "ambientTempC", "speedKph",
         com.openrs.dash.can.CanDecoder.MODE_DETAIL_TAG, com.openrs.dash.can.CanDecoder.MODE_RESOLVED_DETAIL_TAG,
         com.openrs.dash.can.CanDecoder.MODE_DETAIL_PAIR_TAG, com.openrs.dash.can.CanDecoder.MODE_RESOLVED_PAIR_TAG,
         com.openrs.dash.can.CanDecoder.MODE_RUN_PREV_TAG, com.openrs.dash.can.CanDecoder.ESC_FRAME_TAG, com.openrs.dash.can.CanDecoder.ESC_FRAME_PREV_TAG)

@@ -98,3 +98,8 @@ paths:
   running (`trackSave`: a STOP's save and a cancelled start's cleanup, added before they start, counted until completed).
   Never back them with one "latest job" slot: a later drive's quicker save, or a start cancelled by STOP, would hide an
   earlier save that is still writing, and the foreground service could be released under it
+- **A parked drive adds no distance, a car with no known speed keeps its GPS steps (#335)** — the recording loop drops a
+  step only when `DriveState.carParked`: this connection's 0x130 stamp (`CanDecoder.SPEED_TAG`, 1 s throttle, cleared at
+  every new connection) is at most `BoostRule.LINK_FRESH_MS` old and the speed reads 0. A stored point's speed has no "not
+  received" form, so `closedOrphan` drops zero-speed steps only when some point of the drive is above 0 (a drive parked
+  from start to finish keeps its wander). Every fix is still stored. `ParkedDistanceTest`, `SpeedStampConnectResetTest`

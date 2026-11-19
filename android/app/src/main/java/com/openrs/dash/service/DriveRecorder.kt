@@ -899,7 +899,7 @@ class DriveRecorder(
                 // Update live state
                 val prev = run.prevPoint
                 val segDist = if (prev != null)
-                    DriveState.drivenStepKm(prev.lat, prev.lng, point.lat, point.lng, point.speedKph)   // #335: parked = 0
+                    DriveState.drivenStepKm(prev.lat, prev.lng, point.lat, point.lng, DriveState.carParked(vs, now))   // #335
                 else 0.0
 
                 val peaks = buildPeakEvents(state, vs, boost, point, now)
@@ -1174,16 +1174,21 @@ class DriveRecorder(
      * same rule STOP uses over the recorded points. Distance joins only consecutive stored points at most
      * [ORPHAN_SEGMENT_MAX_GAP_MS] apart: a pause or a link loss breaks the live polyline and its fixes are never stored, so
      * a longer gap is not driven distance (a late fix is left out too, and a single skipped fix can be bridged — so it can
-     * differ slightly from what STOP would have written); a step counts only while the later point's speed is above zero, as
-     * in the recording loop ([DriveState.drivenStepKm], #335). Fuel, fuel economy, trims, pulls, the thermal record, laps,
+     * differ slightly from what STOP would have written); a step at a later point with speed 0 is dropped only when some point
+     * of the drive is above 0 ([DriveState.drivenStepKm], #335). Fuel, fuel economy, trims, pulls, the thermal record, laps,
      * weather and the name stay at the row's values: they lived in memory only. No summary sheet is posted for it.
      */
     private fun closedOrphan(orphan: DriveEntity, points: List<DrivePointEntity>): DriveEntity {
         if (points.isEmpty()) return orphan.copy(endTime = orphan.startTime)
         var distanceKm = 0.0
+        // A stored point's speed has no "not received" form (#335): zero-speed steps are dropped only when the drive shows
+        // it had the car's speed (some point above 0); a drive with every point at 0 keeps its GPS steps, so a car that
+        // never sent 0x130 keeps its distance, and a drive parked from start to finish keeps its wander
+        val speedSeen = points.any { it.speedKph > 0.0 }
         for (i in 1 until points.size) {
             val a = points[i - 1]; val b = points[i]
-            if (b.timestamp - a.timestamp <= ORPHAN_SEGMENT_MAX_GAP_MS) distanceKm += DriveState.drivenStepKm(a.lat, a.lng, b.lat, b.lng, b.speedKph)
+            if (b.timestamp - a.timestamp <= ORPHAN_SEGMENT_MAX_GAP_MS)
+                distanceKm += DriveState.drivenStepKm(a.lat, a.lng, b.lat, b.lng, parked = speedSeen && b.speedKph <= 0.0)
         }
         val oil = points.filter { it.oilTempC > -90 }
         val coolant = points.filter { it.coolantTempC > -90 }

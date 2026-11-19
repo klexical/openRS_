@@ -5,6 +5,7 @@ import android.app.Application
 import android.location.Location
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.openrs.dash.can.CanDecoder
 import com.openrs.dash.data.DriveDao
 import com.openrs.dash.data.DriveDatabase
 import com.openrs.dash.data.DriveEntity
@@ -83,14 +84,19 @@ class ParkedDistanceTest {
         latitude = 51.5 + dLat; longitude = -0.1 + dLng; bearing = 0f; speed = 0f; time = System.currentTimeMillis()
     }
 
-    /** Starts a drive and sends [fixes] through the loop with the car's speed [speedKph]; returns the drive id. */
-    private fun record(rec: DriveRecorder, fixes: List<Location>, speedKph: (Int) -> Double): Long {
-        vs.value = VehicleState(isConnected = true, rpm = 850.0, speedKph = speedKph(0))
+    /**
+     * Starts a drive and sends [fixes] through the loop with the car's speed [speedKph], its 0x130 stamp [speedAgeMs] old
+     * at each fix (as CanDecoder stamps it; null = no 0x130 received on this connection); returns the drive id.
+     */
+    private fun record(rec: DriveRecorder, fixes: List<Location>, speedAgeMs: Long? = 0L, speedKph: (Int) -> Double): Long {
+        fun state(i: Int) = VehicleState(isConnected = true, rpm = 850.0, speedKph = speedKph(i),
+            fieldLastUpdateMs = speedAgeMs?.let { mapOf(CanDecoder.SPEED_TAG to System.currentTimeMillis() - it) } ?: emptyMap())
+        vs.value = state(0)
         rec.startDrive()
         check(waitUntil { rec.driveState.value.let { it.isRecording && it.driveId > 0 } && gps.opened.get() > 0 }) { "no start" }
         fixes.forEachIndexed { i, f ->
             val before = rec.driveState.value.totalPointCount
-            vs.value = VehicleState(isConnected = true, rpm = 850.0, speedKph = speedKph(i))
+            vs.value = state(i)
             gps.current!!.trySend(f)
             check(waitUntil { rec.driveState.value.totalPointCount == before + 1 }) { "point $i not recorded" }
             Thread.sleep(2)
@@ -127,14 +133,49 @@ class ParkedDistanceTest {
         assertTrue("got $km", km in 0.054..0.058)
     }
 
-    @Test fun `a parked drive closed at the next launch (#262) has no distance either`() {
+    // ── The car's speed not known: the GPS step counts, as before #335 ────────────────────────────────────────────────
+
+    @Test fun `moving with no 0x130 received on this connection - the GPS steps still count`() {
+        val rec = recorder()
+        val id = record(rec, (0 until 12).map { fix(it * 1e-4, 0.0) }, speedAgeMs = null) { 0.0 }
+        join(rec.stopDrive())
+        val km = dao.getDrive(id)!!.distanceKm
+        assertTrue("got $km", km in 0.11..0.13)
+    }
+
+    @Test fun `moving with a speed of 0 older than the link limit (a held reading) - the GPS steps still count`() {
+        val rec = recorder()
+        val id = record(rec, (0 until 12).map { fix(it * 1e-4, 0.0) }, speedAgeMs = 5_000L) { 0.0 }
+        join(rec.stopDrive())
+        val km = dao.getDrive(id)!!.distanceKm
+        assertTrue("got $km", km in 0.11..0.13)
+    }
+
+    // ── A drive closed at the next launch (#262): a stored point's 0 can't say "not received" ──────────────────────────
+
+    private fun orphan(speeds: List<Double>, lat: (Int) -> Double, lng: (Int) -> Double): Long {
         val id = dao.insertDrive(DriveEntity(startTime = 5_000L))
-        wander.forEachIndexed { i, (a, b) ->
+        speeds.forEachIndexed { i, v ->
             dao.insertPoints(listOf(DrivePointEntity(driveId = id, timestamp = 6_000L + i * 1_000L,
-                lat = 51.5 + a, lng = -0.1 + b, speedKph = 0.0)))
+                lat = lat(i), lng = lng(i), speedKph = v)))
         }
         recorder()
         check(waitUntil { (dao.getDrive(id)?.endTime ?: 0L) != 0L }) { "the orphan was never closed" }
-        assertEquals(0.0, dao.getDrive(id)!!.distanceKm, 0.0)
+        return id
+    }
+
+    @Test fun `closed at launch - a drive that moved and then parked drops its parked steps`() {
+        val moving = 6
+        val id = orphan(List(moving) { 40.0 } + List(wander.size) { 0.0 },
+            { i -> if (i < moving) 51.5 + i * 1e-4 else 51.5 + 5e-4 + wander[i - moving].first },
+            { i -> if (i < moving) -0.1 else -0.1 + wander[i - moving].second })
+        val km = dao.getDrive(id)!!.distanceKm
+        assertTrue("got $km", km in 0.054..0.058)
+    }
+
+    @Test fun `closed at launch - a drive with every point at 0 (no 0x130) keeps its GPS distance`() {
+        val id = orphan(List(12) { 0.0 }, { i -> 51.5 + i * 1e-4 }, { -0.1 })
+        val km = dao.getDrive(id)!!.distanceKm
+        assertTrue("got $km", km in 0.11..0.13)
     }
 }

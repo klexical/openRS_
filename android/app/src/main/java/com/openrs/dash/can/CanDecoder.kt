@@ -224,7 +224,11 @@ object CanDecoder {
         ID_COOLANT      to arrayOf("coolantTempC", "intakeTempC"),
         ID_AMBIENT_TEMP to arrayOf("ambientTempC"),
         ID_PCM_AMBIENT  to arrayOf("ambientTempC"),
+        ID_SPEED        to arrayOf(SPEED_TAG),                           // the car's speed is known on this connection (#335)
     )
+
+    /** Freshness tag of the car's speed (0x130), cleared at every new connection (#335). */
+    const val SPEED_TAG = "speedKph"
 
     /**
      * 0x1A4 plausibility ceiling (#185). The unsigned ×0.25 decode can't express sub-zero
