@@ -8,19 +8,27 @@
 #                        a line, ignoring case; blank lines and lines starting with # are skipped; every entry 4
 #                        characters or more. Missing, empty, or holding a shorter entry: exit 2 (fails closed).
 #   GITLEAKS             the path of a gitleaks binary (8.x). Missing or not executable: exit 2 (fails closed).
-#   PR_TITLE, PR_BODY, PR_BRANCH   the pull request's title, description and head branch name (each may be empty).
+#   GITHUB_EVENT_PATH    the run's event file: the pull request's title, description and head branch name are read from
+#                        it here, never passed through a step's env (the runner prints a step's env in the public log).
+#                        Missing or not a pull request event: exit 2 (fails closed).
 #
 # Against the list: every line each new commit adds (a merge: only the lines its own resolution adds), the whole content
 # of each binary file a new commit adds or changes, every path a new commit touches, each new commit's author and
 # committer names and addresses and its message, and the pull request's title, description and branch name.
-# gitleaks: the new commits' patches, with gitleaks' default rules only (a .gitleaks.toml or .gitleaksignore in the
-# checkout is not read), and an added line carrying gitleaks' inline allow marker is itself a finding.
+# gitleaks: the new commits' patches, with gitleaks' default rules only (its config is the scan's own). gitleaks still
+# reads a .gitleaksignore from the checkout, so a new commit that touches a .gitleaksignore or .gitleaks.toml anywhere
+# is itself a finding, as is an added line carrying gitleaks' inline allow marker. gitleaks reads no merge's diff; the
+# list scan above covers a merge's own resolution lines.
+# No .gitattributes applies (GIT_ATTR_SOURCE is the empty tree, for git under gitleaks too): a -diff, binary or textconv
+# rule cannot hide a file's lines; a file is binary only by git's own content test, and its content is then scanned whole.
+# Paths are read NUL-separated, so a name that git would quote is scanned like any other.
 #
 # Prints where, never what: the number of list entries, one line per finding (commit, then file:line or the field; a
 # path that itself matches the list is withheld) and a total. Never a matched text, a list entry or a scanned line.
 # Exit 0: nothing found; 1: a finding; 2: usage, or a missing or unusable list or scanner (fails closed).
 set -euo pipefail
 export LC_ALL=C.UTF-8
+export GIT_ATTR_SOURCE=4b825dc642cb6eb9a060e54bf8d69288fbee4904   # the empty tree: no .gitattributes applies
 die() { echo "privacy scan: $1" >&2; exit 2; }
 [ $# -ge 2 ] || die "usage: privacy-scan.sh <base sha> <head sha> [<also-exclude sha>...]"
 for s in "$@"; do
@@ -29,6 +37,8 @@ for s in "$@"; do
 done
 [ -n "${PRIVACY_IDENTIFIERS:-}" ] || die "the identifier list (secret PRIVACY_IDENTIFIERS) is missing or empty: fails closed"
 { [ -n "${GITLEAKS:-}" ] && [ -x "$GITLEAKS" ]; } || die "GITLEAKS does not name an executable gitleaks: fails closed"
+{ [ -n "${GITHUB_EVENT_PATH:-}" ] && jq -e '.pull_request | type == "object"' "$GITHUB_EVENT_PATH" > /dev/null 2>&1; } \
+  || die "GITHUB_EVENT_PATH does not name a pull request event: fails closed"
 
 umask 077
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
@@ -38,7 +48,7 @@ printf '%s\n' "$PRIVACY_IDENTIFIERS" | tr -d '\r' | sed -e 's/^[[:space:]]*//' -
 unset PRIVACY_IDENTIFIERS                    # git and gitleaks never see it
 entries=$(wc -l < "$LIST")
 [ "$entries" -gt 0 ] || die "the identifier list has no entry (only blank or # lines): fails closed"
-short=$(awk 'length($0) < 4' "$LIST" | wc -l)
+short=$(while IFS= read -r e; do [ "${#e}" -ge 4 ] || echo; done < "$LIST" | wc -l)   # characters, not bytes
 [ "$short" -eq 0 ] || die "$short list entr(y/ies) shorter than 4 characters: fails closed"
 echo "identifier list: $entries entr(y/ies)"
 
@@ -50,7 +60,6 @@ commits=$(git rev-list "$head" --not "$base" "$@")
 TEXT=$T/text; WHERE=$T/where; : > "$TEXT"; : > "$WHERE"
 add() { printf '%s\n' "$4" >> "$TEXT"; printf '%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "" >> "$WHERE"; }   # add <c12> <what> <path> <text>
 ALLOW=gitleaks; ALLOW="$ALLOW:allow"         # gitleaks' inline marker, spelled so this file does not carry it
-marks=0; marklines=$T/marks; : > "$marklines"
 n=0
 for c in $commits; do
   n=$((n+1)); c12=${c:0:12}
@@ -62,7 +71,9 @@ for c in $commits; do
   awk -v c="$c12" '{ printf "%s\tmessage line %d\t\t\n", c, NR }' "$T/msg" >> "$WHERE"; cat "$T/msg" >> "$TEXT"
   [ -z "$(tail -c1 "$T/msg")" ] || echo >> "$TEXT"      # keep TEXT and WHERE line for line
   # the paths the commit touches (a merge: the paths its resolution changes), each scanned as a line of its own
-  git -c core.quotePath=false diff-tree --cc --name-only --no-commit-id --root -r "$c" > "$T/paths"
+  # NUL-separated, so no name is quoted; as text, a line break inside a name becomes a space
+  git diff-tree -z --cc --name-only --no-commit-id --root -r "$c" > "$T/paths.z"
+  tr '\n\000' ' \n' < "$T/paths.z" > "$T/paths"
   awk -v c="$c12" '{ printf "%s\ta changed path (#%d of the commit)\t\t\n", c, NR }' "$T/paths" >> "$WHERE"
   cat "$T/paths" >> "$TEXT"
   # the lines the commit adds, with each line's number in the new file; -U0: added lines only, no context
@@ -77,16 +88,18 @@ for c in $commits; do
             if (index(pre, "+") > 0) { print substr($0, np + 1) >> text; printf "%s\tadded line\t%s\t%d\n", c, path, ln >> where }
             ln++ } }'
   # binary files the commit adds or changes: their whole content, counted, never printed
-  while IFS= read -r p; do
+  while IFS= read -r -d '' p; do
+    case "/$p" in */.gitleaksignore|*/.gitleaks.toml)
+      printf '%s\ta change to a gitleaks ignore or config file\t%s\t\n' "$c12" "${p//$'\n'/ }" >> "$T/glctl" ;; esac
     [ "$(git cat-file -t "$c:$p" 2>/dev/null)" = blob ] || continue
     [ "$(git cat-file blob "$c:$p" | head -c 8000 | tr -d -c '\000' | wc -c)" -gt 0 ] || continue
     hit=$(git cat-file blob "$c:$p" | { grep -c -a -i -F -f "$LIST" || true; })
-    [ "$hit" -eq 0 ] || printf '%s\tbinary content\t%s\t\n' "$c12" "$p" >> "$T/binhits"
-  done < "$T/paths"
+    [ "$hit" -eq 0 ] || printf '%s\tbinary content\t%s\t\n' "$c12" "${p//$'\n'/ }" >> "$T/binhits"
+  done < "$T/paths.z"
 done
-add "" "pull request title" "" "${PR_TITLE:-}"
-add "" "pull request branch name" "" "${PR_BRANCH:-}"
-printf '%s\n' "${PR_BODY:-}" | tr -d '\r' > "$T/body"
+add "" "pull request title" "" "$(jq -r '.pull_request.title // ""' "$GITHUB_EVENT_PATH" | tr '\n' ' ')"
+add "" "pull request branch name" "" "$(jq -r '.pull_request.head.ref // ""' "$GITHUB_EVENT_PATH" | tr '\n' ' ')"
+jq -r '.pull_request.body // ""' "$GITHUB_EVENT_PATH" | tr -d '\r' > "$T/body"
 awk '{ printf "\tpull request description line %d\t\t\n", NR }' "$T/body" >> "$WHERE"; cat "$T/body" >> "$TEXT"
 [ "$(wc -l < "$TEXT")" -eq "$(wc -l < "$WHERE")" ] || die "internal: the scanned lines and their places are out of step"
 
@@ -111,6 +124,7 @@ awk 'FILENAME == ARGV[1] { h[$1] = 1; next } FNR in h' "$T/hitlines" "$T/where.s
 awk -F'\t' 'FILENAME == ARGV[1] { h[$1] = 1; next } (FNR in h) && $2 == "added line"' "$T/allowlines" "$T/where.safe" \
   | awk -F'\t' -v OFS='\t' '{ $2 = "added line with a gitleaks allow marker"; print }' | fmt > "$T/out.allow"
 if [ -s "$T/binhits" ]; then withhold "$T/binhits" | fmt > "$T/out.bin"; else : > "$T/out.bin"; fi
+if [ -s "$T/glctl" ]; then withhold "$T/glctl" | fmt >> "$T/out.allow"; fi
 
 # gitleaks over the new commits' patches, default rules only, findings redacted, its own output never shown
 printf '[extend]\nuseDefault = true\n' > "$T/gitleaks.toml"; : > "$T/gitleaksignore"
@@ -130,5 +144,5 @@ fi
 
 cat "$T/out.list" "$T/out.bin" "$T/out.allow" "$T/out.gl"
 total=$(cat "$T/out.list" "$T/out.bin" "$T/out.allow" "$T/out.gl" | wc -l)
-echo "privacy scan: $n new commit(s); identifier matches $(($(wc -l < "$T/out.list") + $(wc -l < "$T/out.bin"))), gitleaks findings $glcount, allow markers $(wc -l < "$T/out.allow"); $total finding(s) in all"
+echo "privacy scan: $n new commit(s); identifier matches $(($(wc -l < "$T/out.list") + $(wc -l < "$T/out.bin"))), gitleaks findings $glcount, gitleaks suppressions $(wc -l < "$T/out.allow"); $total finding(s) in all"
 [ "$total" -eq 0 ]

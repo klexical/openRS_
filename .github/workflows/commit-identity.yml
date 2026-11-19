@@ -89,15 +89,14 @@ jobs:
         run: bash .github/scripts/test-privacy-scan.sh
 
       - name: The pull request's new commits and text
-        # the only step that holds the list; values reach it through env, never ${{ }} in run
+        # the only step that holds the list; values reach it through env, never ${{ }} in run. The PR's title,
+        # description and branch name are read by the script from the event file ($GITHUB_EVENT_PATH), never put in
+        # env, which the runner prints in the public log
         env:
           PRIVACY_IDENTIFIERS: ${{ secrets.PRIVACY_IDENTIFIERS }}
           GITLEAKS: ${{ runner.temp }}/gitleaks/gitleaks
           BASE: ${{ github.event.pull_request.base.sha }}
           HEAD: ${{ github.event.pull_request.head.sha }}
-          PR_TITLE: ${{ github.event.pull_request.title }}
-          PR_BODY: ${{ github.event.pull_request.body }}
-          PR_BRANCH: ${{ github.event.pull_request.head.ref }}
         run: |
           [ "$(git rev-parse HEAD^2)" = "$HEAD" ] || { echo "the merge commit's second parent is not the PR head $HEAD"; exit 1; }
           STAGING=$(git rev-parse --verify origin/staging^{commit})
