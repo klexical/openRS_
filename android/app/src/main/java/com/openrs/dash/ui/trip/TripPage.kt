@@ -599,16 +599,19 @@ private fun TripPageContent(
             val showStats = driveState.isRecording || selectedDriveId != null
             if (showStats) {
                 val statDist: Double
-                val statDuration: Long
+                val statDuration: String
                 val statAvgSpd: Double
                 if (driveState.isRecording) {
                     statDist = driveState.cumulativeDistanceKm
-                    statDuration = driveState.elapsedMs
+                    // The drive being recorded is open: its clock, or "Active" before its start time is set (unchanged).
+                    val elapsed = driveState.elapsedMs
+                    statDuration = if (elapsed > 0) formatDuration(elapsed) else ACTIVE_LABEL
                     statAvgSpd = driveState.avgSpeedKph
                 } else {
                     val d = selectedDrive
                     statDist = d?.distanceKm ?: 0.0
-                    statDuration = if (d != null && d.endTime > 0) d.endTime - d.startTime else 0L
+                    // A closed drive reads its duration, never "Active" (#325); "—" while the row is not loaded yet.
+                    statDuration = d?.let { driveDurationLabel(it) } ?: "—"
                     statAvgSpd = d?.avgSpeedKph ?: 0.0
                 }
 
@@ -627,7 +630,7 @@ private fun TripPageContent(
                             "%.1f mi".format(statDist * 0.621371)
                         else "%.1f km".format(statDist)
                         MonoText(dist, 12.sp, Frost, FontWeight.Bold)
-                        MonoText(formatDuration(statDuration), 10.sp, Mid)
+                        MonoText(statDuration, 10.sp, Mid)
                         val avgSpd = if (prefs.speedUnit == "MPH")
                             "%.0f mph".format(statAvgSpd * 0.621371)
                         else "%.0f km/h".format(statAvgSpd)
@@ -1474,8 +1477,7 @@ private fun DriveCard(
     val context = LocalContext.current
     val accent = LocalThemeAccent.current
     val timeFormat = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
-    val durationMs = if (drive.endTime > 0) drive.endTime - drive.startTime else 0L
-    val durationStr = formatDuration(durationMs)
+    val durationStr = driveDurationLabel(drive)
     val isActive = drive.endTime == 0L
 
     // Animate selection transitions so the card visually "lifts" into focus
@@ -1684,8 +1686,19 @@ private fun CardAction(label: String, primary: Boolean, modifier: Modifier = Mod
 // Helpers
 // ═══════════════════════════════════════════════════════════════════════════
 
+/**
+ * The duration a drive's row and the selected-drive overlay show: "Active" only for an open drive, whose marker is
+ * `endTime == 0`. A closed drive reads its duration, "0:00" when it has none (a drive closed at launch with no stored
+ * points ends at its start, #262 / #325).
+ */
+internal fun driveDurationLabel(drive: DriveEntity): String =
+    if (drive.endTime == 0L) ACTIVE_LABEL else formatDuration(drive.endTime - drive.startTime)
+
+private const val ACTIVE_LABEL = "Active"
+
+/** A duration as m:ss or h:mm:ss; zero or less reads "0:00" (#325: no duration is never "Active"). */
 private fun formatDuration(ms: Long): String {
-    if (ms <= 0) return "Active"
+    if (ms <= 0) return "0:00"
     val secs = ms / 1000
     val h = secs / 3600
     val m = (secs % 3600) / 60

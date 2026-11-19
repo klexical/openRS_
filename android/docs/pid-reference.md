@@ -22,7 +22,7 @@ The following PCM Mode 22 PIDs are polled by the app every 30 seconds via ISO-TP
 | 0xF40F | Intake Air Temp (PCM) | `22F40F` | `B4 − 40` | °C | No (reference) | CAN 0x2F0 |
 | 0x03CA | Intake Air Temp 2 | `2203CA` | `B4 − 40` | °C | No (reference) | Likely post-intercooler charge air |
 | 0xF42F | Fuel Level (PCM) | `22F42F` | `(B4 / 255) × 100` | % | ✅ 30 s | CAN 0x380 (also decoded) |
-| 0x0304 | Battery Voltage | `220304` | `(B4×256 + B5) / 2048` | V | ✅ 30 s | — |
+| 0x0304 | Charging target (not the battery's voltage, [#365](https://github.com/klexical/openRS_/issues/365)) | `220304` | `(B4×256 + B5) / 2048` | V | ✅ 30 s | — |
 
 ## Mode 1 — Standard OBD-II (Reference Only)
 
@@ -153,7 +153,7 @@ All formulas re-validated against DigiCluster `can0_hs.json` and `can1_ms.json`.
 | 0x076 | Throttle % (ECU) | `B0 × 0.392` — may not broadcast on all tunes | RS_HS.dbc |
 | 0x080 | Throttle %, accel pedal % | bytes 2-3 / 2.55 | DigiCluster HS-CAN |
 | 0x090 | RPM, baro pressure | RPM: `((B4&0x0F)<<8\|B5)×2`; baro: `B2×0.5 kPa` | DigiCluster HS-CAN |
-| 0x0C8 | Gauge brightness, e-brake, ignition status | brightness: `B0&0x1F`; e-brake: `B3&0x40`; ignition: `B2&0x1F` (0=KeyOut..7=Running..9=Cranking) | DigiCluster HS-CAN + RS_HS.dbc |
+| 0x0C8 | Gauge brightness, e-brake, ignition status | brightness: `B0&0x1F`; e-brake: `B3&0x40`; ignition: `(B2>>3)&0x0F` (bits 3–6; 0 Key Out, 1 Key Recently Out, 2 Key Approved, 3 Post Accessory, 4 Accessory, 5 Post Ignition, 6 Ignition On, 7 Running, 9 Crank — [#327](https://github.com/klexical/openRS_/issues/327)) | DigiCluster HS-CAN + RS_HS.dbc |
 | 0x0F8 | Engine oil temp, byte-5 pressure, PTU temp | oil: `B7−60 °C`; PTU: `B1−50 °C`; byte 5: the software reads it as gauge kPa and stores `B5 + 101.325` (`boostKpa`); recordings use it as the BOOST source only when TIP isn't fresh, the live gauge never does | Oil / PTU: one car's capture against ICM 0x6017 (engine oil) and PCM 0x070D (transfer case fluid) on one clock — the reverse of RS_HS.dbc's names ([#229](https://github.com/klexical/openRS_/issues/229)). Byte 5: "gauge kPa" and the +101.325 storage are openRS_'s software convention (RS_HS.dbc PCMmsg07); which pressure the byte physically measures, its reference and its scale are **unverified** ([#207](https://github.com/klexical/openRS_/issues/207)) |
 | 0x130 | Speed kph | `word(B6-B7)×0.01` | DigiCluster HS-CAN |
 | 0x160 | Longitudinal G | `((B6&0x03)<<8\|B7)×0.00390625−2.0` | DigiCluster HS-CAN |

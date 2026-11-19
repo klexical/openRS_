@@ -93,6 +93,8 @@ data/
   DashLayout.kt           — Custom dashboard layout: DashCell grid, AVAILABLE_FIELDS catalog; JSON via AppSettings
   BoostRule.kt            — BoostSource / BoostReading / BoostRule (policy rc7-boost-v3) / BoostSession / StoredBoost
                             (#207): the one boost rule for every consumer + what a recorded value is; see the boostKpa gotcha
+  ChargeTarget.kt         — PCM 0x0304, the charging target (#365): the reply's stamps (+ RUNNING_TAG when decoded with the
+                            engine running) and `showable` — the one rule for DRIVE's CHG cell and the Custom Dashboard
   DriveDatabase.kt        — Room DB v13: DriveEntity (+ avgStftPct/avgLtftPct/trimSamples v11, pullCount/knockPullCount v12,
                             peakBoostSource/boostPolicy v13), DrivePointEntity (+ boostSource/baroKpa v13), KnockEventEntity
                             (+ cylinder v11, boostSource v13), DtcCodeEntity (+ failureType v13), DriveDao, migrations
@@ -199,7 +201,7 @@ ui/
                             HIGH / HEAT RISING › other alerts (3 s hold) › rest of the ThermalVerdict; temps come only from
                             the verdict — "OVERHEATING  oil 268°F ↑  +4"),
                             InstrumentHero row (RPM/BOOST/MPH), gear module (shift lights, brake | gear | throttle;
-                            fixed height per screen — never resizes with speed/gear), VEHICLE panel (oil/coolant/fuel/batt, 2×2 under 340 dp,
+                            fixed height per screen — never resizes with speed/gear), VEHICLE panel (oil/coolant/fuel/CHG, 2×2 under 340 dp,
                             alert chips, tap → THERMAL), chassis panel (AWD REAR TORQUE L / R Nm + G + torque). vehicleStatus() is
                             the single alert list for banner + panel. Disconnected → "—"
   PerfPage.kt              — PERF tab: G-force plot + dynamics numeric readout + PowerPageContent

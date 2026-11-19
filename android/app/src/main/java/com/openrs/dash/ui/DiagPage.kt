@@ -44,6 +44,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
+import com.openrs.dash.data.ChargeTarget
 import com.openrs.dash.data.DtcProgressCallback
 import com.openrs.dash.data.DtcResult
 import com.openrs.dash.data.DtcScanResult
@@ -243,22 +244,13 @@ import kotlin.math.roundToInt
                     vs.batterySoc < 70 -> Warn
                     else -> Color.Unspecified
                 }
-                ReadoutGrid(
-                    rows = listOf(
-                        listOf(
-                            Readout("ENGINE", engineStatusLabel(vs.engineStatus)),
-                            Readout("IGNITION", ignitionStatusLabel(vs.ignitionStatus)),
-                            Readout("E-BRAKE", if (vs.eBrake) "ON" else "OFF", color = if (vs.eBrake) Warn else Color.Unspecified),
-                        ),
-                    ),
-                    level = if (vs.eBrake) Level.WARN else Level.NORMAL,
-                    captions = mapOf(0 to "VEHICLE")
-                )
+                DiagVehiclePanel(vs)
                 Spacer(Modifier.height(Tokens.CardGap))
                 ReadoutGrid(
                     rows = listOf(
                         listOf(
-                            Readout("VOLTAGE", if (shown(battVAvail)) "${"%.2f".format(vs.batteryVoltage)} V" else "— —", sub = availSub(battVAvail)),
+                            // PCM 0x0304 as reported, the charging target (#365)
+                            Readout(ChargeTarget.DIAG_LABEL, if (shown(battVAvail)) "${"%.2f".format(vs.batteryVoltage)} V" else "— —", sub = availSub(battVAvail)),
                             // Sign = direction (+ charging, − discharging); no colour
                             Readout("CURRENT", if (shown(battAAvail)) "${"%+.1f".format(vs.batteryCurrentA)} A" else "— —", sub = availSub(battAAvail)),
                             Readout("SoC", if (shown(battSocAvail)) "${vs.batterySoc.roundToInt()}%" else "— —", color = socColor, sub = availSub(battSocAvail)),
@@ -1056,12 +1048,39 @@ internal fun engineStatusLabel(v: Int): String = when (v) {
     else -> "0x%02X".format(v)
 }
 
+/**
+ * DIAG's VEHICLE panel: engine status, e-brake and the ignition (power mode) state. IGNITION has its own full-width row so
+ * every power-mode name is one line at 360 dp (font 1.0 and 1.3) and the panel keeps its height at key-off (#327).
+ */
+@Composable internal fun DiagVehiclePanel(vs: VehicleState) {
+    ReadoutGrid(
+        rows = listOf(
+            listOf(
+                Readout("ENGINE", engineStatusLabel(vs.engineStatus)),
+                Readout("E-BRAKE", if (vs.eBrake) "ON" else "OFF", color = if (vs.eBrake) Warn else Color.Unspecified),
+            ),
+            listOf(Readout("IGNITION", ignitionStatusLabel(vs.ignitionStatus))),
+        ),
+        level = if (vs.eBrake) Level.WARN else Level.NORMAL,
+        captions = mapOf(0 to "VEHICLE")
+    )
+}
+
+/**
+ * 0x0C8 byte 2 bits 3–6, the power mode (#327). The names are one list that three sources agree on: the community DBC's
+ * value table for this frame, Ford's BCM power-mode list and FORScan's DID 0xDD06 list. On the car every start reads
+ * 6 → 9 → 7 and every stop 7 → 3 → 2; 0, 4, 5 and 8 were never seen. A code the list does not name shows its number.
+ */
 internal fun ignitionStatusLabel(v: Int): String = when (v) {
     -1  -> "—"
     0   -> "Key Out"
-    1   -> "Key In"
-    4   -> "Acc"
-    7   -> "Run"
+    1   -> "Key Recently Out"
+    2   -> "Key Approved"
+    3   -> "Post Accessory"
+    4   -> "Accessory"
+    5   -> "Post Ignition"
+    6   -> "Ignition On"
+    7   -> "Running"
     9   -> "Crank"
     else -> "$v"
 }

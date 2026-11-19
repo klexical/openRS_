@@ -10,6 +10,7 @@ import com.openrs.dash.can.SlcanConnection
 import com.openrs.dash.can.SlcanTransport
 import com.openrs.dash.can.WriteFailure
 import com.openrs.dash.can.WriteOutcome
+import com.openrs.dash.data.BoostRule
 import com.openrs.dash.data.ModuleScanStatus
 import com.openrs.dash.diagnostics.DtcScanner
 import com.openrs.dash.data.VehicleState
@@ -392,5 +393,31 @@ class BleWriteOutcomeTest {
         val result = DtcScanner.runScan(link.conn, listOf(pcm)) { _, _ -> }
         assertEquals(ModuleScanStatus.OK, result.moduleStatuses["PCM"])
         assertTrue(result.moduleNotes.toString(), result.moduleNotes.isEmpty())
+    }
+
+    // ── #357: one missed TIP reply on the real poller, while a drive records ───────────────────────────────────────────
+    /** Recording, engine running, replies 40 ms after each write; the 10th TIP reply is dropped. Returns the time between
+     *  the TIP writes whose replies arrive either side of the drop (fixed latency: the same interval as between those
+     *  replies, which is what the boost rule's TIP limit judges). [gatt13]: every PCM write is "possibly delivered". */
+    private fun TestScope.tipIntervalAroundOneMiss(gatt13: Boolean): Long {
+        var tips = 0
+        val link = connected(recording = true) {
+            it.status = { line -> if (gatt13 && line.length > 20) 13 else BleSetupPolicy.GATT_SUCCESS }
+            it.latencyMs = 40L
+            it.reply = { did -> if (did == 0x033E && ++tips == 10) null else "t7E880562%04X00000000".format(did).take(21) }
+        }
+        advanceTimeBy(60_000L)
+        val t = link.first.lines.filter { it.second == ObdConstants.PCM_QUERY_TIP_ACTUAL }.map { it.first }
+        return t[10] - t[8]
+    }
+
+    @Test fun `#357 - a sent write (the poller waits the reply window) - one missed TIP reply stays within the TIP limit`() = runTest {
+        val i = tipIntervalAroundOneMiss(gatt13 = false)
+        assertTrue("interval $i ms, limit ${BoostRule.TIP_FRESH_MS} ms", i <= BoostRule.TIP_FRESH_MS)
+    }
+
+    @Test fun `#357 - GATT 13 (the Pro over Bluetooth) - one missed TIP reply stays within the TIP limit`() = runTest {
+        val i = tipIntervalAroundOneMiss(gatt13 = true)
+        assertTrue("interval $i ms, limit ${BoostRule.TIP_FRESH_MS} ms", i <= BoostRule.TIP_FRESH_MS)
     }
 }

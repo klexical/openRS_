@@ -1,5 +1,6 @@
 package com.openrs.dash
 
+import com.openrs.dash.data.ChargeTarget
 import com.openrs.dash.data.DashCell
 import com.openrs.dash.data.VehicleState
 import com.openrs.dash.data.resolveValue
@@ -17,11 +18,14 @@ import org.junit.Test
  */
 class BatteryFreshnessTest {
     private val now = 1_000_000L
+    // the engine is running: with it off the cell reads "— —" whatever 0x0304 reports (#365, BatteryChargingTargetTest)
+    // and the reply was received while it ran, with CAN frames current (#365)
     private fun vs(volts: Double, stampAgeMs: Long?, connected: Boolean = true) = VehicleState(
-        isConnected = connected, batteryVoltage = volts,
-        fieldLastUpdateMs = stampAgeMs?.let { mapOf("batteryVoltage" to now - it) } ?: emptyMap(),
+        isConnected = connected, batteryVoltage = volts, rpm = 850.0, lastUpdate = now,
+        fieldLastUpdateMs = stampAgeMs?.let { mapOf("batteryVoltage" to now - it, ChargeTarget.RUNNING_TAG to now - it) }
+            ?: emptyMap(),
     )
-    private val cell = DashCell("batteryVoltage", "number", "BATTERY")
+    private val cell = DashCell("batteryVoltage", "number", "CHG")
 
     @Test fun `control - DRIVE shows a current reading as normal`() {
         assertEquals("15.0V" to Level.NORMAL, batteryCell(vs(14.96, stampAgeMs = 10_000L), now))

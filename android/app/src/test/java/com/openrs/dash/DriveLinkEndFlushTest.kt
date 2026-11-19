@@ -17,6 +17,7 @@ import com.openrs.dash.service.DriveRecorder
 import com.openrs.dash.service.LinkStopReason
 import com.openrs.dash.service.WeatherRepository
 import com.openrs.dash.ui.AppSettings
+import com.openrs.dash.ui.trip.driveDurationLabel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -236,5 +237,6 @@ class DriveLinkEndFlushTest {
         assertEquals(0.0, d.distanceKm, 0.0)
         assertEquals(0.0, d.maxSpeedKph, 0.0)
         assertEquals(-99.0, d.peakOilTempC, 0.0)
+        assertEquals("closed, so TRIP reads no time, not Active (#325)", "0:00", driveDurationLabel(d))
     }
 }

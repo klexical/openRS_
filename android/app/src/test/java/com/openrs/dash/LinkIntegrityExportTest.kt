@@ -71,7 +71,7 @@ class LinkIntegrityExportTest {
                 CanDecoder.MODE_DETAIL_TAG to now - 1_400, "batteryVoltage" to now - 12_400))
         val text = summary()
         assertTrue(text, text.contains("Drive Mode : Track  (0x1B0 3 s ago, its 0x420 detail 4 s ago)"))
-        assertTrue(text, text.contains("Battery    : 14.96 V  (PCM 0x0304 as reported; last reply 12 s ago)"))
+        assertTrue(text, text.contains("CHG (PCM)  : 14.96 V  (PCM 0x0304 as reported; last reply 12 s ago)"))
         val ages = json().getJSONObject("vehicleState").getJSONObject("fieldAgesMs")
         assertTrue(ages.toString(), ages.getLong("batteryVoltage") in 12_400L..13_400L)
         assertTrue(ages.toString(), ages.getLong("driveMode") in 3_400L..4_400L)

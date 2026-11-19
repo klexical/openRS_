@@ -212,7 +212,7 @@ internal object DiagnosticReportBuilder {
             appendLine("  Drive Mode : ${vs.driveMode.label}${modeProvenance(vs, nowMs)}")
             appendLine("  ESC        : ${vs.escStatus.diagnostic}")
             appendLine("  Gear       : ${vs.gearDisplay}")
-            appendLine("  Battery    : ${"%.2f".format(vs.batteryVoltage)} V  (PCM 0x0304 as reported; last reply ${age("batteryVoltage")})")
+            appendLine("  ${com.openrs.dash.data.ChargeTarget.DIAG_LABEL}  : ${"%.2f".format(vs.batteryVoltage)} V  (PCM 0x0304 as reported; last reply ${age("batteryVoltage")})")
             appendLine("  Fuel       : ${"%.0f".format(vs.fuelLevelPct)} %")
             appendLine("  Throttle   : ${"%.1f".format(vs.throttlePct)} %  (0x076 ${if (vs.throttleHasSource) "seen" else "absent — pedal ${"%.1f".format(vs.accelPedalPct)} % used"})")
             appendLine("  Torque     : ${"%.0f".format(vs.torqueAtTrans)} Nm")
