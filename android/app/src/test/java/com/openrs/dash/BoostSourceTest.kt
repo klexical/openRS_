@@ -138,8 +138,10 @@ class BoostSourceTest {
         assertEquals(BoostSource.TIP_033E, read().source)
         val later = now() + BoostRule.TIP_FRESH_MS + 100                 // TIP stops (e.g. a poll gap), CAN still fresh
         rpmFrame(); boostFrame(0)
-        assertEquals(BoostSource.CAN_0F8, read(later).source)            // CAN again — never "marked" against
-        assertEquals(0.0, read(later).gaugeKpa!!, 1e-9)
+        // CAN 0x0F8 still arriving at that time (a frame's stamp is throttled to 1 s per ID, so it is set here, #357)
+        val canAtLater = state.value.copy(fieldLastUpdateMs = state.value.fieldLastUpdateMs + (BoostRule.CAN_TAG to later))
+        assertEquals(BoostSource.CAN_0F8, BoostSession.read(canAtLater, later).source)   // CAN again — never "marked" against
+        assertEquals(0.0, BoostSession.read(canAtLater, later).gaugeKpa!!, 1e-9)
         assertTrue(events.none { it.contains("not tracking") })
     }
 
@@ -152,7 +154,9 @@ class BoostSourceTest {
         val gGap = BoostSession.gauge(state.value, gap)
         assertEquals("the gauge keeps naming TIP", "TIP", gGap.source.label)
         assertNull("no TIP reading → unavailable, not a held value", gGap.gaugeKpa)
-        val recorded = BoostSession.read(state.value, gap)                // what DriveRecorder stores for this point
+        // CAN 0x0F8 still arriving at the gap's time (a frame's stamp is throttled to 1 s per ID, so it is set here, #357)
+        val canAtGap = state.value.copy(fieldLastUpdateMs = state.value.fieldLastUpdateMs + (BoostRule.CAN_TAG to gap))
+        val recorded = BoostSession.read(canAtGap, gap)                   // what DriveRecorder stores for this point
         assertEquals(BoostSource.CAN_0F8, recorded.source); assertEquals(0.0, recorded.gaugeKpa!!, 1e-9)
     }
 

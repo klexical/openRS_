@@ -1,5 +1,7 @@
 package com.openrs.dash.data
 
+import com.openrs.dash.can.PcmPollSchedule
+import com.openrs.dash.can.PcmRequestLedger
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -58,12 +60,13 @@ object BoostRule {
     const val POLICY = "rc7-boost-v3"
     const val CAN_FRESH_MS = 3_000L
     /**
-     * TIP counts as fresh for one missed reply at the recording batch period, plus one gap for a late reply: 2 × 1.35 s +
-     * 0.15 s = 2.85 s (#357: over Bluetooth 10–30 % of the fast group's replies were missing, and the former 2.5 s switched
-     * the recorded source to CAN 0x0F8 and back on every miss). A real loss of TIP still switches it, before the recorder's
-     * own 4 s limit (#279, 2 × PolledFreshness.FAST_REFRESH_MS).
+     * TIP counts as fresh for one missed reply at the recording batch period: two batches, plus the slot the missed
+     * request holds on a link whose writes report sent (the poller waits up to [PcmRequestLedger.REPLY_WINDOW_MS] for its
+     * reply instead of the 150 ms gap): 2 × 1.35 s + 0.3 s = 3 s (#357: over Bluetooth 10–30 % of the fast group's replies
+     * were missing, and the former 2.5 s switched the recorded source to CAN 0x0F8 and back on every miss). A real loss of
+     * TIP still switches it, before the recorder's own 4 s limit (#279, 2 × PolledFreshness.FAST_REFRESH_MS).
      */
-    val TIP_FRESH_MS: Long = 2 * com.openrs.dash.can.PcmPollSchedule.recordingBatchMs() + com.openrs.dash.can.ObdConstants.PCM_FAST_GAP_MS
+    val TIP_FRESH_MS: Long = 2 * PcmPollSchedule.recordingBatchMs() + PcmRequestLedger.REPLY_WINDOW_MS
     const val LINK_FRESH_MS = 2_000L
     const val ENGINE_RUNNING_RPM = 400.0
 
@@ -90,8 +93,9 @@ object BoostRule {
     /**
      * The live pressure gauge (DRIVE, HUD, TRIP live readout, Custom Dashboard): TIP − measured baro only, shown as
      * BOOST (ui.LiveBoostLabel; source stays [BoostSource.TIP_033E]), "—" when TIP isn't fresh. It never falls back to CAN 0x0F8 — a brief TIP polling gap must not flip the gauge to a
-     * different measurement — and freshness isn't stretched to hide gaps. CAN 0x0F8 stays in recordings ([read]) and
-     * in the diagnostic report.
+     * different measurement. Fresh means [TIP_FRESH_MS], the same limit as recording (one missed reply, #357) and nothing
+     * longer: past it the gauge reads "—", never a held value. CAN 0x0F8 stays in recordings ([read]) and in the
+     * diagnostic report.
      */
     fun gauge(vs: VehicleState, nowMs: Long): BoostReading = BoostReading(BoostSource.TIP_033E, tipGaugeKpa(vs, nowMs))
 
