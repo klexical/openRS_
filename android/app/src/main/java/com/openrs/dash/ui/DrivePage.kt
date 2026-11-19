@@ -73,6 +73,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.collectAsState
 import com.openrs.dash.OpenRSDashApp
+import com.openrs.dash.data.BoostRule
+import com.openrs.dash.data.ChargeTarget
 import com.openrs.dash.data.DriveMode
 import com.openrs.dash.data.FuelEconomy
 import com.openrs.dash.data.PolledFreshness
@@ -443,28 +445,30 @@ private data class VehicleStatus(
     val alerts: List<VehicleAlert>,
 )
 
-/** Every rule here is an existing limit (THERMAL preset, TPMS low / warn psi, fuel < 10 %, knock counter). */
 /** The label of PCM 0x0304 wherever DRIVE and the Custom Dashboard show it (#365): the charging system's target. */
 internal const val CHARGE_TARGET_LABEL = "CHG"
 
 /**
  * DRIVE → VEHICLE → CHG (#365): PCM 0x0304 is the charging system's target, not a measurement of the battery (#223: with
- * the engine off it holds a fixed floor, the same as BCM 0x411D, below a meter on the battery). So with the engine off (rpm
- * at or below [ObdConstants.FAST_POLL_MIN_RPM]) the cell reads "— —" whatever 0x0304 reports; GARAGE → DIAG keeps the raw
- * value. Running: "— —" until a reading arrives (or when it reads 0), STALE while disconnected or once the reading is older
- * than the polled-value rule allows ([PolledFreshness]: 2 × 40 s), so a held value never looks live. Never a warning
- * level: a target is not a measurement to warn on.
+ * the engine off, on one car, it held a fixed floor equal to BCM 0x411D, below a meter on the battery). It shows only by
+ * [ChargeTarget.showable]: the engine running (rpm above [ObdConstants.FAST_POLL_MIN_RPM]) and a value from a reply
+ * received while it ran; otherwise "— —", also before a reading or for a reported 0. GARAGE → DIAG keeps the raw value.
+ * STALE while disconnected, while no CAN frame has arrived for [BoostRule.LINK_FRESH_MS] (the engine's state is then not
+ * known), or once the reading is older than the polled-value rule allows ([PolledFreshness]: 2 × 40 s), so a held value
+ * never looks live. Never a warning level: a target is not a measurement to warn on.
  */
 internal fun batteryCell(vs: VehicleState, nowMs: Long): Pair<String, Level> {
-    if (vs.batteryVoltage <= 0 || vs.rpm <= ObdConstants.FAST_POLL_MIN_RPM) return "— —" to Level.NONE
+    if (!ChargeTarget.showable(vs)) return "— —" to Level.NONE
     val lvl = when {
         !vs.isConnected -> Level.STALE
-        !PolledFreshness.isFresh(vs, "batteryVoltage", nowMs) -> Level.STALE
+        nowMs - vs.lastUpdate > BoostRule.LINK_FRESH_MS -> Level.STALE
+        !PolledFreshness.isFresh(vs, ChargeTarget.TAG, nowMs) -> Level.STALE
         else -> Level.NORMAL
     }
     return "${"%.1f".format(vs.batteryVoltage)}V" to lvl
 }
 
+/** Every rule here is an existing limit (THERMAL preset, TPMS low / warn psi, fuel < 10 %, knock counter). */
 private fun vehicleStatus(vs: VehicleState, p: UserPrefs, knockCount: Int, nowMs: Long): VehicleStatus {
     val connected = vs.isConnected
     fun avail(c: Double, tag: String) = vs.tempAvail(c, tag)

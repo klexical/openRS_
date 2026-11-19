@@ -44,6 +44,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
+import com.openrs.dash.data.ChargeTarget
 import com.openrs.dash.data.DtcProgressCallback
 import com.openrs.dash.data.DtcResult
 import com.openrs.dash.data.DtcScanResult
@@ -258,7 +259,8 @@ import kotlin.math.roundToInt
                 ReadoutGrid(
                     rows = listOf(
                         listOf(
-                            Readout("VOLTAGE", if (shown(battVAvail)) "${"%.2f".format(vs.batteryVoltage)} V" else "— —", sub = availSub(battVAvail)),
+                            // PCM 0x0304 as reported, the charging target (#365)
+                            Readout(ChargeTarget.DIAG_LABEL, if (shown(battVAvail)) "${"%.2f".format(vs.batteryVoltage)} V" else "— —", sub = availSub(battVAvail)),
                             // Sign = direction (+ charging, − discharging); no colour
                             Readout("CURRENT", if (shown(battAAvail)) "${"%+.1f".format(vs.batteryCurrentA)} A" else "— —", sub = availSub(battAAvail)),
                             Readout("SoC", if (shown(battSocAvail)) "${vs.batterySoc.roundToInt()}%" else "— —", color = socColor, sub = availSub(battSocAvail)),

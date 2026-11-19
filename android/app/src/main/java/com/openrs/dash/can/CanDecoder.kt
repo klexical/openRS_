@@ -156,8 +156,8 @@ object CanDecoder {
     // RS_HS.dbc PCMmsg30 (0x380): FuelLevelFiltered : 17|10@0+ (0.4,0) [0|102] "%"
     // Motorola big-endian, 10-bit, start bit 17 (MSB). Extract: (data[2]&0x03)<<8|data[3], ×0.4 %
     // Confirmed from live log: raw=254 → 101.6 % (full tank). Range-filtered 0–110 %.
-    // 12V battery voltage does NOT broadcast on HS-CAN — polled via Mode 01 PID 0x42 in SlcanConnection.
-    // 12V battery voltage is now polled via PCM Mode 22 DID 0x0304 in ObdResponseParser (refs #92).
+    // No 12 V voltage broadcasts on HS-CAN. The PCM's polled 0x0304 (ObdResponseParser, #92) is the charging system's
+    // target, not the battery's voltage (#365).
     const val ID_FUEL_LEVEL   = 0x380
 
     // ── 0x40A: Multiplexed VIN + odometer (community-discovered by @adamsouthern) ──

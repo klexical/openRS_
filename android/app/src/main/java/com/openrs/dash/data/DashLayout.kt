@@ -94,10 +94,10 @@ fun resolveValue(vs: VehicleState, prefs: UserPrefs, cell: DashCell, nowMs: Long
         "batteryVoltage" -> {
             // 2 decimals so variation is visible — a voltage that sits at
             // 14.9X vs 15.00 tells you the alternator is still modulating.
-            // Polled (PCM 0x0304): shown only while current, like the other polled cells (#217, #223), and only with the
-            // engine running: with it off 0x0304 is the charging target's fixed floor, not a reading (#365)
-            if (vs.batteryVoltage > 0 && vs.rpm > com.openrs.dash.can.ObdConstants.FAST_POLL_MIN_RPM)
-                polled("batteryVoltage", vs.batteryVoltage) { "%.2fV".format(it) }
+            // Polled (PCM 0x0304): shown only while current, like the other polled cells (#217, #223), and only a reply
+            // received with the engine running, while it runs: with it off 0x0304 is the charging target's fixed floor (#365)
+            if (ChargeTarget.showable(vs))
+                polled(ChargeTarget.TAG, vs.batteryVoltage) { "%.2fV".format(it) }
             else "\u2014 \u2014" to 0.0
         }
         "lateralG" -> "%.2f".format(vs.lateralG) to vs.lateralG

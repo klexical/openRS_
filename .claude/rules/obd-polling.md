@@ -30,12 +30,14 @@ paths:
 - **Freshness stamps (`fieldLastUpdateMs`)** — Mode 22 decoders stamp via `markFresh()`; `ObdMerge.merge()` (data/ObdMerge.kt, called by `CanDataService.mergeObdState()`) MUST merge them with
   `VehicleState.mergeStamps` (per-key max) or the UI reads every OBD field as STALE. CAN-sourced THERMAL fields are stamped by `CanDecoder.stampFresh()` throttled to 1 s per ID — never `markFresh()` per CAN frame (map copy at hundreds of fps). A decoder returning the **same** `state` instance means "recognized, nothing changed": `processCanFrame` logs it and skips the copy/emit (0x040, 0x300, rejected 0x1A4). `ObdMerge` keeps a field through its "not received" sentinel; a field whose
   valid range includes its default (REQ L / R: 0 Nm) is merged by the reply's own stamp (`ObdMerge.carried`), never by
-  value — a `> 0` guard keeps the old value under a fresh stamp (#226). Battery voltage (PCM 0x0304) is merged the same way (#223): a decoded 0 or an older
+  value — a `> 0` guard keeps the old value under a fresh stamp (#226). PCM 0x0304 (the charging target, #365) is merged the same way (#223): a decoded 0 or an older
   snapshot can't freshen or overwrite it; DRIVE's CHG cell reads STALE past `PolledFreshness` 2 × 40 s and "— —" for a reported 0
   (GARAGE → DIAG keeps the raw value, "0.00 V" — owner decision: unavailable on DRIVE, raw on DIAG). 0x0304 is the PCM's reported value, not
-  the battery's voltage: on the car it equals the charging system's target (BCM 0x411D), not a meter on the battery (#223). So DRIVE and the
-  Custom Dashboard label it CHG and read "— —" with the engine off (rpm ≤ `FAST_POLL_MIN_RPM`), and it never takes a warning level (#365,
-  `BatteryChargingTargetTest`)
+  the battery's voltage: with the engine off, on one car, it equalled BCM 0x411D (the charging target) and sat below a meter on the
+  battery (#223). So DRIVE and the Custom Dashboard label it CHG (DIAG and the diagnostic report: CHG (PCM)) and show it only by
+  `ChargeTarget.showable`: engine running (rpm > `FAST_POLL_MIN_RPM`) and a value from a reply decoded while it ran — the reply also
+  stamps `ChargeTarget.RUNNING_TAG`, so the engine-off sweep's reply, still fresh after a start, is never shown. DRIVE's level is STALE
+  while no CAN frame arrived within `BoostRule.LINK_FRESH_MS`; never a warning level (#365, `BatteryChargingTargetTest`)
 - **KR sign convention** — `ignCorrCyl1..4 = raw / −512` → retard is **POSITIVE**. Knock capture uses `≥ 0.1°`, the header counter and POWER KR cells `> 1°`. Cyl 2–4 DIDs (0x03ED–EF) are unverified — 0x03ED/0x03EE NRC 0x31 on two RS PCMs (EU tuned #182 + user's car), so not tune-specific; 0x03EF answers but read 0 for a whole drive. NrcTracker suppresses 2/3; polling left as is (owner decision)
 - **Mode 01 equivalents live in Mode 22 `22F4xx`** — load (F404), timing (F40E), O2 V (F415), STFT/LTFT (F406/07), λ (F434/F444). `ObdPids.kt` (the Mode 01 path) was deleted in a7b01d0 and silently took the load/timing/AFR decoders with it — if a VehicleState field has no writer in ObdResponseParser/CanDecoder, it is dead. HP fuel is **0xF423** (DI gauge, ×10 kPa); 0xF422 is the port-injection PID and is rejected. LP fuel = **0x0548** (`raw × 0.5` kPa)
 - **PCM "no data" replies** — 0x0461 charge air answers `0x0000` on two RS PCMs; the decoder treats that as no data (stays −99). BCM 0x4028 battery SOC read raw 5 (= 5 %) at 14.7 V all session on the user's car — unverified, compare with FORScan BAT_ST_CHRG before trusting it

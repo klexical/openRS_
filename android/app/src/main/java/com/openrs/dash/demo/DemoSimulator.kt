@@ -1,5 +1,6 @@
 package com.openrs.dash.demo
 
+import com.openrs.dash.data.ChargeTarget
 import com.openrs.dash.data.DriveMode
 import com.openrs.dash.data.EscStatus
 import com.openrs.dash.data.VehicleState
@@ -77,7 +78,7 @@ object DemoSimulator {
         "ignCorrCyl1", "ignCorrCyl2", "ignCorrCyl3", "ignCorrCyl4",
         "tirePressLF", "tirePressRF", "tirePressLR", "tirePressRR",
         "tireTempLF", "tireTempRF", "tireTempLR", "tireTempRR",
-        "odometerKm", "batterySoc", "batteryTempC", "cabinTempC", "batteryVoltage",
+        "odometerKm", "batterySoc", "batteryTempC", "cabinTempC", "batteryVoltage", ChargeTarget.RUNNING_TAG,
         "batteryChargingVoltageDesired", "batteryCurrentA",
         "rduTempC", "awdClutchTempL", "awdClutchTempR", "transOilTempC",
         "awdReqTorqueL", "awdReqTorqueR", "awdDmdPressure", "awdPumpCurrent",

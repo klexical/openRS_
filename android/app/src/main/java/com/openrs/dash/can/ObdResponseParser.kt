@@ -1,6 +1,7 @@
 package com.openrs.dash.can
 
 import android.util.Log
+import com.openrs.dash.data.ChargeTarget
 import com.openrs.dash.data.VehicleState
 
 /**
@@ -324,9 +325,10 @@ object ObdResponseParser {
                 0xF42F -> onObdUpdate(currentState.putGeneric(
                     "FuelLevel_OBD", (b4 * 100.0 / 255.0).coerceIn(0.0, 100.0)
                 ))
+                // The charging target (#365): a reply decoded while the engine runs also stamps ChargeTarget.RUNNING_TAG
                 0x0304 -> onObdUpdate(currentState.copy(
                     batteryVoltage = ((b4 shl 8) or b5) / 2048.0
-                ).markFresh("batteryVoltage"))
+                ).markFresh(*ChargeTarget.replyTags(currentState)))
                 // Spark advance: B4 × 0.25 deg
                 // TODO: verify single-byte vs two-byte on real car
                 // Spark advance, signed 16-bit / 4 = degrees (#205): the high byte alone read 0.00 for every positive
