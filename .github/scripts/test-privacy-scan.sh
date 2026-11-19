@@ -111,6 +111,15 @@ for name in 'a"b.bin' 'back\\slash.bin' 'tab\there.bin' 'new\nline.bin'; do
   repo; g checkout -q -b feature; printf '\000\001PNG\000%s\000' "$ID2" > "$T/r/$nm"; g add -- "$nm"; commit "an awkward name"
   run 1 "a binary file named ${name} is scanned" "binary content"
 done
+# a tab in a name must not split the printed row: the part after it would escape withholding (re-review of #449)
+repo; g checkout -q -b feature; nm=$(printf 'a\t%s.bin' "$ID1"); printf '\000\001%s\000' "$ID2" > "$T/r/$nm"
+g add -- "$nm"; commit "a tab and an identifier in one name"
+run 1 "a binary file whose name holds a tab and an identifier has its path withheld" \
+  "binary content (a path that matches the list, withheld)"
+repo; g checkout -q -b feature; mkdir -p "$T/r/$(printf 'x\t%s' "$ID2")"; put "$(printf 'x\t%s' "$ID2")/.gitleaksignore" 'y\n'
+commit "a tab and an identifier in a suppression file's folder"
+run 1 "a gitleaks ignore file whose path holds a tab and an identifier has its path withheld" \
+  "a change to a gitleaks ignore or config file (a path that matches the list, withheld)"
 repo; g checkout -q -b feature; printf 'x\000%s\n' "$ID1" > "$T/r/b.dat"; g add b.dat; commit "binary"; g rm -q b.dat; commit "removed"
 run 1 "a binary file a later commit removes is still scanned in the commit that added it" "binary content b.dat"
 

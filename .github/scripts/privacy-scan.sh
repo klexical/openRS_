@@ -90,11 +90,11 @@ for c in $commits; do
   # binary files the commit adds or changes: their whole content, counted, never printed
   while IFS= read -r -d '' p; do
     case "/$p" in */.gitleaksignore|*/.gitleaks.toml)
-      printf '%s\ta change to a gitleaks ignore or config file\t%s\t\n' "$c12" "${p//$'\n'/ }" >> "$T/glctl" ;; esac
+      printf '%s\ta change to a gitleaks ignore or config file\t%s\t\n' "$c12" "${p//[$'\t\n']/ }" >> "$T/glctl" ;; esac
     [ "$(git cat-file -t "$c:$p" 2>/dev/null)" = blob ] || continue
     [ "$(git cat-file blob "$c:$p" | head -c 8000 | tr -d -c '\000' | wc -c)" -gt 0 ] || continue
     hit=$(git cat-file blob "$c:$p" | { grep -c -a -i -F -f "$LIST" || true; })
-    [ "$hit" -eq 0 ] || printf '%s\tbinary content\t%s\t\n' "$c12" "${p//$'\n'/ }" >> "$T/binhits"
+    [ "$hit" -eq 0 ] || printf '%s\tbinary content\t%s\t\n' "$c12" "${p//[$'\t\n']/ }" >> "$T/binhits"
   done < "$T/paths.z"
 done
 add "" "pull request title" "" "$(jq -r '.pull_request.title // ""' "$GITHUB_EVENT_PATH" | tr '\n' ' ')"
