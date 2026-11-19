@@ -101,8 +101,8 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           if [ -z "$KEYSTORE_BASE64" ]; then
-            echo "::warning::Keystore secrets not configured — APK will be unsigned"
-            exit 0
+            echo "::error::Keystore secrets not configured (release environment, Q182): refusing to build an unsigned release APK"
+            exit 1
           fi
           echo "$KEYSTORE_BASE64" | base64 -d > openrs-release.jks
           printf 'storeFile=openrs-release.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
@@ -161,8 +161,8 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           if [ -z "$KEYSTORE_BASE64" ]; then
-            echo "::warning::Keystore secrets not configured — APK will be unsigned"
-            exit 0
+            echo "::error::Keystore secrets not configured (release environment, Q182): refusing to build an unsigned release APK"
+            exit 1
           fi
           echo "$KEYSTORE_BASE64" | base64 -d > openrs-release.jks
           printf 'storeFile=openrs-release.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
