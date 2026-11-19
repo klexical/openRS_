@@ -8,7 +8,7 @@ import org.junit.Test
 /**
  * #325 — a drive left open by a process death is closed at the next launch (#262); with no stored points its end time is
  * its start time, a duration of 0 ms. TRIP's history row and the selected-drive overlay read "Active" for it, because the
- * duration formatter took 0 ms for a drive in progress. The schema's marker for a drive in progress is `endTime == 0`: only
+ * duration formatter took 0 ms for an open drive. The schema's marker for an open drive is `endTime == 0`: only
  * that reads "Active"; a closed drive reads its duration, "0:00" when it has none. Pure, fixed times.
  */
 class DriveDurationLabelTest {
@@ -18,7 +18,7 @@ class DriveDurationLabelTest {
         assertEquals("0:00", driveDurationLabel(DriveEntity(startTime = start, endTime = start)))
     }
 
-    @Test fun `a drive in progress (endTime 0) reads Active`() {
+    @Test fun `an open drive (endTime 0) reads Active`() {
         assertEquals("Active", driveDurationLabel(DriveEntity(startTime = start, endTime = 0L)))
     }
 

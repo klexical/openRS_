@@ -1687,7 +1687,7 @@ private fun CardAction(label: String, primary: Boolean, modifier: Modifier = Mod
 // ═══════════════════════════════════════════════════════════════════════════
 
 /**
- * The duration a drive's row and the selected-drive overlay show: "Active" only for a drive in progress, whose marker is
+ * The duration a drive's row and the selected-drive overlay show: "Active" only for an open drive, whose marker is
  * `endTime == 0`. A closed drive reads its duration, "0:00" when it has none (a drive closed at launch with no stored
  * points ends at its start, #262 / #325).
  */
