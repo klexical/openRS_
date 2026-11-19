@@ -75,7 +75,8 @@ paths:
   places a position reads `DriveRecorder.freshFix()` (that fix, at most `LapTimer.MAX_FIX_AGE_MS` old): a note / MARK is
   saved without a position and SET S/F is refused (the chip reads NO GPS for 2 s, `SfCue`; no snackbar, it would cover PAUSE / STOP) before the drive's first fix and in a
   GPS gap. The session knock log reads `freshFix()` too (none outside a drive or in a gap). TRIP's dot is `tripDot()`:
-  while recording only the drive's fix; idle, only an idle fetch asked for after the last drive started (`idleFetch`
+  while recording only the drive's current fix (`DriveRecorder.currentFix`, ≤ 2 s; none in a GPS gap, #318), which TRIP's
+  ALT / HDG / accuracy readout also reads ("—" without one); idle, only an idle fetch asked for after the last drive started (`idleFetch`
   stamps before the call). Never carry a fix from one drive into the next, and never
   record the platform's last-known fix as a drive position
 - **A drive's job exists before it runs (#314)** — `startDrive` creates the drive's job lazily,
@@ -98,3 +99,13 @@ paths:
   running (`trackSave`: a STOP's save and a cancelled start's cleanup, added before they start, counted until completed).
   Never back them with one "latest job" slot: a later drive's quicker save, or a start cancelled by STOP, would hide an
   earlier save that is still writing, and the foreground service could be released under it
+- **A parked drive adds no distance, a car with no known speed keeps its GPS steps (#335)** — the recording loop drops a
+  step only when `DriveState.carParked`: this connection's 0x130 stamp (`CanDecoder.SPEED_TAG`, 1 s throttle, cleared at
+  every new connection) is at most `BoostRule.LINK_FRESH_MS` old and the speed reads 0. A stored point's speed has no "not
+  received" form, so `closedOrphan` drops zero-speed steps only when some point of the drive is above 0 (a drive parked
+  from start to finish keeps its wander). Every fix is still stored. `ParkedDistanceTest`, `SpeedStampConnectResetTest`
+- **A drive's summary is built one way (#321)** — STOP, the export of a drive still recording (`snapshotActiveDrive`) and a
+  drive closed at the next launch (`closedOrphan`, #262) all go through `DriveRecorder.summarize`. The aggression score
+  covers every stored point of the drive on every path (the owner, on #321), never the in-memory `recentPoints` window. The
+  in-memory parts an export reads (thermal record, trims, pulls) are the loop's immutable `SummaryParts`, published after
+  each point; never read the run's accumulators from outside the loop while it runs. `DriveSummaryOneRuleTest`

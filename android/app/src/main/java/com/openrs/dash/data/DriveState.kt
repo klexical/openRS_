@@ -100,6 +100,24 @@ data class DriveState(
     companion object {
         const val TANK_L = 49.8
 
+        /**
+         * The driven distance of one step between two consecutive stored fixes (#335): none when the car was [parked] at
+         * the later fix, else the GPS distance. Parked, GPS noise wanders a few metres between fixes and was counted as
+         * distance; no step threshold is tuned, the car's own speed decides ([carParked]).
+         */
+        fun drivenStepKm(lat1: Double, lon1: Double, lat2: Double, lon2: Double, parked: Boolean): Double =
+            if (parked) 0.0 else haversineKm(lat1, lon1, lat2, lon2)
+
+        /**
+         * The car is known to stand still at [nowMs] (#335): its speed (CAN 0x130) was received on this connection, its
+         * stamp is at most [BoostRule.LINK_FRESH_MS] old, and it reads 0. A speed never received, or older than that, is
+         * not known, and the GPS step counts as before: a car that does not send 0x130 never loses its distance.
+         */
+        fun carParked(vs: VehicleState, nowMs: Long): Boolean {
+            val at = vs.fieldLastUpdateMs[com.openrs.dash.can.CanDecoder.SPEED_TAG] ?: return false
+            return nowMs - at in 0L..BoostRule.LINK_FRESH_MS && vs.speedKph <= 0.0
+        }
+
         fun haversineKm(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
             val r = 6371.0
             val dLat = Math.toRadians(lat2 - lat1)

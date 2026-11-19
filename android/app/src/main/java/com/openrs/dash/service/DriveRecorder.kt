@@ -186,6 +186,10 @@ class DriveRecorder(
         val inFlight = MutableStateFlow(0)
         /** This drive's Room id, set once its row is inserted (0 until then; STOP may come before). */
         @Volatile var driveId = 0L
+        /** The summary's in-memory parts as of the last recorded point (#321): published by the loop, the only writer of
+         *  the trims, pulls and thermal record, so an export during the drive reads a consistent copy. STOP rebuilds it
+         *  after the loop has ended. */
+        @Volatile var summaryParts = SummaryParts.of(this)
         /** When the connection loss that began the current link pause happened (#316); 0 when not link-paused. */
         @Volatile var linkLostAtMs = 0L
         /** #316: the time of the last point this drive recorded (0 = none); a drive closed at its loss never ends before it. */
@@ -591,61 +595,29 @@ class DriveRecorder(
                 try {
                     val id = state.driveId
                     val drive = dao.getDrive(id) ?: return@launch
-                    val modeJson = JSONObject().apply {
-                        state.modeCounts.forEach { (mode, count) ->
-                            val total = state.modeCounts.values.sum()
-                            if (total > 0) put(mode.label, count.toDouble() / total)
-                        }
-                    }.toString()
-                    // Compute aggression score from session averages
-                    val score = computeAggressionScore(state.totalPointCount, stopped.recentPoints)
+                    // Every point of the drive, after the loop's flush and the outside writers above: the summary's
+                    // score covers the whole drive (#321, owner), and the thumbnail is drawn from the same read
+                    val allPoints = dao.getPoints(id)
 
                     // Auto-name via reverse geocoder if no user name set — outside the transaction (network)
                     val autoName = if (drive.name == null) reverseGeocode(state) else null
 
-                    // Snapshot thermal peaks + climb rates
-                    val thermalJson = buildThermalPeaksJson(stopped)
-
-                    // Fuel trim averages — read after join() so the loop's last sample is in
-                    val trims = stopped.fuelTrims.result()
+                    // The in-memory parts (thermal record + climb rates, trims, pulls) — after join(), so the loop's last
+                    // sample is in
+                    val live = LiveSummary(state, SummaryParts.of(stopped), stopped.startOilTempC, stopped.startCoolantTempC,
+                        endVs, fuelState)
                     if (stopped.lapVerdicts.isNotEmpty()) {
                         val counts = stopped.lapVerdicts.entries.joinToString(" ") { (v, n) -> "${v.name}=$n" }
                         Log.d(LAP_TAG, "drive $id fixes: $counts; laps saved: ${laps?.second?.size ?: 0}")
                         DiagnosticLogger.event("LAP", "drive $id fixes: $counts; laps: ${laps?.second?.size ?: 0}")
                     }
-                    val pullTracker = stopped.pulls
 
                     val finalDrive = db.runInTransaction(java.util.concurrent.Callable {
                         // The row as it is now: name / tags edited during STOP win; gone = deleted during STOP
                         val current = dao.getDrive(id) ?: return@Callable null
-                        current.copy(
+                        summarize(current, allPoints, live).copy(
                             endTime = stoppedAt,
                             name = current.name ?: autoName,
-                            distanceKm = state.cumulativeDistanceKm,
-                            avgSpeedKph = state.avgSpeedKph,
-                            maxSpeedKph = state.maxSpeedKph,
-                            peakRpm = state.peakRpm.toInt(),
-                            peakBoostPsi = state.peakBoostPsi,
-                            peakBoostSource = state.peakBoostSource?.name,
-                            peakLateralG = state.peakLateralG,
-                            fuelUsedL = state.fuelUsedL,
-                            driveModeBreakdown = modeJson,
-                            weatherSummary = state.currentWeather?.description,
-                            startOilTempC = stopped.startOilTempC,
-                            endOilTempC = endVs.oilTempC,
-                            peakOilTempC = state.peakOilTempC,
-                            startCoolantTempC = stopped.startCoolantTempC,
-                            endCoolantTempC = endVs.coolantTempC,
-                            peakCoolantTempC = state.peakCoolantTempC,
-                            aggressionScore = score,
-                            avgFuelL100km = if (fuelState.isValid) fuelState.avgL100km else 0.0,
-                            avgFuelMpg = if (fuelState.isValid) fuelState.avgMpg else 0.0,
-                            thermalPeaksJson = thermalJson,
-                            avgStftPct = trims.avgStftPct,
-                            avgLtftPct = trims.avgLtftPct,
-                            trimSamples = trims.samples,
-                            pullCount = pullTracker.pullCount,
-                            knockPullCount = pullTracker.knockPullCount
                         ).also { final ->
                             dao.updateDrive(final)
                             // Lap timer results completed in this drive, with the row (no FK from lap_sessions)
@@ -659,7 +631,6 @@ class DriveRecorder(
 
                     // Generate route thumbnail for history list
                     try {
-                        val allPoints = dao.getPoints(id)
                         com.openrs.dash.ui.trip.RouteThumbnail.generateAndCache(context, id, allPoints)
                     } catch (e: Exception) {
                         Log.d(TAG, "Thumbnail generation failed", e)
@@ -899,7 +870,7 @@ class DriveRecorder(
                 // Update live state
                 val prev = run.prevPoint
                 val segDist = if (prev != null)
-                    DriveState.haversineKm(prev.lat, prev.lng, point.lat, point.lng)
+                    DriveState.drivenStepKm(prev.lat, prev.lng, point.lat, point.lng, DriveState.carParked(vs, now))   // #335
                 else 0.0
 
                 val peaks = buildPeakEvents(state, vs, boost, point, now)
@@ -936,6 +907,7 @@ class DriveRecorder(
                 }
                 run.prevPoint = point
                 run.lastPointMs = point.timestamp
+                run.summaryParts = SummaryParts.of(run)            // #321: what an export during the drive reads
 
                 // Flush to Room when the buffer is full — last, so a STOP cancellation delivered when the insert
                 // returns (flushBuffer rethrows it) can't cut this point's state update short
@@ -1074,11 +1046,7 @@ class DriveRecorder(
      * position a note or the start/finish line may be placed at. Null before the drive's first fix, after STOP, when
      * not recording, and during a GPS gap (the last fix is then not where the car is).
      */
-    fun freshFix(nowMs: Long = clock()): Location? {
-        val state = _driveState.value
-        if (!state.isRecording) return null
-        return state.currentLocation?.takeIf { fixAgeMs(it, nowMs) <= LapTimer.MAX_FIX_AGE_MS }
-    }
+    fun freshFix(nowMs: Long = clock()): Location? = currentFix(_driveState.value, nowMs)
 
     @SuppressLint("MissingPermission")
     private suspend fun fusedLastLocation(): Location? =
@@ -1101,9 +1069,8 @@ class DriveRecorder(
      * while a drive is in progress.
      *
      * Returns null when no drive is currently recording. The returned
-     * [DriveEntity] has live accumulators (distance/peaks/avg) applied from
-     * [DriveState], so summaries reflect the in-flight session rather than the
-     * zeroed Room record.
+     * [DriveEntity] carries the summary STOP would write at this moment ([summarize], #321), with the end time and the
+     * name unset, rather than the zeroed Room record.
      */
     suspend fun snapshotActiveDrive(): Pair<DriveEntity, List<DrivePointEntity>>? {
         val state = _driveState.value
@@ -1115,25 +1082,20 @@ class DriveRecorder(
                 // finalizing this drive meanwhile waits for these points before its thumbnail (#241); a failed
                 // insert fails the export.
                 val r = run
+                // The run read here must be the drive whose state was read above: a STOP and a START in between make it
+                // the next drive's, and its points and parts must not go on this drive's export (#321)
+                if (r.driveId != state.driveId) return@withContext null
                 if (!r.outsideLoopWrites.withLock { flushBuffer(r) }) return@withContext null
 
                 val drive = dao.getDrive(state.driveId) ?: return@withContext null
                 val allPoints = dao.getPoints(state.driveId)
 
-                // Apply live state so the exported summary isn't the zeroed
-                // skeleton that gets written at drive start.
-                val liveDrive = drive.copy(
-                    distanceKm   = state.cumulativeDistanceKm,
-                    avgSpeedKph  = state.avgSpeedKph,
-                    maxSpeedKph  = state.maxSpeedKph,
-                    peakRpm      = state.peakRpm.toInt(),
-                    peakBoostPsi = state.peakBoostPsi,
-                    peakBoostSource = state.peakBoostSource?.name,
-                    peakLateralG = state.peakLateralG,
-                    fuelUsedL    = state.fuelUsedL,
-                    weatherSummary = state.currentWeather?.description
-                )
-                Pair(liveDrive, allPoints)
+                // The summary STOP would write at this moment (#321), from the same builder: the live accumulators, the
+                // in-memory parts the loop published with its last point, and the score over every stored point. The end
+                // time and the name stay unset (the drive is open); end temperatures are the current readings.
+                val live = LiveSummary(_driveState.value.takeIf { it.driveId == state.driveId } ?: state, r.summaryParts,
+                    r.startOilTempC, r.startCoolantTempC, vehicleStateFlow.value, FuelEconomy.state.value)
+                Pair(summarize(drive, allPoints, live), allPoints)
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e                                       // the caller went away — not a failed export
             } catch (e: Exception) {
@@ -1170,19 +1132,75 @@ class DriveRecorder(
     /**
      * A drive left open by a process death, closed (#262): it ends at its last stored point (its start without one), and
      * gets the summary fields that follow from the stored points alone — max / average speed, peak RPM, peak |lateral G|,
-     * peak / first / last oil and coolant (valid readings only), the mode breakdown and the aggression score, each by the
-     * same rule STOP uses over the recorded points. Distance joins only consecutive stored points at most
+     * peak / first / last oil and coolant (valid readings only), the mode breakdown and the aggression score (over every
+     * stored point, as at STOP and in an export during the drive: [summarize], #321). Distance joins only consecutive stored points at most
      * [ORPHAN_SEGMENT_MAX_GAP_MS] apart: a pause or a link loss breaks the live polyline and its fixes are never stored, so
      * a longer gap is not driven distance (a late fix is left out too, and a single skipped fix can be bridged — so it can
-     * differ slightly from what STOP would have written). Fuel, fuel economy, trims, pulls, the thermal record, laps,
+     * differ slightly from what STOP would have written); a step at a later point with speed 0 is dropped only when some point
+     * of the drive is above 0 ([DriveState.drivenStepKm], #335). Fuel, fuel economy, trims, pulls, the thermal record, laps,
      * weather and the name stay at the row's values: they lived in memory only. No summary sheet is posted for it.
      */
     private fun closedOrphan(orphan: DriveEntity, points: List<DrivePointEntity>): DriveEntity {
         if (points.isEmpty()) return orphan.copy(endTime = orphan.startTime)
+        return summarize(orphan, points, live = null).copy(endTime = points.last().timestamp)
+    }
+
+    /**
+     * The one drive summary (#321), for STOP, the export of a drive still recording, and a drive closed at the next launch
+     * ([live] null). The aggression score covers every stored point of the drive on every path (owner, 2026-11-11). With
+     * [live], the rest comes from the recording's own accumulators, as STOP has always written it; without, from the stored
+     * points alone ([closedOrphan]'s rules). The end time and the name are the caller's; [row] keeps every other column.
+     */
+    private fun summarize(row: DriveEntity, points: List<DrivePointEntity>, live: LiveSummary?): DriveEntity {
+        val score = computeAggressionScore(points.size, points)
+        if (live == null) return fromStoredPoints(row, points).copy(aggressionScore = score)
+        val state = live.state
+        val modeJson = JSONObject().apply {
+            val total = state.modeCounts.values.sum()
+            state.modeCounts.forEach { (mode, count) -> if (total > 0) put(mode.label, count.toDouble() / total) }
+        }.toString()
+        val fuel = live.fuel
+        return row.copy(
+            distanceKm = state.cumulativeDistanceKm,
+            avgSpeedKph = state.avgSpeedKph,
+            maxSpeedKph = state.maxSpeedKph,
+            peakRpm = state.peakRpm.toInt(),
+            peakBoostPsi = state.peakBoostPsi,
+            peakBoostSource = state.peakBoostSource?.name,
+            peakLateralG = state.peakLateralG,
+            fuelUsedL = state.fuelUsedL,
+            driveModeBreakdown = modeJson,
+            weatherSummary = state.currentWeather?.description,
+            startOilTempC = live.startOilTempC,
+            endOilTempC = live.endVs.oilTempC,
+            peakOilTempC = state.peakOilTempC,
+            startCoolantTempC = live.startCoolantTempC,
+            endCoolantTempC = live.endVs.coolantTempC,
+            peakCoolantTempC = state.peakCoolantTempC,
+            aggressionScore = score,
+            avgFuelL100km = if (fuel.isValid) fuel.avgL100km else 0.0,
+            avgFuelMpg = if (fuel.isValid) fuel.avgMpg else 0.0,
+            thermalPeaksJson = live.parts.thermalJson,
+            avgStftPct = live.parts.trims.avgStftPct,
+            avgLtftPct = live.parts.trims.avgLtftPct,
+            trimSamples = live.parts.trims.samples,
+            pullCount = live.parts.pullCount,
+            knockPullCount = live.parts.knockPullCount,
+        )
+    }
+
+    /** The summary fields that follow from a drive's stored points alone ([closedOrphan], #262); the score is [summarize]'s. */
+    private fun fromStoredPoints(orphan: DriveEntity, points: List<DrivePointEntity>): DriveEntity {
+        if (points.isEmpty()) return orphan
         var distanceKm = 0.0
+        // A stored point's speed has no "not received" form (#335): zero-speed steps are dropped only when the drive shows
+        // it had the car's speed (some point above 0); a drive with every point at 0 keeps its GPS steps, so a car that
+        // never sent 0x130 keeps its distance, and a drive parked from start to finish keeps its wander
+        val speedSeen = points.any { it.speedKph > 0.0 }
         for (i in 1 until points.size) {
             val a = points[i - 1]; val b = points[i]
-            if (b.timestamp - a.timestamp <= ORPHAN_SEGMENT_MAX_GAP_MS) distanceKm += DriveState.haversineKm(a.lat, a.lng, b.lat, b.lng)
+            if (b.timestamp - a.timestamp <= ORPHAN_SEGMENT_MAX_GAP_MS)
+                distanceKm += DriveState.drivenStepKm(a.lat, a.lng, b.lat, b.lng, parked = speedSeen && b.speedKph <= 0.0)
         }
         val oil = points.filter { it.oilTempC > -90 }
         val coolant = points.filter { it.coolantTempC > -90 }
@@ -1190,7 +1208,6 @@ class DriveRecorder(
             points.groupingBy { it.driveMode }.eachCount().forEach { (mode, n) -> put(mode, n.toDouble() / points.size) }
         }.toString()
         return orphan.copy(
-            endTime = points.last().timestamp,
             distanceKm = distanceKm,
             avgSpeedKph = points.sumOf { it.speedKph } / points.size,
             maxSpeedKph = points.maxOf { it.speedKph },
@@ -1203,7 +1220,6 @@ class DriveRecorder(
             startCoolantTempC = coolant.firstOrNull()?.coolantTempC ?: orphan.startCoolantTempC,
             endCoolantTempC = coolant.lastOrNull()?.coolantTempC ?: orphan.endCoolantTempC,
             driveModeBreakdown = modes,
-            aggressionScore = computeAggressionScore(points.size, points)
         )
     }
 
@@ -1257,15 +1273,28 @@ class DriveRecorder(
     // ── Thermal record ───────────────────────────────────────────────────
 
     /**
-     * Per-sensor peaks + the limits each part of the drive was judged against (DriveThermalRecord).
-     * Replaces the fixed 140 / 115 / 120 / 120 °C snapshot, which matched no profile and stored the
-     * drive-end reading as its "peak".
+     * The summary's in-memory parts of one drive at one moment (#321): the thermal record (DriveThermalRecord: per-sensor
+     * peaks with the limits each part of the drive was judged against) with its climb rates, the fuel trim averages and the
+     * pull counts. Immutable: built by the drive's loop (the only writer of what it reads) after each
+     * point, or by STOP after the loop has ended.
      */
-    private fun buildThermalPeaksJson(run: DriveRun): String? {
-        val tp = run.thermalPredictor
-        val climb = DriveThermalSensor.entries.mapNotNull { s -> tp.slopeCPerMin(s.key)?.let { s to it } }.toMap()
-        return run.thermal.toJson(climb)
+    private class SummaryParts(
+        val thermalJson: String?, val trims: FuelTrimAccumulator.Result, val pullCount: Int, val knockPullCount: Int,
+    ) {
+        companion object {
+            fun of(run: DriveRun): SummaryParts {
+                val tp = run.thermalPredictor
+                val climb = DriveThermalSensor.entries.mapNotNull { s -> tp.slopeCPerMin(s.key)?.let { s to it } }.toMap()
+                return SummaryParts(run.thermal.toJson(climb), run.fuelTrims.result(), run.pulls.pullCount, run.pulls.knockPullCount)
+            }
+        }
     }
+
+    /** What [summarize] takes from a recording (STOP or an export during the drive): the live state and the run's parts. */
+    private class LiveSummary(
+        val state: DriveState, val parts: SummaryParts, val startOilTempC: Double, val startCoolantTempC: Double,
+        val endVs: VehicleState, val fuel: FuelEconomy.EconomyState,
+    )
 
     // ── Event bookmarks ──────────────────────────────────────────────────
 
@@ -1324,6 +1353,15 @@ class DriveRecorder(
 
     companion object {
         private const val TAG = "DriveRecorder"
+
+        /**
+         * [state]'s own last fix while it records, if it is at most [LapTimer.MAX_FIX_AGE_MS] old at [nowMs]; null otherwise
+         * (#311). The one rule for a position shown or placed as current: notes, the start/finish line, TRIP's live dot
+         * and its ALT / HDG / accuracy readout (#318).
+         */
+        internal fun currentFix(state: DriveState, nowMs: Long): Location? =
+            if (!state.isRecording) null
+            else state.currentLocation?.takeIf { fixAgeMs(it, nowMs) <= LapTimer.MAX_FIX_AGE_MS }
 
         /** How old a fix is at [nowMs] — on the monotonic clock when the fix carries it, else the wall clock. */
         internal fun fixAgeMs(location: Location, nowMs: Long): Long =

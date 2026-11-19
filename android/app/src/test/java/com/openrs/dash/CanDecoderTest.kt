@@ -1128,6 +1128,15 @@ class CanDecoderTest {
     }
 
     @Test
+    fun `0x130 decode stamps the car's speed as known (#335)`() {
+        val data = byteArrayOf(0, 0, 0, 0, 0, 0, 0, 0)                 // speed 0.00 km/h: a reading, not "not received"
+        val decoded = CanDecoder.decode(0x130, data, blank)!!
+        val stamped = CanDecoder.stampFresh(0x130, blank, decoded, now = 50_000L)
+        assertEquals(50_000L, stamped.fieldLastUpdateMs[CanDecoder.SPEED_TAG])
+        assertEquals(0.0, stamped.speedKph, 0.0)
+    }
+
+    @Test
     fun `IDs without THERMAL tags are never stamped`() {
         assertNull(CanDecoder.freshTagsFor(0x090))
         val decoded = blank.copy(rpm = 3000.0)

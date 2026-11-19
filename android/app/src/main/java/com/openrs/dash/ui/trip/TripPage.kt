@@ -139,9 +139,12 @@ fun TripPage(
         }
     }
 
+    // The preview's fix re-stamped on a 1 s clock while TRIP is seen (#318: only a current fix is drawn); debug preview only
+    val previewNowMs = if (previewState != null && visible) com.openrs.dash.ui.wallClockMs() else 0L
+
     CompositionLocalProvider(LocalLifecycleOwner provides owner) {
         TripPageContent(
-            driveState = previewState ?: heldWhileHidden(driveState, visible),
+            driveState = previewState?.let { TripPreview.withCurrentFix(it, previewNowMs) } ?: heldWhileHidden(driveState, visible),
             vehicleState = heldWhileHidden(vehicleState, visible),
             prefs = prefs,
             onMapTouched = onMapTouched,
@@ -393,7 +396,10 @@ private fun TripPageContent(
                 emptyList()
             }
 
-            val dot = tripDot(driveState, idleLocation, idleFetchedAtMs)
+            // The 1 s tick (a fix ages out of the dot, #318) runs only while TRIP is seen and a drive records: off screen
+            // and idle the dot needs no clock (recorder-trip rule: TRIP's endless work gates on visible)
+            val fixClockMs = if (visible && driveState.isRecording) com.openrs.dash.ui.wallClockMs() else System.currentTimeMillis()
+            val dot = tripDot(driveState, idleLocation, idleFetchedAtMs, fixClockMs)
             val currentLat = dot?.latitude
             val currentLng = dot?.longitude
 
@@ -652,30 +658,23 @@ private fun TripPageContent(
 
                         // 1.4 — Altitude + heading (live only)
                         if (driveState.isRecording) {
-                            val loc = driveState.currentLocation
-                            if (loc != null) {
-                                if (loc.hasAltitude()) {
-                                    val altM = loc.altitude.toInt()
-                                    val altStr = if (prefs.speedUnit == "MPH")
-                                        "${(altM * 3.28084).toInt()} ft"
-                                    else "$altM m"
-                                    MonoText("ALT $altStr", 10.sp, Dim)
-                                }
-                                if (loc.hasBearing() && vehicleState.speedKph > 5) {
-                                    MonoText("HDG ${loc.bearing.toInt()}°", 10.sp, Dim)
-                                }
-                                // GPS accuracy dot
-                                val accColor = when {
-                                    loc.accuracy < 5f  -> Ok
-                                    loc.accuracy < 15f -> Warn
-                                    else               -> Orange
-                                }
+                            fixReadout(driveState, vehicleState.speedKph, prefs.speedUnit == "MPH", fixClockMs)?.let { r ->
+                                r.alt?.let { MonoText(it, 10.sp, Dim) }
+                                r.hdg?.let { MonoText(it, 10.sp, Dim) }
                                 Row(
                                     horizontalArrangement = Arrangement.spacedBy(3.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Box(Modifier.size(5.dp).clip(CircleShape).background(accColor))
-                                    MonoLabel("±${"%.0f".format(loc.accuracy)}m", 9.sp, Dim)
+                                    // GPS accuracy dot
+                                    r.accuracyM?.let { acc ->
+                                        val accColor = when {
+                                            acc < 5f  -> Ok
+                                            acc < 15f -> Warn
+                                            else      -> Orange
+                                        }
+                                        Box(Modifier.size(5.dp).clip(CircleShape).background(accColor))
+                                    }
+                                    MonoLabel(r.accuracy, 9.sp, Dim)
                                 }
                             }
                         }
@@ -1804,14 +1803,32 @@ internal suspend fun idleFetch(
     return loc to askedAt
 }
 
+/** TRIP's live ALT / HDG / GPS-accuracy texts, and the accuracy in metres for the dot's colour. */
+internal data class FixReadout(val alt: String?, val hdg: String?, val accuracy: String, val accuracyM: Float?)
+
 /**
- * The position TRIP's live map draws its dot at (#311, owner's option a). While recording: only the drive's own fix,
- * so no dot until its first one. Otherwise: the one-shot idle fetch, but only if TRIP fetched it ([idleFetchedAtMs],
+ * The readout while [state] records ([speedKph]: the car's, heading only above 5 km/h). Only a current fix is shown
+ * (DriveRecorder.currentFix, at most 2 s old): in a GPS gap, and before the drive's first fix, it reads "—" with no
+ * accuracy dot, until a fresh fix arrives (#318, the owner's "hide").
+ */
+internal fun fixReadout(state: DriveState, speedKph: Double, imperial: Boolean, nowMs: Long): FixReadout? {
+    if (!state.isRecording) return null
+    val fix = com.openrs.dash.service.DriveRecorder.currentFix(state, nowMs) ?: return FixReadout("ALT —", "HDG —", "±—", null)
+    val alt = if (fix.hasAltitude()) fix.altitude.toInt().let { m -> "ALT " + if (imperial) "${(m * 3.28084).toInt()} ft" else "$m m" } else null
+    val hdg = if (fix.hasBearing() && speedKph > 5) "HDG ${fix.bearing.toInt()}°" else null
+    return FixReadout(alt, hdg, "±${"%.0f".format(fix.accuracy)}m", fix.accuracy)
+}
+
+/**
+ * The position TRIP's live map draws its dot at (#311, owner's option a). While recording: only the drive's own fix while
+ * it is current (at most 2 s old, #318), so no dot until its first one or in a GPS gap. Otherwise: the one-shot idle fetch, but only if TRIP fetched it ([idleFetchedAtMs],
  * app wall clock) after the last drive started; a fetch from before that drive is not where the car is. STOP clears
  * the drive's position, so with TRIP left open there is no dot after STOP until TRIP is opened idle again.
  */
-internal fun tripDot(state: DriveState, idle: android.location.Location?, idleFetchedAtMs: Long): android.location.Location? =
-    if (state.isRecording) state.currentLocation
+internal fun tripDot(
+    state: DriveState, idle: android.location.Location?, idleFetchedAtMs: Long, nowMs: Long = System.currentTimeMillis(),
+): android.location.Location? =
+    if (state.isRecording) com.openrs.dash.service.DriveRecorder.currentFix(state, nowMs)
     // Strictly after: a fetch asked for in the drive's start millisecond cannot be shown to be after it, and the safe
     // answer is no dot (a pre-drive position drawn as current is what #311 removes)
     else idle?.takeIf { idleFetchedAtMs > state.startTime }
