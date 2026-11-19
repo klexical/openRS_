@@ -155,6 +155,13 @@ LIST=$'QZXV-FIXTURE-7731\n\u00e4\u00f6\u00fc'; run 2 "the minimum counts charact
 unset LIST
 GL=""; run 2 "no gitleaks fails closed" "does not name an executable gitleaks"
 GL=$T/nowhere; run 2 "a gitleaks path that is not executable fails closed" "does not name an executable gitleaks"; unset GL
+mkdir -p "$T/oldgit"; REALGIT=$(command -v git)
+for v in "git version 2.39.5" "git version 1.9.1" "not a version"; do
+  printf '#!/usr/bin/env bash\n[ "$1" = version ] && { echo "%s"; exit 0; }\nexec "%s" "$@"\n' "$v" "$REALGIT" > "$T/oldgit/git"
+  chmod +x "$T/oldgit/git"
+  scan_old() { local p=$PATH; PATH=$T/oldgit:$PATH; scan; local rc=$?; PATH=$p; return $rc; }
+  scan_old; expect 2 "a git that reports \"$v\" fails closed (GIT_ATTR_SOURCE needs 2.40)" $? "fails closed"
+done
 EVENT=""; run 2 "no event file fails closed" "does not name a pull request event"
 echo '{"push": {}}' > "$T/push.json"; EVENT=$T/push.json; run 2 "an event that is not a pull request fails closed" \
   "does not name a pull request event"; unset EVENT
