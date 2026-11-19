@@ -220,6 +220,14 @@ object TripPreview {
         }
     }
 
+    /**
+     * [state] with its fix taken at [now] (#318): TRIP shows a drive's fix only while it is current (at most 2 s old), and
+     * TRIP remembers the preview state once per mode, so it re-stamps the preview's fix on its clock to keep the dot and
+     * the readout on screen.
+     */
+    fun withCurrentFix(state: DriveState, now: Long): DriveState =
+        state.copy(currentLocation = state.currentLocation?.let { Location(it).apply { time = now } })
+
     /** Recording in progress (or paused) — 18 minutes in, partway round the loop. */
     fun driveState(paused: Boolean, now: Long = System.currentTimeMillis()): DriveState {
         val start = now - (if (longRecording) 134 else 18) * 60_000L
@@ -229,7 +237,7 @@ object TripPreview {
             phase = DrivePhase.of(true, paused), driveId = -100,
             recentPoints = pts, totalPointCount = pts.size, startFuelPct = 66.0, startTime = start,
             currentLocation = Location("trip-preview").apply {
-                latitude = last.lat; longitude = last.lng; bearing = 72f; accuracy = 4f; altitude = 21.0
+                latitude = last.lat; longitude = last.lng; bearing = 72f; accuracy = 4f; altitude = 21.0; time = now
             },
             cumulativeDistanceKm = if (longRecording) 187.3 else 21.6,
             rpmSum = pts.sumOf { it.rpm.toDouble() }, rpmSamples = pts.size.toLong(),

@@ -139,9 +139,12 @@ fun TripPage(
         }
     }
 
+    // The preview's fix re-stamped on a 1 s clock while TRIP is seen (#318: only a current fix is drawn); debug preview only
+    val previewNowMs = if (previewState != null && visible) com.openrs.dash.ui.wallClockMs() else 0L
+
     CompositionLocalProvider(LocalLifecycleOwner provides owner) {
         TripPageContent(
-            driveState = previewState ?: heldWhileHidden(driveState, visible),
+            driveState = previewState?.let { TripPreview.withCurrentFix(it, previewNowMs) } ?: heldWhileHidden(driveState, visible),
             vehicleState = heldWhileHidden(vehicleState, visible),
             prefs = prefs,
             onMapTouched = onMapTouched,

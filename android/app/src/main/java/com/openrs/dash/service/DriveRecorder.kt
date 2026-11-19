@@ -1327,7 +1327,6 @@ class DriveRecorder(
     companion object {
         private const val TAG = "DriveRecorder"
 
-        /** How old a fix is at [nowMs] — on the monotonic clock when the fix carries it, else the wall clock. */
         /**
          * [state]'s own last fix while it records, if it is at most [LapTimer.MAX_FIX_AGE_MS] old at [nowMs]; null otherwise
          * (#311). The one rule for a position shown or placed as current: notes, the start/finish line, TRIP's live dot
@@ -1337,6 +1336,7 @@ class DriveRecorder(
             if (!state.isRecording) null
             else state.currentLocation?.takeIf { fixAgeMs(it, nowMs) <= LapTimer.MAX_FIX_AGE_MS }
 
+        /** How old a fix is at [nowMs] — on the monotonic clock when the fix carries it, else the wall clock. */
         internal fun fixAgeMs(location: Location, nowMs: Long): Long =
             if (location.elapsedRealtimeNanos > 0L) (SystemClock.elapsedRealtimeNanos() - location.elapsedRealtimeNanos) / 1_000_000L
             else nowMs - location.time
