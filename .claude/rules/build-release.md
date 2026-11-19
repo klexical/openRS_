@@ -115,7 +115,11 @@ paths:
   the branch main only, no reviewer: the nightly and main pushes) and `release-tag` (deployment refs: tags `android-v*`
   only, the owner as required reviewer: RC and stable). A run on a tag uses the tagged commit's own workflow files, so a
   tag run waits for the owner's approval; a ruleset blocks creating, moving and deleting `android-v*` tags, with GitHub
-  Actions as the only bypass (the nightly tags itself). `release-apk.yml` takes the environment name as a required input
+  Actions as the only bypass (the nightly tags itself; owner's option B). **Cutting an RC or stable tag:** the owner
+  switches that ruleset off (Settings → Rules → Rulesets, Enforcement Disabled) for about a minute, pushes the tag, and
+  switches it back to Active; nobody else cuts these tags. The owner approves a `release-tag` deployment only for a tag
+  the owner just cut, never for a `-nightly.` tag (ci.yml skips nightly tags; an approval request for one is a red
+  flag). `release-apk.yml` takes the environment name as a required input
   and its one job declares it; nightly.yml's `release` passes `release`, ci.yml's tag-path `release-apk` passes
   `release-tag`, and both pass exactly the six secrets by name. A called workflow sees a secret only when the caller
   passes its name (an unpassed environment secret is empty, with no error), and the environment's copy then wins; while
