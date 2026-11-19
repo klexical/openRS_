@@ -77,11 +77,14 @@ def secret_bearing?(job)
   job.key?('secrets') || job.key?('environment') || job['uses'] == RECIPE ||
     job.to_yaml.scan(/secrets\.([A-Za-z_][A-Za-z0-9_]*)/).flatten.any? { |n| n != 'GITHUB_TOKEN' }
 end
-# The release secrets live in the GitHub environment `release`, whose deployment refs are main and android-v* tags
-# (owner Q182). The recipe's job declares it. A called workflow gets a secret only when its caller passes that name (an
+# The release secrets live in two GitHub environments (owner Q182): `release` (deployment refs: main only; the nightly
+# and main pushes) and `release-tag` (android-v* tags only, the owner as required reviewer; RC and stable). The recipe's
+# job declares the environment its caller names in the `environment` input: nightly.yml `release`, ci.yml's tag path
+# `release-tag`. No other job declares either one. A called workflow gets a secret only when its caller passes that name (an
 # environment secret too: an unpassed one reads as empty, with no error), so each caller passes exactly these six by
 # name, never `inherit` (which would also hand over the review token). Only the two callers and the recipe name them.
-RELEASE_ENV = 'release'
+RELEASE_ENVS = %w[release release-tag].freeze
+RECIPE_ENV_EXPR = '${{ inputs.environment }}'
 RELEASE_SECRETS = %w[KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD MAPS_API_KEY OPENWEATHER_API_KEY].freeze
 CALLER_SECRETS = RELEASE_SECRETS.to_h { |n| [n, "${{ secrets.#{n} }}"] }.freeze
 def caller_secrets_why(where, job)
@@ -129,6 +132,7 @@ check('ci.yml calls release-apk.yml once, from release-apk, with no nightly date
   why << 'release-apk passes no nightly_date input' unless job.dig('with')&.key?('nightly_date')
   why << "release-apk passes a nightly date (#{job.dig('with', 'nightly_date').inspect})" unless job.dig('with', 'nightly_date').to_s.empty?
   why << "release-apk builds #{job.dig('with', 'sha').inspect}, expected ${{ github.sha }}" unless job.dig('with', 'sha') == '${{ github.sha }}'
+  why << "release-apk names environment #{job.dig('with', 'environment').inspect}, expected release-tag (a tag run, Q182)" unless job.dig('with', 'environment') == 'release-tag'
   why.concat(caller_secrets_why('release-apk', job))
   why
 end
@@ -168,13 +172,14 @@ check("publish-release re-checks the recipe's file name and SHA-256, then only a
   why
 end
 
-check('release-apk.yml is only called, with inputs sha, name, tag, nightly_date and the one output sha256') do
+check('release-apk.yml is only called, with inputs sha, name, tag, nightly_date, environment and the one output sha256') do
   r = load('release-apk.yml')
   why = []
   why << "triggers #{triggers(r).inspect}, expected only workflow_call" unless triggers(r) == ['workflow_call']
   call = (r['on'] || r[true])['workflow_call'] || {}
   inputs = (call['inputs'] || {}).keys.sort
-  why << "inputs #{inputs.inspect}" unless inputs == %w[name nightly_date sha tag]
+  why << "inputs #{inputs.inspect}" unless inputs == %w[environment name nightly_date sha tag]
+  why << 'the environment input is not a required string' unless (call['inputs'] || {})['environment'].to_h.values_at('required', 'type') == [true, 'string']
   outputs = (call['outputs'] || {}).keys.sort
   why << "outputs #{outputs.inspect}, expected only sha256 (GitHub drops an output holding a secret)" unless outputs == %w[sha256]
   jobs(r).each { |id, j| why << "job #{id} outputs #{(j['outputs'] || {}).keys.inspect}" unless (j['outputs'] || {}).keys == %w[sha256] }
@@ -198,11 +203,11 @@ check('release-apk.yml builds the given commit, never for a pull request, with r
   why
 end
 
-check("release-apk.yml's one job reads the release secrets only through the environment #{RELEASE_ENV} (Q182)") do
+check("release-apk.yml's one job reads the release secrets only through the environment its caller names (Q182)") do
   r = load('release-apk.yml')
   why = []
   why << "#{jobs(r).size} jobs, expected 1" unless jobs(r).size == 1
-  jobs(r).each { |id, j| why << "job #{id} declares environment #{j['environment'].inspect}, expected #{RELEASE_ENV.inspect}" unless j['environment'] == RELEASE_ENV }
+  jobs(r).each { |id, j| why << "job #{id} declares environment #{j['environment'].inspect}, expected #{RECIPE_ENV_EXPR}" unless j['environment'] == RECIPE_ENV_EXPR }
   named = File.read(File.join(WF, 'release-apk.yml')).scan(/secrets\.([A-Za-z_][A-Za-z0-9_]*)/).flatten.uniq
   why << "reads secrets #{(named - RELEASE_SECRETS).inspect}, which are not release secrets" unless (named - RELEASE_SECRETS).empty?
   declared = (((r['on'] || r[true])['workflow_call'] || {})['secrets'] || {}).keys.sort
@@ -210,13 +215,13 @@ check("release-apk.yml's one job reads the release secrets only through the envi
   why
 end
 
-check("only the recipe and its two callers name a release secret, and no other job declares the environment #{RELEASE_ENV}") do
+check("only the recipe and its two callers name a release secret, and no other job declares #{RELEASE_ENVS.join(' or ')}") do
   all.reject { |f| File.basename(f) == 'release-apk.yml' }.flat_map do |f|
     wf = YAML.safe_load(File.read(f))
     why = []
     jobs(wf).each do |id, j|
       env = j['environment'].is_a?(Hash) ? j['environment']['name'] : j['environment']
-      why << "#{File.basename(f)} job #{id} declares environment #{RELEASE_ENV}" if env.to_s == RELEASE_ENV
+      why << "#{File.basename(f)} job #{id} declares environment #{env}" if RELEASE_ENVS.include?(env.to_s)
       next if j['uses'] == RECIPE
       text = j.to_yaml
       RELEASE_SECRETS.select { |n| text =~ /secrets\.#{n}\b/ }.each { |n| why << "#{File.basename(f)} job #{id} names secrets.#{n}" }
@@ -226,6 +231,18 @@ check("only the recipe and its two callers name a release secret, and no other j
     why << "#{File.basename(f)}: recipe callers #{callers.inspect}, expected #{expected.inspect}" unless callers == expected
     why
   end
+end
+
+check('release-apk.yml refuses to build when the keystore secret is missing (an error, never an unsigned APK)') do
+  r = load('release-apk.yml')
+  st = jobs(r).values.flat_map { |j| steps(j) }.select { |x| x['name'] == 'Decode release keystore' }
+  next "#{st.size} keystore steps, expected 1" unless st.size == 1
+  run = st.first['run'].to_s
+  why = []
+  why << 'the missing-keystore branch does not print an ::error::' unless run =~ /-z "\$KEYSTORE_BASE64".*?::error::/m
+  why << 'the missing-keystore branch exits 0' if run =~ /-z "\$KEYSTORE_BASE64"[^\n]*\n(?:[^\n]*\n)??\s*exit 0/
+  why << 'the step still promises an unsigned APK' if run.include?('unsigned') && !run.include?('refusing')
+  why
 end
 
 check("publish-release downloads the artifact under the recipe's own upload name") do
@@ -441,7 +458,8 @@ end
 check('the release job calls the recipe for the gate\'s commit, name, tag and date') do
   job = jobs(nightly)['release'] || {}
   want = { 'sha' => '${{ needs.gate.outputs.sha }}', 'name' => '${{ needs.gate.outputs.name }}',
-           'tag' => '${{ needs.gate.outputs.tag }}', 'nightly_date' => '${{ needs.gate.outputs.date }}' }
+           'tag' => '${{ needs.gate.outputs.tag }}', 'nightly_date' => '${{ needs.gate.outputs.date }}',
+           'environment' => 'release' }
   why = []
   why << "uses #{job['uses'].inspect}" unless job['uses'] == RECIPE
   why << "with #{job['with'].inspect}" unless job['with'] == want
