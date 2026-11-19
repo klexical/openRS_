@@ -77,11 +77,16 @@ def secret_bearing?(job)
   job.key?('secrets') || job.key?('environment') || job['uses'] == RECIPE ||
     job.to_yaml.scan(/secrets\.([A-Za-z_][A-Za-z0-9_]*)/).flatten.any? { |n| n != 'GITHUB_TOKEN' }
 end
-# The release secrets live only in the GitHub environment `release`, whose deployment refs are main and android-v* tags
-# (owner Q182). The recipe's job declares it; no caller passes repository secrets on (no `secrets:`), so the recipe sees
-# the environment's copies and nothing else, and no other workflow names a release secret or the environment.
+# The release secrets live in the GitHub environment `release`, whose deployment refs are main and android-v* tags
+# (owner Q182). The recipe's job declares it. A called workflow gets a secret only when its caller passes that name (an
+# environment secret too: an unpassed one reads as empty, with no error), so each caller passes exactly these six by
+# name, never `inherit` (which would also hand over the review token). Only the two callers and the recipe name them.
 RELEASE_ENV = 'release'
 RELEASE_SECRETS = %w[KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD MAPS_API_KEY OPENWEATHER_API_KEY].freeze
+CALLER_SECRETS = RELEASE_SECRETS.to_h { |n| [n, "${{ secrets.#{n} }}"] }.freeze
+def caller_secrets_why(where, job)
+  job['secrets'] == CALLER_SECRETS ? [] : ["#{where} passes secrets #{job['secrets'].inspect}, expected exactly the six release secrets by name (Q182)"]
+end
 def steps(job)
   job['steps'] || []
 end
@@ -124,7 +129,7 @@ check('ci.yml calls release-apk.yml once, from release-apk, with no nightly date
   why << 'release-apk passes no nightly_date input' unless job.dig('with')&.key?('nightly_date')
   why << "release-apk passes a nightly date (#{job.dig('with', 'nightly_date').inspect})" unless job.dig('with', 'nightly_date').to_s.empty?
   why << "release-apk builds #{job.dig('with', 'sha').inspect}, expected ${{ github.sha }}" unless job.dig('with', 'sha') == '${{ github.sha }}'
-  why << "release-apk passes secrets (#{job['secrets'].inspect}); the recipe reads the release environment (Q182)" if job.key?('secrets')
+  why.concat(caller_secrets_why('release-apk', job))
   why
 end
 
@@ -200,19 +205,25 @@ check("release-apk.yml's one job reads the release secrets only through the envi
   jobs(r).each { |id, j| why << "job #{id} declares environment #{j['environment'].inspect}, expected #{RELEASE_ENV.inspect}" unless j['environment'] == RELEASE_ENV }
   named = File.read(File.join(WF, 'release-apk.yml')).scan(/secrets\.([A-Za-z_][A-Za-z0-9_]*)/).flatten.uniq
   why << "reads secrets #{(named - RELEASE_SECRETS).inspect}, which are not release secrets" unless (named - RELEASE_SECRETS).empty?
+  declared = (((r['on'] || r[true])['workflow_call'] || {})['secrets'] || {}).keys.sort
+  why << "workflow_call declares secrets #{declared.inspect}, expected exactly #{RELEASE_SECRETS.sort.inspect}" unless declared == RELEASE_SECRETS.sort
   why
 end
 
-check("no other workflow names a release secret or the environment #{RELEASE_ENV}, and no recipe caller passes secrets") do
+check("only the recipe and its two callers name a release secret, and no other job declares the environment #{RELEASE_ENV}") do
   all.reject { |f| File.basename(f) == 'release-apk.yml' }.flat_map do |f|
     wf = YAML.safe_load(File.read(f))
-    text = File.read(f)
-    why = RELEASE_SECRETS.select { |n| text =~ /secrets\.#{n}\b/ }.map { |n| "#{File.basename(f)} names secrets.#{n}" }
+    why = []
     jobs(wf).each do |id, j|
       env = j['environment'].is_a?(Hash) ? j['environment']['name'] : j['environment']
       why << "#{File.basename(f)} job #{id} declares environment #{RELEASE_ENV}" if env.to_s == RELEASE_ENV
-      why << "#{File.basename(f)} job #{id} calls the recipe with secrets #{j['secrets'].inspect}" if j['uses'] == RECIPE && j.key?('secrets')
+      next if j['uses'] == RECIPE
+      text = j.to_yaml
+      RELEASE_SECRETS.select { |n| text =~ /secrets\.#{n}\b/ }.each { |n| why << "#{File.basename(f)} job #{id} names secrets.#{n}" }
     end
+    callers = jobs(wf).select { |_, j| j['uses'] == RECIPE }.keys
+    expected = { 'ci.yml' => ['release-apk'], 'nightly.yml' => ['release'] }.fetch(File.basename(f), [])
+    why << "#{File.basename(f)}: recipe callers #{callers.inspect}, expected #{expected.inspect}" unless callers == expected
     why
   end
 end
@@ -434,7 +445,7 @@ check('the release job calls the recipe for the gate\'s commit, name, tag and da
   why = []
   why << "uses #{job['uses'].inspect}" unless job['uses'] == RECIPE
   why << "with #{job['with'].inspect}" unless job['with'] == want
-  why << "secrets #{job['secrets'].inspect}, expected none: the recipe reads the release environment (Q182)" if job.key?('secrets')
+  why.concat(caller_secrets_why('release', job))
   others = jobs(nightly).reject { |id, _| id == 'release' }.select { |_, j| secret_bearing?(j) }.keys
   why << "other jobs hold secrets: #{others.inspect}" unless others.empty?
   why
