@@ -115,9 +115,10 @@ paths:
   the branch main only, no reviewer: the nightly and main pushes) and `release-tag` (deployment refs: tags `android-v*`
   only, the owner as required reviewer: RC and stable). A run on a tag uses the tagged commit's own workflow files, so a
   tag run waits for the owner's approval; a ruleset blocks creating, moving and deleting `android-v*` tags except nightly
-  tags, with no bypass (a personal repository cannot list GitHub Actions as a bypass, so nightly tags are excluded and
-  the nightly still tags itself; the daily audit (A3, being built) is to report any nightly-tag change not made by `github-actions[bot]` and any
-  nightly tag whose commit is not its release's). **Cutting an RC or stable tag:** the owner
+  tags (exclude pattern `android-v*-nightly.*`), with no bypass (Q191: a personal repository cannot list GitHub Actions
+  as a bypass, so nightly tags are excluded and the nightly still tags itself; the daily audit (A3, being built) is to
+  report any nightly-tag creation, move or deletion not made by `github-actions[bot]` and any nightly tag whose commit is
+  not its release's). **Cutting an RC or stable tag:** the owner
   switches that ruleset off (Settings → Rules → Rulesets, Enforcement Disabled) for about a minute, pushes the tag, and
   switches it back to Active; nobody else cuts these tags. The owner approves a `release-tag` deployment only for a tag
   the owner just cut, never for a `-nightly.` tag (ci.yml skips nightly tags; an approval request for one is a red
