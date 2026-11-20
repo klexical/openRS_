@@ -9,6 +9,10 @@ name: Release APK (shared recipe)
 # any secret's value, the caller builds the artifact and file names itself (the file name from its tag). It re-checks the
 # digest before it attests and attaches the file.
 # Every input reaches the shell through env, never inside a run line (android/scripts/test-release-workflows.rb).
+# The six release secrets live in two GitHub environments (owner Q182): "release" (main only: the nightly) and
+# "release-tag" (android-v* tags only, the owner's approval: RC and stable). The caller names one in the environment
+# input and passes the six by name (never inherit): a called workflow sees a secret only when it is passed, and the
+# environment's copy then wins. GitHub checks the caller's run ref against that environment's rules.
 
 on:
   workflow_call:
@@ -30,6 +34,23 @@ on:
         required: false
         type: string
         default: ''
+      environment:
+        description: The GitHub environment holding the release secrets, release (nightly) or release-tag (a tag run)
+        required: true
+        type: string
+    secrets:
+      KEYSTORE_BASE64:
+        required: false
+      KEYSTORE_PASSWORD:
+        required: false
+      KEY_ALIAS:
+        required: false
+      KEY_PASSWORD:
+        required: false
+      MAPS_API_KEY:
+        required: false
+      OPENWEATHER_API_KEY:
+        required: false
     outputs:
       sha256:
         description: The APK's SHA-256
@@ -43,6 +64,7 @@ jobs:
     name: Build and verify the release APK
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    environment: ${{ inputs.environment }}   # release or release-tag: the only places the release secrets are (Q182)
     # Never for a pull request's head: the keystore and the API keys are in this job
     if: ${{ !startsWith(github.event_name, 'pull_request') }}
     outputs:
@@ -74,15 +96,14 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           if [ -z "$KEYSTORE_BASE64" ]; then
-            echo "::warning::Keystore secrets not configured — APK will be unsigned"
-            exit 0
+            echo "::error::Keystore secrets not configured (release environments, Q182): refusing to build an unsigned release APK"
+            exit 1
           fi
           echo "$KEYSTORE_BASE64" | base64 -d > openrs-release.jks
           printf 'storeFile=openrs-release.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
             "$KEYSTORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" > keystore.properties
 
-      # API keys come from repository secrets as environment variables (#235) — no file, never echoed. Maps is required
-      # for a published release (the job stops here without it); weather is optional.
+      # API keys from the release environment (#235, Q182): no file, never echoed. Maps required; weather optional.
       - name: Check release configuration (API keys)
         env:
           MAPS_API_KEY: ${{ secrets.MAPS_API_KEY }}
