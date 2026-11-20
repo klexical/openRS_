@@ -105,7 +105,7 @@ paths:
     an earlier tag whose versionCode it can't read (exception list `LEGACY_TAGS`, empty) or a checkout without tags, and it
     rejects APKs up to rc.6 (they embed `2.2.7`, the convention then) — expected, not a defect of those releases.
 - **Release API keys (#235)** — `apiKey(name)` in `app/build.gradle.kts`: `local.properties`, else the
-  environment; optional for every build. The release recipe (`release-apk.yml`) maps the `release` environment's secrets `MAPS_API_KEY` /
+  environment; optional for every build. The release recipe (`release-apk.yml`) maps the release environments' secrets `MAPS_API_KEY` /
   `OPENWEATHER_API_KEY` and runs `scripts/check-release-config.sh` (Maps required, weather
   a notice); `verify-release.sh` step 5 (`check-apk-maps-key.sh`) fails an APK with an absent / empty / placeholder Maps
   key, so it rejects keyless local builds and the published rc.6 asset (blank TRIP map). Scripts print lengths only — never a
@@ -114,8 +114,10 @@ paths:
   `KEY_PASSWORD`, `MAPS_API_KEY` and `OPENWEATHER_API_KEY` are held, the same six in each, by `release` (deployment refs:
   the branch main only, no reviewer: the nightly and main pushes) and `release-tag` (deployment refs: tags `android-v*`
   only, the owner as required reviewer: RC and stable). A run on a tag uses the tagged commit's own workflow files, so a
-  tag run waits for the owner's approval; a ruleset blocks creating, moving and deleting `android-v*` tags, with GitHub
-  Actions as the only bypass (the nightly tags itself; owner's option B). **Cutting an RC or stable tag:** the owner
+  tag run waits for the owner's approval; a ruleset blocks creating, moving and deleting `android-v*` tags except nightly
+  tags, with no bypass (a personal repository cannot list GitHub Actions as a bypass, so nightly tags are excluded and
+  the nightly still tags itself; the daily audit reports any nightly-tag change not made by `github-actions[bot]` and any
+  nightly tag whose commit is not its release's). **Cutting an RC or stable tag:** the owner
   switches that ruleset off (Settings → Rules → Rulesets, Enforcement Disabled) for about a minute, pushes the tag, and
   switches it back to Active; nobody else cuts these tags. The owner approves a `release-tag` deployment only for a tag
   the owner just cut, never for a `-nightly.` tag (ci.yml skips nightly tags; an approval request for one is a red
