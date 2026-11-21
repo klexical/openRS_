@@ -316,6 +316,20 @@ BODY=$'Summary ![shot] here\n\n[shot]: https://example.com/x.png' run 1 "a short
   "an image or attachment in the pull request description"
 BODY=$'Summary ![a long\nalt text](https://example.com/x.png)' run 1 "an image whose alt text spans two lines needs the OK" \
   "an image or attachment in the pull request description"
+# an HTML tag split across lines: the tag name ends the line, its attributes and closing bracket follow
+BODY=$'Summary <img\nsrc="https://example.com/x.png">' run 1 "an <img> tag split across lines needs the OK" \
+  "an image or attachment in the pull request description"
+BODY=$'Summary <video\n  src="https://example.com/x.mp4"\n>' run 1 "a <video> tag split across lines needs the OK" \
+  "an image or attachment in the pull request description"
+BODY=$'an <imgur> link and <embedded> words only' run 0 "a word that only starts with a tag name is fine"
+# the summary counts PR-text images on their own, reviewed or not, so a merge step can tell a past image from a file
+BODY=$'Summary\n\n![shot][1]\n\n[1]: https://example.com/x.png' run 1 "the summary counts a PR-text image" \
+  "; pull request images 1;"
+TITLE='Add <img src=x> to the page' BODY=$'Summary <img\nsrc=x>' run 1 "the summary counts the title and the description" \
+  "; pull request images 2;"
+BODY=$'Summary <img\nsrc=x>' ACTION=labeled LABEL=privacy-ok-compressed run 0 "an OK'd PR-text image is still counted" \
+  "; pull request images 1;"
+BODY='a [plain link](https://example.com/page) only' run 0 "no image, a count of 0" "; pull request images 0;"
 # every entry, not only a MAC or VIN, also matches in letters and digits only (8 or more), after decoding %XX, +,
 # HTML entities and \u escapes
 for spelled in "Wexmoor%20Fixture%20Lane" "Wexmoor+Fixture+Lane" "wexmoor_fixture_lane" "WexmoorFixtureLane" \
