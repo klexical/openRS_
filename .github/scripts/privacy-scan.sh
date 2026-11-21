@@ -22,8 +22,8 @@
 # and dates, the encoding, any extra header, and the message; an object that is binary or names an encoding is also
 # read whole); the pull request's title, description and branch name. Every entry of 8 letters and digits or more (and
 # every MAC- or VIN-shaped entry) is also matched "bare": with \uXXXX, \xXX, %XX, + and HTML entities decoded, NFKD
-# applied and accents dropped (full-width and accented letters read as plain ones), a 0x before hex dropped and every
-# character but letters and digits removed, from the entry and the scanned line alike.
+# applied and accents dropped (full-width and accented letters read as plain ones), every character but letters and
+# digits removed and then a 0x before a byte dropped, from the entry and the scanned line alike.
 # A file git judges binary on either side of a commit (--numstat "-" "-"), whose new content holds a NUL byte anywhere,
 # or that is not UTF-8, is read whole, as bytes and as UTF-16 or UTF-32 in either byte order; a binary file that is not
 # a ZIP is also a finding until a reviewer's OK, as it may hold compressed data. A ZIP (found by its structure, at any
@@ -148,8 +148,8 @@ def bare(text):
     # full-width and other compatibility forms read as plain letters, and accents are dropped: NFKD splits a letter
     # from its accent (NFKC would join "e" and a combining accent into one letter that no entry holds)
     t = "".join(c for c in unicodedata.normalize("NFKD", t) if not unicodedata.combining(c))
-    t = re.sub(r"0x(?=[0-9a-fA-F]{2})", "", t.casefold())
-    return re.sub(r"[\W_]", "", t)
+    # a 0x before a byte goes after the separators, so whether it goes cannot depend on them
+    return re.sub(r"0x(?=[0-9a-f]{2})", "", re.sub(r"[\W_]", "", t.casefold()))
 
 def mac_bytes(bares):  # a MAC's six bytes, in either order, for files read whole
     out = []
@@ -359,12 +359,14 @@ keep() {
     RAR) ext=.rar ;; tar) ext=.tar ;; esac     # the names gitleaks opens as archives
   nw=$((nw+1)); cp "$1" "$WHOLE/$nw$ext"; printf '%s\t%s\t%s\n' "$2" "$3" "$4" >> "$T/whole.idx"
   rm -f "$T/texts"
-  # UTF-16 / UTF-32 readings exist only for a file with a NUL; the helper starts only then
-  [ "$(tr -cd '\000' < "$1" | head -c 1 | wc -c)" -eq 0 ] || python3 -I "$H" texts "$1" "$T/texts"
+  # UTF-16 / UTF-32 readings exist only for a file with a NUL; the helper starts only then. The file is compared with
+  # itself NUL-free, read to the end (no head to cut a pipe short, whose broken pipe could trip the ERR trap)
+  if ! tr -d '\000' < "$1" | cmp -s - "$1"; then python3 -I "$H" texts "$1" "$T/texts"; fi
   if [ -s "$T/texts" ]; then nw=$((nw+1)); cp "$T/texts" "$WHOLE/$nw"; printf '%s\t%s\t%s\n' "$2" "$3" "$4" >> "$T/whole.idx"; fi
 }
 # scan_zip <c12> <path> <file>: each member's name and content against the list (by number, never by name); a member
-# that is itself compressed is listed for a reviewer's OK; an encrypted, oversized or unreadable one is a finding
+# that is itself compressed is listed for a reviewer's OK; an encrypted, oversized or unreadable one is a finding. Sets
+# zipread: 1 once its members are read, 0 for a ZIP that cannot be read (a finding of its own)
 scan_zip() {
   local c12=$1 sp=$2 z=$3 d=$T/zip idx status name
   rm -rf "$d"; mkdir "$d"
@@ -396,7 +398,7 @@ with zipfile.ZipFile(z) as zf:
         print(f"{n}\tok\t{name}")
 PY
   then
-    printf '%s\ta ZIP that cannot be read\t%s\t\n' "$c12" "$sp" >> "$T/zipbad"; return 1
+    printf '%s\ta ZIP that cannot be read\t%s\t\n' "$c12" "$sp" >> "$T/zipbad"; return 0
   fi
   while IFS=$'\t' read -r idx status name; do
     if [ "$idx" != 0 ]; then
@@ -413,7 +415,7 @@ PY
     [ "$hit" -eq 0 ] || printf '%s\tZIP member #%s content\t%s\t\n' "$c12" "$idx" "$sp" >> "$T/binhits"
     [ -z "$b64comp" ] || printf '%s\tbase64 in ZIP member #%s, decoding to a compressed file (%s)\t%s\t\n' "$c12" "$idx" "$b64comp" "$sp" >> "$T/compressed"
   done < "$d/index"
-  rm -rf "$d"
+  rm -rf "$d"; zipread=1
 }
 # raw_header <commit object>: its header lines as the formatted fields do not show them: every header, and for the
 # author and committer lines only what follows the address (the name and address are scanned as fields)
@@ -498,10 +500,9 @@ for c in $commits; do
       if grep -q -a -i -E 'privacy[-_ ]?scan' "$T/blob"; then
         printf '%s\ta workflow file that names the privacy-scan check\t%s\t\n' "$c12" "$sp" >> "$T/compressed"
       fi ;; esac
+    # scan_zip sets zipread; it is never a condition, since inside one bash ignores set -e and the ERR trap
     zipread=0
-    if [ "$kind" = zip ] || [ "$zipok" = 1 ]; then
-      if scan_zip "$c12" "$sp" "$T/blob"; then zipread=1; fi
-    fi
+    if [ "$kind" = zip ] || [ "$zipok" = 1 ]; then scan_zip "$c12" "$sp" "$T/blob"; fi
     if [ -n "$kind" ] && [ "$kind" != zip ]; then
       printf '%s\tcompressed file (%s)\t%s\t\n' "$c12" "$kind" "$sp" >> "$T/compressed"
     elif [ "$binary" = 1 ] && [ "$zipread" = 0 ] && [ "$kind" != zip ]; then
