@@ -86,9 +86,12 @@ ci = nil
 check('ci.yml parses') { ci = load('ci.yml'); nil }
 all = Dir[File.join(WF, '*.yml')].sort
 
-check('no workflow runs on pull_request_target or workflow_run') do
+# privacy-scan.yml is the one pull_request_target workflow: it runs main's code only and nothing of the pull request
+# (.github/scripts/test-review-workflows.rb pins its shape)
+check('no workflow runs on pull_request_target or workflow_run, but privacy-scan.yml on pull_request_target') do
   all.flat_map do |f|
     t = triggers(YAML.safe_load(File.read(f)))
+    t -= ['pull_request_target'] if File.basename(f) == 'privacy-scan.yml'
     (t & %w[pull_request_target workflow_run]).map { |x| "#{File.basename(f)} runs on #{x}" }
   end
 end

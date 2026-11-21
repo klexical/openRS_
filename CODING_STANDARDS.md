@@ -83,4 +83,5 @@ Comment only on lines the diff adds or changes, once per finding, with the file 
 
 - A new or changed `uses:` is in `.github/workflows/actions.lock` (`gh actions-lock --no-narrow`). `.claude/rules/build-release.md`,
   "Workflow lockfile".
-- No `pull_request_target`; a job that holds a secret does not run code from a fork.
+- No `pull_request_target`, except `privacy-scan.yml` (main's code only, no checkout, nothing of the pull request runs);
+  a job that holds a secret does not run code from a fork.
