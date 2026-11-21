@@ -62,7 +62,7 @@ RESTORED_AT = "sha1-469588f42e6b1e94cd14ad09dccfeaec772ce0fd"
 lock = YAML.safe_load(File.read(File.join(dir, "actions.lock")), aliases: false)
 check.(lock.dig("dependencies", "anthropics/claude-code-action@v1", "commit") == RESTORED_AT,
        "the locked claude-code-action is the commit the restored-path list was read at")
-prompt = with["prompt"].to_s
+prompt = with["prompt"].to_s.gsub(/\s+/, " ")    # the prompt's words, whatever its line breaks
 check.(RESTORED.all? { |p| prompt.include?(p) } && prompt.include?(".claude-pr/"),
        "the prompt names every path the action restores from the base, and .claude-pr/ for the pull request's copies")
 check.(prompt.include?("a line that starts with + is one it adds") && prompt.include?("a line that starts with - is one it removes"),
