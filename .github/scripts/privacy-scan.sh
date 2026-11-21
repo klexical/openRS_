@@ -210,12 +210,18 @@ def expand(path, barepath):
     open(barepath, "w", encoding="utf-8").write("".join(x + "\n" for x in sorted(set(bares))))
 
 B64 = rb"[A-Za-z0-9+/_-]"
-def b64runs(textpath):
-    # base64 runs of TEXT, by line: a run inside a line (20 characters or more, or 8 or more that mix cases or hold a
-    # digit or + /), or lines of base64 and nothing else joined (wrapped base64, its last line of any length);
-    # each reported at its first line
+B64SKIP = rb"[#/*;\"'`,+&.()\[\]{}\\<>!-]{1,4}"   # a token that is only comment marks, quotes or joiners
+def b64runs(data):
+    # base64 runs of DATA (bytes), by line: a run inside a line (20 characters or more, or 8 or more that mix cases or
+    # hold a digit or + /), or lines of base64 and nothing else joined (wrapped base64, its last line of any length);
+    # each reported at its first line. Then a second pass for wrapped base64 whose pieces are not on lines of their
+    # own: the text is split on escaped line ends (\n, \r), bare CRs and white space; each token's trailing base64
+    # run (trailing quotes, commas and brackets dropped) is a piece, a token of comment marks or quotes alone is
+    # passed over, and pieces of 16 or more characters are joined as wrapped lines are, the last of any length. A
+    # joined run is kept only when it spans two or more pieces and the first pass did not find it
+    lines = data.split(b"\n")
     runs, cur = [], None
-    for n, line in enumerate(open(textpath, "rb").read().split(b"\n"), 1):
+    for n, line in enumerate(lines, 1):
         t = line.strip()
         if re.fullmatch(B64 + rb"{16,}={0,2}", t) or (cur is not None and re.fullmatch(B64 + rb"+={0,2}", t)):
             if cur is None:
@@ -229,7 +235,26 @@ def b64runs(textpath):
             r = m.group()
             if len(r) >= 20 or re.search(rb"[0-9+/]", r) or (re.search(rb"[a-z]", r) and re.search(rb"[A-Z]", r)):
                 runs.append([n, r])
-    return runs
+    first, chain, joined = {r for _, r in runs}, None, []
+    def close():
+        if chain and chain[2] >= 2 and chain[1] not in first:
+            joined.append([chain[0], chain[1]])
+    for n, line in enumerate(lines, 1):
+        for tok in re.split(rb"\\[nr]|\s+", line):
+            if not tok or re.fullmatch(B64SKIP, tok):
+                continue
+            m = re.search(B64 + rb"+={0,2}$", tok.rstrip(b"\"',;)]}\\"))
+            piece = m.group() if m else b""
+            if chain is not None and piece:
+                chain[1] += piece; chain[2] += 1
+                if piece.endswith(b"=") or len(piece) < 16:
+                    close(); chain = None
+                continue
+            close(); chain = None
+            if len(piece) >= 16 and not piece.endswith(b"="):
+                chain = [n, piece, 1]
+    close()
+    return runs + joined
 
 def decodings(run, depth=0):
     for urlsafe in (False, True):
@@ -290,8 +315,11 @@ elif cmd == "texts":      # texts <file> <out>: its UTF-16 / UTF-32 readings, if
 elif cmd == "blob":       # blob <list> <bare list> <file>: "<1 when the file holds a match, else 0>\t<the kind of a
     # compressed file a base64 run in it decodes to, or ->"; base64 is decoded as on a scanned line; never what matched
     ents, bares = entries(sys.argv[2]), entries(sys.argv[3])
-    hit, comp = hits(open(sys.argv[4], "rb").read(), ents, bares), ""
-    for n, run in b64runs(sys.argv[4]):
+    data = open(sys.argv[4], "rb").read()
+    hit, comp = hits(data, ents, bares), ""
+    # base64 in the bytes as they are, and in each UTF-16 / UTF-32 reading (base64 written in UTF-16 has a NUL
+    # between its characters, so it is no run in the raw bytes)
+    for n, run in (r for x in [data] + [t.encode("utf-8") for t in decoded_texts(data)] for r in b64runs(x)):
         for d in decodings(run):
             u = unpack(d)
             comp = comp or (u[0] if u else (kind(d) if len(d) >= 32 else ""))
@@ -307,16 +335,16 @@ elif cmd == "bare":       # bare <in> <out>: each line in letters-and-digits-onl
             out.write(bare(line.decode("utf-8", errors="replace")) + "\n")
 elif cmd == "b64":        # b64 <list> <bare list> <text>: "<line>\thit" or "<line>\tcompressed <kind>" per base64 run
     ents, bares = entries(sys.argv[2]), entries(sys.argv[3])
-    for n, run in b64runs(sys.argv[4]):
-        found = set()
+    found = set()   # (line, "hit" or "comp"): each is printed once per line, however many runs start there
+    for n, run in b64runs(open(sys.argv[4], "rb").read()):
         for d in decodings(run):
             u = unpack(d)
             k = u[0] if u else (kind(d) if len(d) >= 32 else "")
-            if k and "comp" not in found:
-                found.add("comp"); print(f"{n}\tcompressed {k}")
-            if "hit" not in found and (hits(d, ents, bares) or (u and hits(u[1], ents, bares))):
-                found.add("hit"); print(f"{n}\thit")
-            if len(found) == 2:
+            if k and (n, "comp") not in found:
+                found.add((n, "comp")); print(f"{n}\tcompressed {k}")
+            if (n, "hit") not in found and (hits(d, ents, bares) or (u and hits(u[1], ents, bares))):
+                found.add((n, "hit")); print(f"{n}\thit")
+            if (n, "comp") in found and (n, "hit") in found:
                 break
 PY
 python3 -I "$H" expand "$LIST" "$T/listbare"
