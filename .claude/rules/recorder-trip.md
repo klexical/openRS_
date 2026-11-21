@@ -79,6 +79,14 @@ paths:
   ALT / HDG / accuracy readout also reads ("—" without one); idle, only an idle fetch asked for after the last drive started (`idleFetch`
   stamps before the call). Never carry a fix from one drive into the next, and never
   record the platform's last-known fix as a drive position
+- **A drive's job exists before it runs (#314)** — `startDrive` creates the drive's job lazily,
+  assigns `recorderJob` (`@Volatile`) on the caller's thread, then starts it; the job prunes, inserts the row
+  (`NonCancellable`, `DriveRun.driveId`), checks for cancellation, publishes the state and runs the loop. Never assign
+  the job from inside its own coroutine or after a launch: a STOP that reads it first neither cancels nor joins the
+  loop (the drive keeps recording, its final flush is lost unreported), and a second START starts a second drive.
+  A STOP before the drive's state is published only cancels the start and deletes any row it wrote (`cancelStart`), never
+  the previous drive's; a STOP with nothing under way does nothing; `startDrive` / `stopDrive` are `@Synchronized`.
+  `DriveStartStopRaceTest` holds one DAO call per window
 - **Two kinds of pause, one owner (#316)** — the recorder owns the drive's phase (`DrivePhase` IDLE / STARTING / RECORDING /
   PAUSED) and takes commands and events; nothing else sets it. A hand pause (`PauseReason.HAND`) ends only by RESUME or STOP.
   A link pause (`PauseReason.LINK`) is applied by `onConnectionLost` when auto-record is on. It ends by RESUME or STOP, or by
@@ -87,6 +95,15 @@ paths:
   (`AutoRecordPolicy`). Switching auto-record off turns an open link pause into a hand pause. A shorter loss is a recording gap: the drive stays
   RECORDING and stores no point while `isConnected` is false. The notification, DRIVE's strip and TRIP show the drive through
   `DriveLabel.of`; the header shows REC or plain PAUSED. Terms: `GLOSSARY.md`
+- **Every running save is tracked (#329)** — `isFinalizing` and `durabilityBarrier()` read the set of save jobs still
+  running (`trackSave`: a STOP's save and a cancelled start's cleanup, added before they start, counted until completed).
+  Never back them with one "latest job" slot: a later drive's quicker save, or a start cancelled by STOP, would hide an
+  earlier save that is still writing, and the foreground service could be released under it
+- **A parked drive adds no distance, a car with no known speed keeps its GPS steps (#335)** — the recording loop drops a
+  step only when `DriveState.carParked`: this connection's 0x130 stamp (`CanDecoder.SPEED_TAG`, 1 s throttle, cleared at
+  every new connection) is at most `BoostRule.LINK_FRESH_MS` old and the speed reads 0. A stored point's speed has no "not
+  received" form, so `closedOrphan` drops zero-speed steps only when some point of the drive is above 0 (a drive parked
+  from start to finish keeps its wander). Every fix is still stored. `ParkedDistanceTest`, `SpeedStampConnectResetTest`
 - **A drive's summary is built one way (#321)** — STOP, the export of a drive still recording (`snapshotActiveDrive`) and a
   drive closed at the next launch (`closedOrphan`, #262) all go through `DriveRecorder.summarize`. The aggression score
   covers every stored point of the drive on every path (the owner, on #321), never the in-memory `recentPoints` window. The

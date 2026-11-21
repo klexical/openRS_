@@ -103,8 +103,9 @@ data[5] = B5,  data[6] = B6 …
 
 The gotchas live in `.claude/rules/` as path-scoped Claude Code rules, one file per area. In Claude Code each file loads on
 demand when a file matching its `paths:` globs is read or edited; the globs start with `**/` so they also match from a
-workspace that holds this repository in a subfolder. A session that does not load them by itself (a cloud project thread)
-opens every file whose globs match a file it will touch, before the first edit. Rules for editing them:
+workspace that holds this repository in a subfolder. Whether they load by themselves depends on the session, so open
+every file whose globs match a file you will touch before the first edit, even where it may already have loaded. Rules
+for editing them:
 
 - A new gotcha goes at the end of its area's file as `- **Title** — rule`; a cross-cutting one goes to
   `android-general.md`. An entry states the rule, its reason and the test or issue that holds the evidence. Dates, commit
@@ -122,10 +123,11 @@ opens every file whose globs match a file it will touch, before the first edit. 
 - A rule file holds what no check enforces. A rule that a unit test or a CI check fails on when it is broken is not
   kept here: the test is the rule, and its name and KDoc carry the reason. An entry stays when its rule binds code not
   yet written ("any new writer …"), when it records evidence or an unverified point (hardware, emulator-only, a source
-  read but not run), when an owner decision behind it is not in a test, or when `CODING_STANDARDS.md` points at it.
-- `CODING_STANDARDS.md` points at some entries by file and title, and the CI reviewer reads the entry a standard points
-  to. Renaming or removing such an entry changes a review rule: change `CODING_STANDARDS.md` in the same round (it is a
-  twin, see "Branch / Release Workflow").
+  read but not run), when an owner decision behind it is not in a test, or when `CODING_STANDARDS.md` points at it or
+  at its file. A pointer that names a file alone, with no entry title, keeps every entry in that file.
+- `CODING_STANDARDS.md` points at rule files, by file alone or by file and title, and the CI reviewer reads the rule file
+  a standard points to. Renaming or removing an entry it reaches changes a review rule: change `CODING_STANDARDS.md` in
+  the same round (it is a twin, see "Branch / Release Workflow").
 
 | File | Area | Loads when a matching file is read / edited |
 |---|---|---|
@@ -244,10 +246,11 @@ The RC, nightly and stable procedures, the release checklist, the changelog form
 **Release records.** Release facts live in `android/CHANGELOG.md` and on the GitHub Releases page; open work lives in the
 issue tracker. This file takes no dated status or work-log entries.
 
-Docs branches skip staging entirely: branch from main, PR to main. The root `README.md`, `assets/`, `docs/` and
-`firmware/README.md` never go through staging. `CLAUDE.md`, `.claude/rules/` and `GLOSSARY.md` describe the code on staging,
-so they take the code route, and a change that makes one of them wrong corrects it in the same branch. `android/README.md`
-and `android/CONTRIBUTING.md` travel with the code change they describe, through staging.
+Docs branches skip staging entirely: branch from main, PR to main. The root `README.md`, the root `assets/` and `docs/`
+folders and `firmware/README.md` never go through staging. `CLAUDE.md`, `.claude/rules/` and `GLOSSARY.md` describe the
+code on staging, so they take the code route, and a change that makes one of them wrong corrects it in the same branch.
+Documentation under `android/` that describes a code change travels with that code, through staging (`android/README.md`
+and `android/CONTRIBUTING.md` included).
 
 ## Sapphire (`web/`)
 
