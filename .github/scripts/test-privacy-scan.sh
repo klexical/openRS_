@@ -445,8 +445,14 @@ echo '{"push": {}}' > "$T/push.json"; EVENT=$T/push.json; run 2 "an event that i
 # the summary names the pull request, so a merge step can find every run of one PR at any head without GitHub's
 # pull_requests field; an event without a whole number there fails closed
 repo; g checkout -q -b feature; commit "work"
-run 0 "the summary names the pull request" "privacy scan: 1 new commit(s); pull request 7; identifier matches 0"
+run 0 "the summary names the pull request" "privacy scan: 1 new commit(s); pull request 7; head "
 PRNUM=448 run 0 "the summary names that pull request's number" "; pull request 448; "
+run 0 "the summary names the head it scanned" "; pull request 7; head $(sha HEAD); ok label needed no; "
+repo; g checkout -q -b feature; put p.png "$(printf '\\x89PNG\\r\\n\\x1a\\n')"; commit "an image"
+run 1 "the summary says the OK label is needed" "; ok label needed yes; "
+ACTION=labeled LABEL=privacy-ok-compressed run 0 "the summary says the OK label was needed when it is given" "; ok label needed yes; "
+repo; g checkout -q -b feature; commit "work"
+BODY='![shot](https://example.com/x.png)' run 1 "an image in the PR text needs the OK label too" "; ok label needed yes; "
 PRNUM="" run 2 "an event without the pull request's number fails closed" "does not name a pull request event"
 PRNUM="7; identifier matches 0" run 2 "a number that is not a whole number fails closed" "does not name a pull request event"
 out=$(bash "$SCAN" 2>&1); rc=$?
