@@ -97,7 +97,9 @@ run 1 "an added line in such a file prints the withheld path with the line" \
 repo; g checkout -q -b feature; put img.bin "\x00\x01PNG\x00$ID2\x00\xff"; commit "a binary file"
 run 1 "a binary file's content fails, counted, never printed" "FINDING $(c12): binary content img.bin"
 repo; g checkout -q -b feature; put img.bin '\x00\x01PNG\x00clean\x00\xff'; commit "a clean binary file"
-run 0 "a clean binary file passes"
+run 1 "a clean binary file needs a reviewer's OK (the scan cannot show it holds nothing compressed)" \
+  "FINDING $(c12): a binary file, which may hold compressed data img.bin (needs a reviewer's OK"
+ACTION=labeled LABEL=privacy-ok-compressed run 0 "the OK label passes a clean binary file" "REVIEWED $(c12): a binary file"
 repo; g checkout -q -b feature; commit "work"
 TITLE="Fix $ID1"; run 1 "the PR title fails" "FINDING pull request: pull request title"; TITLE=
 BODY=$(printf 'Summary\r\n\r\nseen on %s\r\n' "$ID2"); run 1 "the PR description fails at its line" \
@@ -245,6 +247,86 @@ repo; g checkout -q -b feature; for i in 1 2 3 4 5 6 7 8; do head -c 64 /dev/ura
 printf '"short": "%s",\n' "$(printf '\x1f\x8b\x08\x00abcdefgh' | base64 -w0)" >> "$T/r/lock.json"; g add lock.json; commit "a lockfile"
 run 0 "short base64 (hashes, a few bytes after a magic) is no compressed-file finding"
 
+# ── the review of the rebuild: base64 tails, late NULs, hidden compression, the raw commit, images, variants ──────────
+repo; g checkout -q -b feature; put f.txt "one\nvin $(b64 "$VIN")\n"; commit "a VIN in base64 alone"
+LIST=$(printf '%s\n%s\n' "$ID1" "$VIN") run 1 "base64 of an entry alone (its last bytes in the padding) fails" "base64 on an added line, holding a list match f.txt:2"
+for pre in "" "a" "ab" "abc"; do
+  repo; g checkout -q -b feature; put f.txt "one\nx=$(b64 "$pre$ID1")\n"; commit "an entry at the end of base64"
+  run 1 "an entry at the very end of base64 (prefix of ${#pre}) fails" "base64 on an added line, holding a list match f.txt:2"
+done
+repo; g checkout -q -b feature; head -c 40 /dev/zero | tr '\0' 'f' > "$T/w.txt"; printf '%s' "$ID2" >> "$T/w.txt"
+{ printf 'one\n'; base64 -w 76 "$T/w.txt"; } > "$T/r/w.txt"; [ "$(tail -n1 "$T/r/w.txt" | wc -c)" -le 16 ] || echo "SETUP: the last line is not short"
+g add w.txt; commit "wrapped base64 with a short last line"
+run 1 "wrapped base64 whose last line is short fails" "base64 on an added line, holding a list match w.txt:2"
+repo; g checkout -q -b feature; MACB=$(printf '\x02\x5a\x1e\x7c\x3d\x9b' | base64 -w0); put f.txt "one\nmac = \"$MACB\"\n"; commit "a MAC's bytes in base64"
+LIST=$(printf '%s\n%s\n' "$ID1" "$MAC") run 1 "base64 of a MAC's six bytes fails" "base64 on an added line, holding a list match f.txt:2"
+repo; g checkout -q -b feature; put f.txt "one\nx = $(printf '%s' "the $ID1 here" | base64 -w0 | base64 -w0)\n"; commit "double base64"
+run 1 "double base64 fails" "base64 on an added line, holding a list match f.txt:2"
+repo; g checkout -q -b feature; put f.txt "one\nblob = $(printf 'tiny %s' "$ID2" | gzip -c | base64 -w0)\n"; commit "a small gzip in base64"
+run 1 "a small gzip in base64 needs the OK, and its content is read" \
+  "base64 on an added line, decoding to a compressed file (gzip) f.txt:2" "base64 on an added line, holding a list match f.txt:2"
+repo; g checkout -q -b feature; { head -c 8100 /dev/zero | tr '\0' 'a'; u16 utf-16-le "$ID1"; } > "$T/r/late.txt"; g add late.txt; commit "UTF-16 after byte 8000"
+run 1 "UTF-16 text after the first 8000 bytes is read" "FINDING $(c12): binary content late.txt"
+repo; g checkout -q -b feature; { head -c 8100 /dev/zero | tr '\0' 'a'; u16 utf-32-le "$ID2"; } > "$T/r/late32.txt"; g add late32.txt; commit "UTF-32 after byte 8000"
+run 1 "UTF-32 text after the first 8000 bytes is read" "FINDING $(c12): binary content late32.txt"
+pyc() { python3 -I -c "$1" "$T/r/$2"; g add -- "$2"; }
+repo; g checkout -q -b feature; pyc 'import sys,zlib; open(sys.argv[1],"wb").write(zlib.compress(b"hidden text "*20))' z.dat; commit "zlib"
+run 1 "a zlib stream needs the OK" "FINDING $(c12): a binary file, which may hold compressed data z.dat (needs a reviewer's OK"
+repo; g checkout -q -b feature; pyc 'import sys,zlib; c=zlib.compressobj(9,zlib.DEFLATED,-15); open(sys.argv[1],"wb").write(c.compress(b"hidden text "*20)+c.flush())' d.dat; commit "raw deflate"
+run 1 "raw deflate needs the OK" "a binary file, which may hold compressed data d.dat"
+repo; g checkout -q -b feature; pyc 'import sys,lzma; open(sys.argv[1],"wb").write(lzma.compress(b"hidden text "*20, format=lzma.FORMAT_ALONE))' l.dat; commit "lzma"
+run 1 "lzma-alone needs the OK" "a binary file, which may hold compressed data l.dat"
+repo; g checkout -q -b feature; pyc 'import sys,gzip; open(sys.argv[1],"wb").write(b"PREFIX:"+gzip.compress(b"hidden"))' p.dat; commit "gzip after a prefix"
+run 1 "gzip after a prefix needs the OK" "a binary file, which may hold compressed data p.dat"
+repo; g checkout -q -b feature; python3 -I -c 'import sys,zipfile,io
+b=io.BytesIO(); z=zipfile.ZipFile(b,"w",zipfile.ZIP_DEFLATED); z.writestr("m.txt", sys.argv[2]); z.close()
+open(sys.argv[1],"wb").write(b"HEADER"+b.getvalue())' "$T/r/pz.dat" "member $ID1 text"; g add pz.dat; commit "a ZIP after a prefix"
+run 1 "a ZIP after a prefix is unpacked and its member read" "FINDING $(c12): ZIP member #1 content pz.dat"
+repo; g checkout -q -b feature; put latin.txt 'caf\xe9 au lait\n'; commit "not UTF-8"
+run 1 "a file that is not UTF-8 is read whole and needs the OK" "a binary file, which may hold compressed data latin.txt"
+# the raw commit object: headers, signatures and message bytes that the formatted fields leave out
+rawcommit() { # rawcommit <python expression of the object's bytes, given t (tree), p (parent), o (identity)>
+  local obj; obj=$(python3 -I -c 'import sys
+t,p,o=sys.argv[1],sys.argv[2],sys.argv[3]; ID=sys.argv[4]
+sys.stdout.buffer.write(eval(sys.argv[5]))' "$(g rev-parse HEAD^{tree})" "$(g rev-parse HEAD)" "o <$OWNER> 1700000000 +0000" "$ID1" "$1" \
+    | git -C "$T/r" hash-object -t commit -w --literally --stdin); g update-ref refs/heads/feature "$obj"; }
+for e in \
+  'f"tree {t}\nparent {p}\nauthor {o}\ncommitter {o}\nx-extra {ID}\n\nsubject\n".encode()' \
+  'f"tree {t}\nparent {p}\nauthor {o}\ncommitter {o}\ngpgsig -----BEGIN PGP SIGNATURE-----\n {ID}\n -----END PGP SIGNATURE-----\n\nsubject\n".encode()' \
+  'f"tree {t}\nparent {p}\nauthor {o}\ncommitter {o}\nmergetag object {p}\n type commit\n tag {ID}\n\nsubject\n".encode()' \
+  'f"tree {t}\nparent {p}\nauthor {o}\ncommitter {o}\n\nsubject\n".encode()+b"\0"+ID.encode()+b"\n"' \
+  'f"tree {t}\nparent {p}\nauthor {o}\ncommitter {o}\nencoding UTF-16LE\n\n".encode()+("subject "+ID).encode("utf-16-le")' \
+  'f"tree {t}\nparent {p}\nauthor {o} {ID}\ncommitter {o}\n\nsubject\n".encode()'; do
+  repo; g checkout -q -b feature; commit "work"; rawcommit "$e"
+  run 1 "a crafted commit object is read raw: ${e:40:28}…" "FINDING $(c12): commit object"
+done
+repo; g checkout -q -b feature; commit "work"
+BODY='Summary\n\n![shot](https://github.com/user-attachments/assets/0f0f0f0f-aaaa-bbbb-cccc-000000000000)' \
+  run 1 "an image in the PR description needs the OK" "FINDING pull request: an image or attachment in the pull request description (needs a reviewer's OK"
+BODY='before <img width="300" src="x.png"> after' run 1 "an <img> in the PR description needs the OK" "an image or attachment in the pull request description"
+BODY='see the [notes](https://example.com/page) and ![]()' run 1 "even an empty markdown image needs the OK" "an image or attachment in the pull request description"
+BODY='a [plain link](https://example.com/page) only' run 0 "a plain link in the PR description is fine"
+# every entry, not only a MAC or VIN, also matches in letters and digits only (8 or more), after decoding %XX, +,
+# HTML entities and \u escapes
+for spelled in "Wexmoor%20Fixture%20Lane" "Wexmoor+Fixture+Lane" "wexmoor_fixture_lane" "WexmoorFixtureLane" \
+    "Wexmoor  Fixture Lane" "Wexmoor&#32;Fixture&#x20;Lane" 'Wexmoor Fixture Lane' "$(printf 'Wexmoor\xc2\xa0Fixture Lane')" \
+    "%57%65%78%6d%6f%6f%72%20%46%69%78%74%75%72%65%20%4c%61%6e%65"; do
+  repo; g checkout -q -b feature; put f.txt "one\nat $spelled today\n" 2>/dev/null || { printf 'one\nat %s today\n' "$spelled" > "$T/r/f.txt"; g add f.txt; }
+  printf 'one\nat %s today\n' "$spelled" > "$T/r/f.txt"; g add f.txt; commit "a place spelled another way"
+  run 1 "a place entry matches spelled ${spelled:0:12}…" "FINDING $(c12): added line f.txt:2"
+done
+for spelled in "0x02, 0x5A, 0x1E, 0x7C, 0x3D, 0x9B" "9B:3D:7C:1E:5A:02" "{0x9b,0x3d,0x7c,0x1e,0x5a,0x02}"; do
+  repo; g checkout -q -b feature; printf 'one\nconst mac = %s;\n' "$spelled" > "$T/r/f.txt"; g add f.txt; commit "a MAC in code"
+  LIST=$(printf '%s\n%s\n' "$ID1" "$MAC") run 1 "a MAC entry matches written as ${spelled:0:10}…" "FINDING $(c12): added line f.txt:2"
+done
+repo; g checkout -q -b feature; printf '\x00\x9b\x3d\x7c\x1e\x5a\x02\x00' > "$T/r/adv.bin"; g add adv.bin; commit "a MAC's bytes, reversed"
+LIST=$(printf '%s\n%s\n' "$ID1" "$MAC") run 1 "a MAC's six bytes in a binary file fail, in either order" "FINDING $(c12): binary content adv.bin"
+repo; g checkout -q -b feature; put f.txt 'one\nWexmoor is a word, and Fixture Lane another, far apart: Wex moor\n'; commit "near but not the entry"
+run 0 "letters-and-digits matching adds no match for words that are not the entry"
+# a workflow that names the check could stand in for it: the reviewer's OK, and the merge step checks the source
+repo; g checkout -q -b feature; put .github/workflows/x.yml 'on: pull_request\njobs:\n  privacy-scan:\n    if: false\n    runs-on: ubuntu-latest\n    steps: [{run: "true"}]\n'; commit "a stand-in"
+run 1 "a workflow that names privacy-scan needs the OK" "FINDING $(c12): a workflow file that names the privacy-scan check .github/workflows/x.yml (needs a reviewer's OK"
+
 # ── names with spaces, failing helpers, the list's reach ───────────────────────────────────────────────────────────────────────────
 repo; g checkout -q -b feature; put "with space.txt" "one\n$ID1\n"; commit "a name with a space"
 run 1 "a name with a space keeps its line number" "FINDING $(c12): added line with space.txt:2"
@@ -345,7 +427,7 @@ echo '[]' > "$STUB_REPORT"; PLANTED=
 repo; g checkout -q -b feature; mkzip a.zip doc.txt 'member text\n'; put img.bin '\x00\x01bin\x00'; commit "subject
 
 body"
-BODY="the description" run 0 "gitleaks dir is given the messages, the PR text, ZIP members and files read whole"
+BODY="the description" ACTION=labeled LABEL=privacy-ok-compressed run 0 "gitleaks dir is given the messages, the PR text, ZIP members and files read whole"
 dargs=$(cat "$STUB_ARGS.dir" 2>/dev/null); ok=1
 for a in dir --redact --exit-code --report-format json --gitleaks-ignore-path --no-banner --ignore-gitleaks-allow --max-decode-depth --max-archive-depth; do
   printf '%s\n' "$dargs" | grep -q -x -F -e "$a" || ok=0
@@ -385,10 +467,18 @@ if [ -n "${GITLEAKS_REAL:-}" ]; then
   repo; g checkout -q -b feature; commit "subject
 
 key = $PLANTED"
-  GL=$GITLEAKS_REAL run 1 "the real gitleaks finds a key in a commit message" "FINDING $(c12): gitleaks rule aws-access-token in the message:3"
+  GL=$GITLEAKS_REAL run 1 "the real gitleaks finds a key in a commit message" "FINDING $(c12): gitleaks rule aws-access-token in the commit object:"
   repo; g checkout -q -b feature; commit "work"
   BODY=$(printf 'Summary\n\nkey = %s\n' "$PLANTED") GL=$GITLEAKS_REAL run 1 "the real gitleaks finds a key in the PR description" \
     "FINDING pull request: gitleaks rule aws-access-token in the pull request description:3"
+  repo; g checkout -q -b feature; printf 'key = %s\n' "$PLANTED" | gzip -c > "$T/r/k.gz"; g add k.gz; commit "a key in a gzip"
+  ACTION=labeled LABEL=privacy-ok-compressed GL=$GITLEAKS_REAL run 1 "the real gitleaks finds a key inside a gzip, OK label or not" \
+    "FINDING $(c12): gitleaks rule aws-access-token in a file read whole k.gz"
+  repo; g checkout -q -b feature; printf 'key = %s\n' "$PLANTED" > "$T/conf.txt"; tar -C "$T" -cf "$T/r/k.tar" conf.txt; g add k.tar; commit "a key in a tar"
+  GL=$GITLEAKS_REAL run 1 "the real gitleaks finds a key inside a tar, which also needs the OK" \
+    "gitleaks rule aws-access-token in a file read whole k.tar" "compressed file (tar) k.tar (needs a reviewer's OK"
+  repo; g checkout -q -b feature; { printf '\xff\xfe'; u16 utf-16-le "key = $PLANTED"; } > "$T/r/k16.txt"; g add k16.txt; commit "a key in UTF-16"
+  GL=$GITLEAKS_REAL run 1 "the real gitleaks finds a key in a UTF-16 file" "gitleaks rule aws-access-token in a file read whole k16.txt"
   repo; g checkout -q -b feature; put conf.txt "one\nkey = $PLANTED # $ALLOW\n"; commit "a key with the allow marker"
   GL=$GITLEAKS_REAL run 1 "the real gitleaks still reports a key that carries the allow marker" \
     "FINDING $(c12): gitleaks rule aws-access-token conf.txt:2" "added line with a gitleaks allow marker conf.txt:2"

@@ -7,27 +7,38 @@
 #   PRIVACY_IDENTIFIERS  the identifier list (the privacy-scan environment's secret of that name): one literal per
 #                        line, matched anywhere in a line, ignoring case; blank lines and lines starting with # are
 #                        skipped; every entry 4 characters or more. Missing, empty, or holding a shorter entry: exit 2
-#                        (fails closed). A MAC- or VIN-shaped entry matches with any separator.
+#                        (fails closed). A MAC- or VIN-shaped entry matches with any separator, and a MAC also in
+#                        reversed byte order and as raw bytes in a file read whole.
 #   GITLEAKS             the path of a gitleaks binary (8.x). Missing or not executable: exit 2 (fails closed).
 #   GITHUB_EVENT_PATH    the run's event file: the pull request's title, description, head branch name and any label
 #                        event are read from it here, never passed through a step's env (the runner prints a step's
 #                        env in the public log). Missing or not a pull request event: exit 2 (fails closed).
 #
 # Against the list: every line each new commit adds (a merge: only the lines its own resolution adds); every path a new
-# commit touches; each new commit's author and committer names and addresses and its message; the pull request's
-# title, description and branch name. A file git judges binary on either side of a commit (--numstat "-" "-"), or
-# whose new content holds a NUL byte, is read whole, as bytes and as UTF-16 or UTF-32 in either byte order. A ZIP is
-# unpacked and each member read whole and its name scanned; any other compressed file (gzip, PNG, JPEG, PDF, 7z and
-# the like), a compressed ZIP member or a Git LFS pointer is a finding until a reviewer's OK: the label
-# privacy-ok-compressed being added to the pull request (that label event's run only, so a later push needs a new
-# OK). Base64 on any scanned line
-# (or wrapped over several lines) is decoded: a list match inside is a finding; a run that decodes to a compressed
-# file of 100 bytes or more (an embedded image) needs the same OK. A MAC- or VIN-shaped entry is also matched with
-# every separator and %XX escape removed, from the entry and the scanned text alike.
+# commit touches; each new commit's raw commit object (every header line, the author and committer names, addresses
+# and dates, the encoding, any extra header, and the message; an object that is binary or names an encoding is also
+# read whole); the pull request's title, description and branch name. Every entry of 8 letters and digits or more (and
+# every MAC- or VIN-shaped entry) is also matched "bare": with \uXXXX, \xXX, %XX, + and HTML entities decoded, a 0x
+# before hex dropped and every character but letters and digits removed, from the entry and the scanned line alike.
+# A file git judges binary on either side of a commit (--numstat "-" "-"), whose new content holds a NUL byte anywhere,
+# or that is not UTF-8, is read whole, as bytes and as UTF-16 or UTF-32 in either byte order; a binary file that is not
+# a ZIP is also a finding until a reviewer's OK, as it may hold compressed data. A ZIP (found by its structure, at any
+# offset) is unpacked and each member read whole and its name scanned. Any other compressed file (gzip, bzip2,
+# xz, zstd, tar, PNG, JPEG, PDF, 7z and the like, found by its magic at the start), a compressed or binary ZIP member,
+# a Git LFS pointer, a workflow or action file that names the privacy-scan check, and an image or attachment in the
+# pull request's title or description are each a finding until a reviewer's OK: the label privacy-ok-compressed being
+# added to the pull request (that label event's run only, so a later push needs a new OK).
+# Base64 on any scanned line, a run of 8 characters or more (or wrapped over several lines, the last one short), is
+# decoded, padded rather than cut, and decoded again if it is base64 itself; gzip, zlib, bzip2, xz and lzma found in it
+# by their checksummed formats are decompressed. A list match in any of these is a finding; a run that decodes to a
+# compressed file of 100 bytes or more (an embedded image) needs the same OK. Not covered: raw deflate inside base64,
+# an identifier split across lines, homoglyphs and zero-width characters, quoted-printable, hex dumps, and a check name
+# built by an expression in a workflow (the merge step confirms the check's source; see the PR text).
 # gitleaks, default rules only (its config is the scan's own), base64 decoded, its inline allow marker ignored, twice:
 # over the new commits' patches, on an empty source folder whose .git file points at the repository, so no
 # .gitleaksignore or .gitleaks.toml applies; and over the scan's own folder of copies of what the patches do not
-# hold (the commit messages, the pull request's text, ZIP members and every file read whole, archives opened).
+# hold (the raw commit objects, the pull request's text, ZIP members, every file read whole and its UTF-16 or UTF-32
+# readings, archives opened, each copy named by its kind's extension so gitleaks opens it).
 # A new commit that touches either ignore file anywhere is itself a finding, as is an added line carrying the allow
 # marker. gitleaks reads a merge's diff against its first parent (--diff-merges=first-parent), so a secret added in a
 # merge's own resolution is found; a merge of the base into the branch is read whole, which can re-flag a base commit
@@ -78,42 +89,84 @@ echo "identifier list: $entries entr(y/ies)"
 # compression formats, and base64 runs. It is written to the scan's own folder and run isolated (-I).
 H=$T/helper.py
 cat > "$H" <<'PY'
-import base64, re, sys
+import base64, bz2, gzip, html, lzma, re, sys, urllib.parse, zipfile, zlib
 
 MAGIC = [(b"PK\x03\x04", "zip"), (b"PK\x05\x06", "zip"), (b"PK\x07\x08", "zip"), (b"\x1f\x8b", "gzip"),
          (b"\x89PNG", "PNG"), (b"BZh", "bzip2"), (b"\xfd7zXZ\x00", "xz"), (b"\x28\xb5\x2f\xfd", "zstd"),
          (b"7z\xbc\xaf\x27\x1c", "7z"), (b"Rar!", "RAR"), (b"\xff\xd8\xff", "JPEG"), (b"GIF8", "GIF"),
          (b"%PDF", "PDF"), (b"LZIP", "lzip"), (b"\x04\x22\x4d\x18", "LZ4")]
+EXT = {"zip": ".zip", "gzip": ".gz", "bzip2": ".bz2", "xz": ".xz", "zstd": ".zst", "7z": ".7z", "RAR": ".rar",
+       "tar": ".tar"}
 
 def kind(data):
     if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
         return "WebP"
+    if data[257:262] == b"ustar":
+        return "tar"
     for m, k in MAGIC:
         if data.startswith(m):
             return k
     return ""
 
+def is_binary(data):   # git's NUL test over the whole content, not its first 8000 bytes, or not UTF-8 at all
+    if b"\0" in data:
+        return True
+    try:
+        data.decode("utf-8")
+        return False
+    except UnicodeDecodeError:
+        return True
+
 def entries(path):
     return [l.rstrip("\n").casefold() for l in open(path, encoding="utf-8") if l.strip()]
 
-def bare(text):  # letters and digits only (a %XX escape dropped): a MAC or VIN with any separator reads the same
-    return re.sub(r"[^0-9a-z]", "", re.sub(r"%[0-9a-f]{2}", "", text))
+U_ESC = re.compile(r"\\u([0-9a-fA-F]{4})|\\x([0-9a-fA-F]{2})")
+def bare(text):
+    # letters and digits only, after decoding what usually stands for a separator or a letter: %XX and +, HTML
+    # entities, \uXXXX and \xXX escapes, and a 0x before a byte; any separator, or none, then reads the same
+    t = U_ESC.sub(lambda m: chr(int(m.group(1) or m.group(2), 16)), text)
+    t = html.unescape(urllib.parse.unquote_plus(t, errors="replace"))
+    t = re.sub(r"0x(?=[0-9a-fA-F]{2})", "", t.casefold())
+    return re.sub(r"[\W_]", "", t)
+
+def mac_bytes(bares):  # a MAC's six bytes, in either order, for files read whole
+    out = []
+    for b in bares:
+        if re.fullmatch(r"[0-9a-f]{12}", b):
+            raw = bytes.fromhex(b); out += [raw, raw[::-1]]
+    return out
 
 def hits(data, ents, bares):
+    if any(m in data for m in mac_bytes(bares)):
+        return True
     texts = [data.decode("utf-8", errors="replace")]
-    texts += [data[off:].decode(enc, errors="replace") for enc in ("utf-16-le", "utf-16-be") for off in (0, 1)]
-    texts += [data[off:].decode(enc, errors="replace") for enc in ("utf-32-le", "utf-32-be") for off in range(4)]
+    if b"\0" in data:
+        texts += [data[o:].decode(e, errors="replace") for e in ("utf-16-le", "utf-16-be") for o in (0, 1)]
+        texts += [data[o:].decode(e, errors="replace") for e in ("utf-32-le", "utf-32-be") for o in range(4)]
     for t in texts:
         t = t.casefold()
         if any(e in t for e in ents):
             return True
-        if bares and any(b in bare(t) for b in bares):
-            return True
+        if bares:
+            b = bare(t)
+            if any(x in b for x in bares):
+                return True
     return False
 
+def decoded_texts(data):   # UTF-16 / UTF-32 readings of a file with NULs that look like text, for gitleaks
+    out = []
+    if b"\0" not in data:
+        return out
+    for e in ("utf-16-le", "utf-16-be", "utf-32-le", "utf-32-be"):
+        for o in range(4 if "32" in e else 2):
+            t = data[o:].decode(e, errors="replace")
+            if t and sum(c.isprintable() or c in "\r\n\t" for c in t) >= 0.8 * len(t):
+                out.append(t)
+    return out
+
 def expand(path, barepath):
-    # a MAC- or VIN-shaped entry also matches its usual spellings literally, and once more with every separator
-    # removed, from the entry and the scanned text alike (any separator, or none)
+    # a MAC- or VIN-shaped entry also matches its usual spellings literally; every entry of 8 or more letters and
+    # digits (a MAC also reversed) is matched once more in letters-and-digits-only form, from the scanned text alike
     ents = [l.rstrip("\n") for l in open(path, encoding="utf-8")]
     out, bares = list(ents), []
     for e in ents:
@@ -121,10 +174,12 @@ def expand(path, barepath):
         if re.fullmatch(r"([0-9A-Fa-f]{2}[-: _]?){5}[0-9A-Fa-f]{2}|[0-9A-Fa-f]{4}\.[0-9A-Fa-f]{4}\.[0-9A-Fa-f]{4}", e):
             p = [b[i:i + 2] for i in range(0, 12, 2)]
             out += [s.join(p) for s in (":", "-", " ", "")] + [".".join(b[i:i + 4] for i in range(0, 12, 4))]
-            bares.append(b.casefold())
+            bares += [b.casefold(), "".join(reversed(p)).casefold()]
         elif re.fullmatch(r"[A-HJ-NPR-Za-hj-npr-z0-9]{17}", b):
             out += [b, b[:3] + "-" + b[3:9] + "-" + b[9:], b[:3] + " " + b[3:9] + " " + b[9:]]
-            bares.append(b.casefold())
+        eb = bare(e)
+        if len(eb) >= 8:
+            bares.append(eb)
     seen, final = set(), []
     for e in out:
         if e.casefold() not in seen:
@@ -132,53 +187,97 @@ def expand(path, barepath):
     open(path, "w", encoding="utf-8").write("".join(x + "\n" for x in final))
     open(barepath, "w", encoding="utf-8").write("".join(x + "\n" for x in sorted(set(bares))))
 
+B64 = rb"[A-Za-z0-9+/_-]"
 def b64runs(textpath):
-    # base64 runs of TEXT, by line: a run of 20 or more base64 characters inside a line, or lines that are base64
-    # and nothing else, joined (wrapped base64); each reported at its first line
+    # base64 runs of TEXT, by line: a run inside a line (20 characters or more, or 8 or more that mix cases or hold a
+    # digit or + /), or lines of base64 and nothing else joined (wrapped base64, its last line of any length);
+    # each reported at its first line
     runs, cur = [], None
     for n, line in enumerate(open(textpath, "rb").read().split(b"\n"), 1):
         t = line.strip()
-        if re.fullmatch(rb"[A-Za-z0-9+/_-]{16,}={0,2}", t):
+        if re.fullmatch(B64 + rb"{16,}={0,2}", t) or (cur is not None and re.fullmatch(B64 + rb"+={0,2}", t)):
             if cur is None:
                 cur = [n, b""]; runs.append(cur)
             cur[1] += t
-            if t.endswith(b"="):
+            if t.endswith(b"=") or len(t) < 16:
                 cur = None
             continue
         cur = None
-        runs += [[n, m.group()] for m in re.finditer(rb"[A-Za-z0-9+/_-]{20,}={0,2}", line)]
+        for m in re.finditer(B64 + rb"{8,}={0,2}", line):
+            r = m.group()
+            if len(r) >= 20 or re.search(rb"[0-9+/]", r) or (re.search(rb"[a-z]", r) and re.search(rb"[A-Z]", r)):
+                runs.append([n, r])
     return runs
 
-def decodings(run):
+def decodings(run, depth=0):
     for urlsafe in (False, True):
         r = run.rstrip(b"=")
         r = r.replace(b"-", b"+").replace(b"_", b"/") if urlsafe else r
+        if not urlsafe and (b"-" in r or b"_" in r):
+            continue
         for off in range(4):
             c = r[off:]
-            c = c[:len(c) - len(c) % 4]
-            if len(c) >= 16:
-                try:
-                    yield base64.b64decode(c, validate=True)
-                except ValueError:
-                    pass
+            if len(c) % 4 == 1:
+                c = c[:-1]
+            if len(c) < 8:
+                continue
+            try:
+                d = base64.b64decode(c + b"=" * (-len(c) % 4), validate=True)
+            except ValueError:
+                continue
+            yield d
+            if depth == 0 and re.fullmatch(B64 + rb"{8,}={0,2}", d.strip()):
+                yield from decodings(d.strip(), 1)   # base64 of base64
+
+def unpack(d):
+    # a compressed stream whose format carries a check (gzip, zlib, bzip2, xz) or a known header (lzma-alone):
+    # (its kind, its content), or None. Raw deflate is not tried: random bytes too often read as valid deflate.
+    tries = []
+    if d[:3] == b"\x1f\x8b\x08": tries.append(("gzip", gzip.decompress))
+    if len(d) > 2 and d[0] == 0x78 and (d[0] * 256 + d[1]) % 31 == 0: tries.append(("zlib", zlib.decompress))
+    if d[:3] == b"BZh": tries.append(("bzip2", bz2.decompress))
+    if d[:6] == b"\xfd7zXZ\x00": tries.append(("xz", lzma.decompress))
+    if d[:1] == b"\x5d" and d[1:5] != b"\0\0\0\0": tries.append(("lzma", lambda x: lzma.decompress(x, format=lzma.FORMAT_ALONE)))
+    for k, f in tries:
+        try:
+            return k, f(d)[:64 << 20]
+        except Exception:
+            pass
+    return None
 
 cmd = sys.argv[1]
 if cmd == "expand":
     expand(sys.argv[2], sys.argv[3])
+elif cmd == "classify":   # classify <file>: "<kind or ->\t<binary 0/1>\t<a ZIP Python can open 0/1>"
+    data = open(sys.argv[2], "rb").read()
+    print(f"{kind(data) or '-'}\t{int(is_binary(data))}\t{int(zipfile.is_zipfile(sys.argv[2]))}")
 elif cmd == "kind":
-    print(kind(open(sys.argv[2], "rb").read(16)))
-elif cmd == "blob":   # blob <list> <bare list> <file>: 1 when the file holds a match, else 0; never what matched
+    print(kind(open(sys.argv[2], "rb").read(512)))
+elif cmd == "ext":        # ext <kind>: the extension gitleaks needs to open an archive of that kind
+    print(EXT.get(sys.argv[2], ""))
+elif cmd == "texts":      # texts <file> <out>: its UTF-16 / UTF-32 readings, if any, for gitleaks
+    t = decoded_texts(open(sys.argv[2], "rb").read())
+    if t:
+        open(sys.argv[3], "w", encoding="utf-8", errors="replace").write("\n".join(t))
+elif cmd == "blob":       # blob <list> <bare list> <file>: 1 when the file holds a match, else 0; never what matched
     print(1 if hits(open(sys.argv[4], "rb").read(), entries(sys.argv[2]), entries(sys.argv[3])) else 0)
-elif cmd == "b64":    # b64 <list> <bare list> <text>: "<line>\thit" or "<line>\tcompressed <kind>" per base64 run
+elif cmd == "bare":       # bare <in> <out>: each line in letters-and-digits-only form, line for line
+    with open(sys.argv[3], "w", encoding="utf-8") as out:
+        for line in open(sys.argv[2], "rb").read().split(b"\n")[:-1]:
+            out.write(bare(line.decode("utf-8", errors="replace")) + "\n")
+elif cmd == "b64":        # b64 <list> <bare list> <text>: "<line>\thit" or "<line>\tcompressed <kind>" per base64 run
     ents, bares = entries(sys.argv[2]), entries(sys.argv[3])
     for n, run in b64runs(sys.argv[4]):
         found = set()
         for d in decodings(run):
-            if "hit" not in found and hits(d, ents, bares):
-                found.add("hit"); print(f"{n}\thit")
-            k = kind(d) if len(d) >= 100 else ""   # a screenshot is larger; hashes and short tokens are not
+            u = unpack(d)
+            k = u[0] if u else (kind(d) if len(d) >= 32 else "")
             if k and "comp" not in found:
                 found.add("comp"); print(f"{n}\tcompressed {k}")
+            if "hit" not in found and (hits(d, ents, bares) or (u and hits(u[1], ents, bares))):
+                found.add("hit"); print(f"{n}\thit")
+            if len(found) == 2:
+                break
 PY
 python3 -I "$H" expand "$LIST" "$T/listbare"
 
@@ -199,12 +298,19 @@ blob_hits() {
   local h; h=$({ grep -c -a -i -F -f "$LIST" "$1" || true; })
   if [ "$h" -gt 0 ]; then echo 1; else python3 -I "$H" blob "$LIST" "$T/listbare" "$1"; fi
 }
-# compressed_kind <file>: the compression format its first bytes name, or nothing
-compressed_kind() { python3 -I "$H" kind "$1"; }
-# keep <file> <c12> <what> <path>: a numbered copy for the second gitleaks run, which reads files whole; whole.idx's
-# line N says where copy N came from
+# classify <file>: sets kind (the format its first bytes name, or nothing), binary (1: a NUL anywhere, or not UTF-8)
+# and zipok (1: Python opens it as a ZIP, a ZIP after a prefix included)
+classify() { local r; r=$(python3 -I "$H" classify "$1"); IFS=$'\t' read -r kind binary zipok <<< "$r"; [ "$kind" != - ] || kind=""; }
+# keep <file> <c12> <what> <path> [<kind>]: a numbered copy for the second gitleaks run, which reads files whole;
+# whole.idx's line N says where copy N came from. An archive's copy is named with its kind's extension, since
+# gitleaks opens archives by name, and a file with NULs also gets its UTF-16 / UTF-32 reading as text
 WHOLE=$T/whole; mkdir "$WHOLE"; : > "$T/whole.idx"; nw=0
-keep() { nw=$((nw+1)); cp "$1" "$WHOLE/$nw"; printf '%s\t%s\t%s\n' "$2" "$3" "$4" >> "$T/whole.idx"; }
+keep() {
+  local ext=""; [ -z "${5:-}" ] || ext=$(python3 -I "$H" ext "$5")
+  nw=$((nw+1)); cp "$1" "$WHOLE/$nw$ext"; printf '%s\t%s\t%s\n' "$2" "$3" "$4" >> "$T/whole.idx"
+  rm -f "$T/texts"; python3 -I "$H" texts "$1" "$T/texts"
+  if [ -s "$T/texts" ]; then nw=$((nw+1)); cp "$T/texts" "$WHOLE/$nw"; printf '%s\t%s\t%s\n' "$2" "$3" "$4" >> "$T/whole.idx"; fi
+}
 # scan_zip <c12> <path> <file>: each member's name and content against the list (by number, never by name); a member
 # that is itself compressed is listed for a reviewer's OK; an encrypted, oversized or unreadable one is a finding
 scan_zip() {
@@ -238,7 +344,7 @@ with zipfile.ZipFile(z) as zf:
         print(f"{n}\tok\t{name}")
 PY
   then
-    printf '%s\ta ZIP that cannot be read\t%s\t\n' "$c12" "$sp" >> "$T/zipbad"; return
+    printf '%s\ta ZIP that cannot be read\t%s\t\n' "$c12" "$sp" >> "$T/zipbad"; return 1
   fi
   while IFS=$'\t' read -r idx status name; do
     if [ "$idx" != 0 ]; then
@@ -247,14 +353,18 @@ PY
     if [ "$status" != ok ]; then
       printf '%s\tZIP member #%s %s\t%s\t\n' "$c12" "$idx" "$status" "$sp" >> "$T/zipbad"; continue
     fi
-    keep "$d/$idx" "$c12" "in ZIP member #$idx" "$sp"
-    local mk; mk=$(compressed_kind "$d/$idx")
-    [ -z "$mk" ] || printf '%s\tcompressed ZIP member #%s (%s)\t%s\t\n' "$c12" "$idx" "$mk" "$sp" >> "$T/compressed"
+    classify "$d/$idx"
+    keep "$d/$idx" "$c12" "in ZIP member #$idx" "$sp" "$kind"
+    if [ -n "$kind" ]; then printf '%s\tcompressed ZIP member #%s (%s)\t%s\t\n' "$c12" "$idx" "$kind" "$sp" >> "$T/compressed"
+    elif [ "$binary" = 1 ]; then printf '%s\tbinary ZIP member #%s, which may hold compressed data\t%s\t\n' "$c12" "$idx" "$sp" >> "$T/compressed"; fi
     hit=$(blob_hits "$d/$idx")
     [ "$hit" -eq 0 ] || printf '%s\tZIP member #%s content\t%s\t\n' "$c12" "$idx" "$sp" >> "$T/binhits"
   done < "$d/index"
   rm -rf "$d"
 }
+# raw_header <commit object>: its header lines as the formatted fields do not show them: every header, and for the
+# author and committer lines only what follows the address (the name and address are scanned as fields)
+raw_header() { awk '/^$/ { exit } /^(author|committer) / { i = index($0, ">"); print (i ? substr($0, i + 1) : $0); next } { print }' "$1"; }
 n=0
 for c in $commits; do
   n=$((n+1)); c12=${c:0:12}
@@ -262,7 +372,18 @@ for c in $commits; do
   add "$c12" "author address" "" "$(git log -1 --format=%ae "$c")"
   add "$c12" "committer name" "" "$(git log -1 --format=%cn "$c")"
   add "$c12" "committer address" "" "$(git log -1 --format=%ce "$c")"
-  git log -1 --format=%B "$c" > "$T/msg"; keep "$T/msg" "$c12" "in the message" ""
+  git log -1 --format=%B "$c" > "$T/msg"
+  # the raw commit object: extra headers, signatures, mergetags, bytes after a NUL or a re-encoded message, which the
+  # formatted fields leave out; its headers are scanned as lines, and the whole object is read whole when it holds a
+  # NUL, is not UTF-8 or names an encoding; gitleaks reads it all
+  git cat-file commit "$c" > "$T/obj"; keep "$T/obj" "$c12" "in the commit object" ""
+  raw_header "$T/obj" > "$T/hdr"
+  awk -v c="$c12" '{ printf "%s\tcommit object header line %d\t\t\n", c, NR }' "$T/hdr" >> "$WHERE"; cat "$T/hdr" >> "$TEXT"
+  [ -z "$(tail -c1 "$T/hdr")" ] || echo >> "$TEXT"
+  classify "$T/obj"
+  if [ "$binary" = 1 ] || raw_header "$T/obj" | grep -q '^encoding '; then
+    hit=$(blob_hits "$T/obj"); [ "$hit" -eq 0 ] || printf '%s\tcommit object (read whole)\t\t\n' "$c12" >> "$T/binhits"
+  fi
   awk -v c="$c12" '{ printf "%s\tmessage line %d\t\t\n", c, NR }' "$T/msg" >> "$WHERE"; cat "$T/msg" >> "$TEXT"
   [ -z "$(tail -c1 "$T/msg")" ] || echo >> "$TEXT"      # keep TEXT and WHERE line for line
   # the paths the commit touches (a merge: the paths its resolution changes), each scanned as a line of its own
@@ -301,20 +422,31 @@ for r in d:
       printf '%s\ta change to a gitleaks ignore or config file\t%s\t\n' "$c12" "$sp" >> "$T/glctl" ;; esac
     [ "$(git cat-file -t "$c:$p" 2>/dev/null)" = blob ] || continue
     git cat-file blob "$c:$p" > "$T/blob"
-    kind=$(compressed_kind "$T/blob")
+    classify "$T/blob"
     # a Git LFS pointer: the file it stands for goes to LFS storage, never into these git objects, so nothing here
     # can read it; it waits for a reviewer's OK like a compressed file
-    if [ "$(head -c 40 "$T/blob")" = "version https://git-lfs.github.com/spec/" ]; then
+    if [ "$(head -c 40 "$T/blob" | tr -d '\000')" = "version https://git-lfs.github.com/spec/" ]; then
       printf '%s\ta Git LFS pointer (its file is not in the pull request'"'"'s git objects)\t%s\t\n' "$c12" "$sp" >> "$T/compressed"
     fi
-    if [ "$kind" = zip ]; then
-      scan_zip "$c12" "$sp" "$T/blob"
-    elif [ -n "$kind" ]; then
-      printf '%s\tcompressed file (%s)\t%s\t\n' "$c12" "$kind" "$sp" >> "$T/compressed"
+    # a workflow or action that names the check could stand in for it (a job of that name, even a skipped one,
+    # counts): a reviewer's OK, and the merge step confirms the passing check's source
+    case "$p" in .github/workflows/*|.github/actions/*)
+      if grep -q -a -i -E 'privacy[-_ ]?scan' "$T/blob"; then
+        printf '%s\ta workflow file that names the privacy-scan check\t%s\t\n' "$c12" "$sp" >> "$T/compressed"
+      fi ;; esac
+    zipread=0
+    if [ "$kind" = zip ] || [ "$zipok" = 1 ]; then
+      if scan_zip "$c12" "$sp" "$T/blob"; then zipread=1; fi
     fi
-    nul=$(head -c 8000 "$T/blob" | LC_ALL=C tr -d -c '\000' | wc -c)   # its own step: a failing stage stops the scan
-    [ "$nul" -gt 0 ] || [ -n "$kind" ] || in_binpaths "$p" || continue
-    keep "$T/blob" "$c12" "in a file read whole" "$sp"
+    if [ -n "$kind" ] && [ "$kind" != zip ]; then
+      printf '%s\tcompressed file (%s)\t%s\t\n' "$c12" "$kind" "$sp" >> "$T/compressed"
+    elif [ "$binary" = 1 ] && [ "$zipread" = 0 ] && [ "$kind" != zip ]; then
+      # a binary file the scan cannot open: compressed data needs no known header (zlib, raw deflate, lzma, data
+      # after a prefix), so any binary file waits for the OK
+      printf '%s\ta binary file, which may hold compressed data\t%s\t\n' "$c12" "$sp" >> "$T/compressed"
+    fi
+    [ "$binary" = 1 ] || [ -n "$kind" ] || [ "$zipok" = 1 ] || in_binpaths "$p" || continue
+    keep "$T/blob" "$c12" "in a file read whole" "$sp" "$kind"
     hit=$(blob_hits "$T/blob")
     [ "$hit" -eq 0 ] || printf '%s\tbinary content\t%s\t\n' "$c12" "$sp" >> "$T/binhits"
   done < "$T/paths.z"
@@ -325,13 +457,19 @@ jq -r '.pull_request.body // ""' "$GITHUB_EVENT_PATH" | tr -d '\r' > "$T/body"; 
 jq -r '(.pull_request.title // ""), (.pull_request.head.ref // "")' "$GITHUB_EVENT_PATH" > "$T/prtext"
 keep "$T/prtext" "" "in the pull request title or branch name" ""
 awk '{ printf "\tpull request description line %d\t\t\n", NR }' "$T/body" >> "$WHERE"; cat "$T/body" >> "$TEXT"
+# an image or attachment in the title or description: a screenshot, which nothing here can read; it waits for the OK
+IMG='!\[[^]]*\]\(|<(img|video|picture|object|embed|svg)[[:space:]>/]|user-attachments/|private-user-images|camo\.githubusercontent'
+if grep -q -a -i -E -e "$IMG" "$T/body"; then
+  printf '\tan image or attachment in the pull request description\t\t\n' >> "$T/compressed"; fi
+if jq -r '.pull_request.title // ""' "$GITHUB_EVENT_PATH" | grep -q -a -i -E -e "$IMG"; then
+  printf '\tan image or attachment in the pull request title\t\t\n' >> "$T/compressed"; fi
 [ "$(wc -l < "$TEXT")" -eq "$(wc -l < "$WHERE")" ] || die "internal: the scanned lines and their places are out of step"
 
 # line numbers of TEXT that match the list, and of added lines that carry gitleaks' allow marker
 rc=0; grep -n -a -i -F -f "$LIST" -- "$TEXT" > "$T/raw" || rc=$?; [ "$rc" -le 1 ] || die "grep failed (exit $rc)"
 cut -d: -f1 "$T/raw" > "$T/hitlines"; rm -f "$T/raw"
-if [ -s "$T/listbare" ]; then   # a MAC or VIN with any separator: the same lines with every separator and %XX escape removed
-  LC_ALL=C sed -e 's/%[0-9A-Fa-f][0-9A-Fa-f]//g' -e 's/[^A-Za-z0-9]//g' "$TEXT" > "$T/textbare"
+if [ -s "$T/listbare" ]; then   # any spelling: the same lines in letters-and-digits-only form, escapes decoded
+  python3 -I "$H" bare "$TEXT" "$T/textbare"
   rc=0; grep -n -a -i -F -f "$T/listbare" -- "$T/textbare" > "$T/raw" || rc=$?; [ "$rc" -le 1 ] || die "grep failed (exit $rc)"
   cut -d: -f1 "$T/raw" >> "$T/hitlines"; rm -f "$T/raw" "$T/textbare"
 fi
@@ -344,7 +482,7 @@ withhold() { # withhold <tsv file>: column 3 (a path) replaced where it matches 
   rc=0; grep -n -a -i -F -f "$LIST" -- "$T/wp" > "$T/raw" || rc=$?; [ "$rc" -le 1 ] || die "grep failed (exit $rc)"
   cut -d: -f1 "$T/raw" > "$T/wl"; rm -f "$T/raw"
   if [ -s "$T/listbare" ]; then
-    LC_ALL=C sed -e 's/%[0-9A-Fa-f][0-9A-Fa-f]//g' -e 's/[^A-Za-z0-9]//g' "$T/wp" > "$T/wpbare"
+    python3 -I "$H" bare "$T/wp" "$T/wpbare"
     rc=0; grep -n -a -i -F -f "$T/listbare" -- "$T/wpbare" > "$T/raw" || rc=$?; [ "$rc" -le 1 ] || die "grep failed (exit $rc)"
     cut -d: -f1 "$T/raw" >> "$T/wl"; rm -f "$T/raw" "$T/wpbare"
   fi
