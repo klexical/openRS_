@@ -543,7 +543,7 @@ for ga in true ""; do
 done
 (cd "$T/r" && unset GITHUB_ACTIONS && PRIVACY_IDENTIFIERS=$LISTV GITLEAKS=$STUB bash "$SCAN" --places "$(sha main)" "$(sha HEAD)") > "$OUT" 2>&1
 expect 2 "--places is for --history only" $? "--places is for --history only"
-# --places with no list (owner decision Q196: no project session gets the list): gitleaks places only
+# --places with no list (owner decision Q197: no project session gets the list): gitleaks places only
 repo; put f.txt "one\n$ID1 two\n"; printf 'packed' | gzip -c > "$T/r/p.gz"; g add p.gz; commit "on main"
 (cd "$T/r" && unset GITHUB_EVENT_PATH GITHUB_ACTIONS PRIVACY_IDENTIFIERS && GITLEAKS=$STUB bash "$SCAN" --history --places "$(sha main)") > "$OUT" 2>&1
 expect 1 "--places with no list runs, the identifier matches not checked" $? "identifier list: none" \
@@ -614,7 +614,14 @@ if [ -n "${GITLEAKS_REAL:-}" ]; then
   GL=$GITLEAKS_REAL run 1 "the real gitleaks finds the seeded key, printed by rule and file:line only" \
     "FINDING $(c12): gitleaks rule aws-access-token conf.txt:2"
   (cd "$T/r" && unset GITHUB_EVENT_PATH GITHUB_ACTIONS PRIVACY_IDENTIFIERS && GITLEAKS=$GITLEAKS_REAL bash "$SCAN" --history --places "$(sha HEAD)") > "$OUT" 2>&1
-  expect 1 "--places with no list places each gitleaks hit" $? "FINDING $(c12): gitleaks rule aws-access-token conf.txt:2" "identifier list: none"
+  expect 1 "--places with no list places each gitleaks hit by commit, rule and line, its path withheld" $? \
+    "FINDING $(c12): gitleaks rule aws-access-token (a path, not shown: no list to check it against):2" "identifier list: none"
+  grep -q -F conf.txt "$OUT" && { fail=$((fail+1)); echo "FAIL --places with no list printed a path"; } \
+    || { pass=$((pass+1)); echo "PASS --places with no list prints no path"; }
+  repo; g checkout -q -b feature; put "at-$ID1/conf.txt" "one\nkey = $PLANTED\n"; commit "a key under a folder named like an entry"
+  (cd "$T/r" && unset GITHUB_EVENT_PATH GITHUB_ACTIONS PRIVACY_IDENTIFIERS && GITLEAKS=$GITLEAKS_REAL bash "$SCAN" --history --places "$(sha HEAD)") > "$OUT" 2>&1
+  expect 1 "--places with no list never prints a path that spells an entry" $? \
+    "FINDING $(c12): gitleaks rule aws-access-token (a path, not shown: no list to check it against):2"
   GL=$GITLEAKS_REAL hist "$(sha HEAD)"
   expect 1 "the history scan counts gitleaks findings by rule, with no place" $? "privacy history scan: gitleaks rule aws-access-token, "
   grep -q -e FINDING -e conf.txt "$OUT" && { fail=$((fail+1)); echo "FAIL the history scan printed a gitleaks place"; } \
