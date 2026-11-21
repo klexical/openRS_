@@ -508,16 +508,19 @@ if grep -n -E '(\<if|\<while|\<until|!|&&|\|\|)[[:space:]]*scan_zip[[:space:]]|s
   fail=$((fail+1)); echo "FAIL scan_zip is called as a condition"
 else pass=$((pass+1)); echo "PASS scan_zip is called outside any condition, so a failure inside it fails closed"; fi
 # the one-time full-history scan: --history <tip>... reads every commit reachable from the tips, with no event file
-hist() { (cd "$T/r" && unset GITHUB_EVENT_PATH && PRIVACY_IDENTIFIERS=$LISTV GITLEAKS=$STUB bash "$SCAN" --history "$@") > "$OUT" 2>&1; }
+hist() { (cd "$T/r" && unset GITHUB_EVENT_PATH && PRIVACY_IDENTIFIERS=$LISTV GITLEAKS=${GL-$STUB} bash "$SCAN" --history "$@") > "$OUT" 2>&1; }
 repo; put f.txt "one\n$ID1 two\n"; commit "on main"; m1=$(c12); put g.txt 'clean\n'; commit "clean"
 g checkout -q -b staging2; put h.txt "x\n"; commit "on staging"
 hist "$(sha main)" "$(sha staging2)"
-expect 1 "the history scan reads every commit on the tips, a match on main included" $? "FINDING $m1: added line f.txt:2" \
-  "privacy scan: 4 new commit(s); history of $(sha main),$(sha staging2); ok label needed no; identifier matches 1"
+expect 1 "the history scan reads every commit on the tips, a match on main included" $? \
+  "privacy history scan: identifier matches 1 on scanned lines and 0 in files read whole or decoded" \
+  "privacy scan: 4 new commit(s); history of 2 tip(s); ok label needed no; identifier matches 1"
+grep -q -e FINDING -e "$m1" -e f.txt "$OUT" && { fail=$((fail+1)); echo "FAIL the history scan printed a place"; } \
+  || { pass=$((pass+1)); echo "PASS the history scan prints counts only: no commit, path or line (its log is public)"; }
 grep -q '; pull request [0-9]' "$OUT" && { fail=$((fail+1)); echo "FAIL the history summary names a pull request"; } \
   || { pass=$((pass+1)); echo "PASS the history summary names no pull request, so no merge step takes it for one"; }
 repo; put g.txt 'clean\n'; commit "clean"; hist "$(sha main)"
-expect 0 "a clean history passes with no event file" $? "; history of $(sha main); ok label needed no;"
+expect 0 "a clean history passes with no event file" $? "; history of 1 tip(s); ok label needed no;"
 hist; expect 2 "the history scan needs a tip" $? "usage: privacy-scan.sh"
 hist main; expect 2 "the history scan takes SHAs only" $? "every argument a 40-hex SHA"
 
@@ -580,6 +583,10 @@ if [ -n "${GITLEAKS_REAL:-}" ]; then
   repo; g checkout -q -b feature; put conf.txt "one\nkey = $PLANTED\n"; commit "a seeded key"
   GL=$GITLEAKS_REAL run 1 "the real gitleaks finds the seeded key, printed by rule and file:line only" \
     "FINDING $(c12): gitleaks rule aws-access-token conf.txt:2"
+  GL=$GITLEAKS_REAL hist "$(sha HEAD)"
+  expect 1 "the history scan counts gitleaks findings by rule, with no place" $? "privacy history scan: gitleaks rule aws-access-token, "
+  grep -q -e FINDING -e conf.txt "$OUT" && { fail=$((fail+1)); echo "FAIL the history scan printed a gitleaks place"; } \
+    || { pass=$((pass+1)); echo "PASS the history scan prints no gitleaks place"; }
   repo; g checkout -q -b feature; put f.txt 'one\ntwo\nthree\nfour\n'; commit "work"
   GL=$GITLEAKS_REAL run 0 "the real gitleaks passes a clean commit"
   repo; g checkout -q -b feature; put conf.txt "one\nkey = $PLANTED\n"; commit "a seeded key"
