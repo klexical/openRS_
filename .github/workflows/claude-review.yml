@@ -94,7 +94,7 @@ jobs:
           # the reviewer unseen; a new model is a reviewed change here.
           claude_args: |
             --permission-mode default
-            --model claude-opus-5-5
+            --model claude-sonnet-5-5
             --max-turns 30
             --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr diff ${{ github.event.pull_request.number }}),Bash(gh pr view ${{ github.event.pull_request.number }})"
             --disallowedTools "Edit,Write,NotebookEdit,Bash(git push:*),Bash(git commit:*),Bash(gh pr review:*),Bash(gh pr merge:*),Bash(gh api:*),Bash(gh pr comment:*)"
