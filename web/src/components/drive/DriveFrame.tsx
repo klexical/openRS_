@@ -34,7 +34,7 @@ export function DriveFrame({ id }: { id: string }) {
   const addressed = here.range ?? null
   const stored = useStore((s) => s.selection.range)
   const span = open ? driveSpanMs(open.trip?.points ?? []) : null
-  // what the page shows and carries: the selection clamped to the drive once it is shown (QA R3)
+  // what the page shows and carries: the selection clamped to the drive once it is shown (#416 ticket 2)
   const range = open ? clampRange(stored, span) : stored
   const name = record?.name ?? open?.name
   const notChecked = record ? notCheckedLine(record) : null   // #384 ticket 04
@@ -89,7 +89,7 @@ export function DriveFrame({ id }: { id: string }) {
   )
 }
 
-/** "Range: Whole drive", or "Range: 2:05 – 7:40 of 20:00" (pending the owner's wording, Q151). */
+/** "Range: Whole drive", or "Range: 2:05 – 7:40 of 20:00" (the wording may still change, #416). */
 function rangeText(range: TimeRange | null, span: number | null): string {
   if (!range || span === null) return 'Range: Whole drive'
   return `Range: ${clock(range.from)} – ${clock(range.to)} of ${clock(span)}`

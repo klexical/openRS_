@@ -77,7 +77,7 @@ describe('#414: Compare and a drive without coolant or oil readings', () => {
     await act(async () => { useStore.getState().setCompare([withTemps.id, without.id]); useStore.getState().setCompareOpen(true) })
     await screen.findByText(`${without.name} vs ${withTemps.name}`, {}, { timeout: 5000 })
     await screen.findByText('Peak RPM')
-    // #416 ticket 3 (Q82): the cards stay, with no figure for the drive without the reading
+    // #416 ticket 3: the cards stay, with no figure for the drive without the reading
     expect(within(screen.getByRole('group', { name: 'Peak Coolant' })).getByTestId('figure').textContent).toBe('—')
     expect(within(screen.getByRole('group', { name: 'Peak Oil' })).getByTestId('figure').textContent).toBe('—')
   })

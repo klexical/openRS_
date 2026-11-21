@@ -5,7 +5,7 @@ import { storageCreatedNow, storageStatus } from './storage'
 
 /**
  * The update "What's new" speaks of: a new name here shows it once more to everyone who had Sapphire before. The dialog
- * shows this release's own changelog section (#416 ticket 4); it moves to a slice in that slice's last delivery (Q84).
+ * shows this release's own changelog section (#416 ticket 4); it moves to a slice in that slice's last delivery (#416 ticket 4).
  */
 export const RELEASE = 'slice-2'
 const SEEN_KEY = 'sapphire_whats_new_seen'

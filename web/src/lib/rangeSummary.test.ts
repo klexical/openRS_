@@ -59,9 +59,9 @@ describe('#416 ticket 2: the summary numbers in a range', () => {
   })
 })
 
-// QA's FINAL on delivery A, R2 with the spec review's C8: a point at 0/0 is a point without coordinates; it never enters
+// #416 ticket 2: a point at 0/0 is a point without coordinates; it never enters
 // a range's distance, and a range with no coordinates at all has no distance (the page shows "—").
-describe('#416 ticket 2: the distance of a range and points without coordinates (QA R2)', () => {
+describe('#416 ticket 2: the distance of a range and points without coordinates', () => {
   const at = (i: number, lat: number, lng: number) => ({ ts: T0 + i * 1000, lat, lng, rpm: 3000, speedKph: 50, latG: 0, longG: 0,
     coolantC: -99, oilTempC: -99, boostPsi: null, boostSource: null }) as unknown as TripPoint
   it('a 0/0 point between two positions adds nothing: the two positions\' own step only', () => {

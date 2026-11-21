@@ -27,12 +27,12 @@ export function ComparePanel() {
     [sessions]
   )
 
-  // the drives that did open, in ticked order: the first of them is the base (#416 ticket 3, owner Q92)
+  // the drives that did open, in ticked order: the first of them is the base (#416 ticket 3)
   const hasEnough = compareSessions.length >= 2
   const baseSession = compareSessions[0]
   const firstTickedFailed = compareIds.length > 0 && failedIds.includes(compareIds[0])
   // the picker's places follow the comparison: a ticked drive that did not open has none, nor one no longer stored here
-  // (QA's FINAL on delivery A, R4), so the base is the first that did
+  // (#416 ticket 3), so the base is the first that did
   const placed = compareIds.filter((id) => !failedIds.includes(id) && sessions.some((d) => d.id === id))
   const nameOf = (id: string) => sessions.find((d) => d.id === id)?.name ?? 'a compared drive'
 
@@ -121,7 +121,7 @@ export function ComparePanel() {
           Couldn't open {nameOf(id)}.
         </p>
       ))}
-      {/* the drives that did open are compared (#416 ticket 3): the base they are compared with (Q92), or why not (Q91) */}
+      {/* the drives that did open are compared (#416 ticket 3): the base they are compared with, or why not */}
       {failedIds.length > 0 && hasEnough && firstTickedFailed && (
         <p className="text-sm font-mono text-frost">Base drive: {baseSession.name} ({nameOf(compareIds[0])} couldn't be opened).</p>
       )}

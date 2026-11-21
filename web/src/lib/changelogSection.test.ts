@@ -3,7 +3,7 @@ import changelog from '../../CHANGELOG.md?raw'
 import { RELEASE } from './whatsNew'
 import { releaseTitles } from './changelogSection'
 
-// #416 ticket 4 (owner Q84 / Q87): "What's new" reads the changelog section whose heading names the release it speaks of,
+// #416 ticket 4: "What's new" reads the changelog section whose heading names the release it speaks of,
 // not simply the newest section, so slice 2's dialog keeps showing slice 2 while slice 3's section grows.
 
 const INVENTED = [

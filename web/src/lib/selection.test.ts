@@ -78,8 +78,8 @@ describe('#416 ticket 2: the selection', () => {
   })
 })
 
-// QA's FINAL on delivery A, R3 (the spec review's C4): the selection never holds an empty or reversed range.
-describe('#416 ticket 2: setRange (QA R3)', () => {
+// #416 ticket 2: the selection never holds an empty or reversed range.
+describe('#416 ticket 2: setRange', () => {
   it('an empty or reversed range is the whole drive; a real one is kept', async () => {
     const { useStore } = await import('../store')
     const { setRange } = await import('./selection')

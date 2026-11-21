@@ -31,7 +31,7 @@ export function TripPanel() {
   const trip = session?.trip ?? null
   // Stable identity so the useMemo below doesn't rebuild every render
   const points = useMemo(() => trip?.points ?? [], [trip])
-  const range = useDriveRange(points)   // the selection, clamped to this drive (QA R3)
+  const range = useDriveRange(points)   // the selection, clamped to this drive (#416 ticket 2)
 
   // Chart rows with relative time in seconds; a missing reading is null → a gap, never a 0 dip
   const chartData = useMemo(() => tripChartData(points), [points])
@@ -106,8 +106,8 @@ export function TripPanel() {
       <SectionLabel>Drive Modes</SectionLabel>
       <ModeTimeline points={points} canonicalTimeline={trip.canonicalModeTimeline} />
 
-      {/* Thermal Progression (T2B): a start, peak and end of the whole drive, left out while a range is set (Q152, QA C3),
-          and Trip's own line says so (Q154) */}
+      {/* Thermal Progression (T2B): a start, peak and end of the whole drive, left out while a range is set (#416 ticket 2),
+          and Trip's own line says so */}
       {range && trip.thermalProgression && <p className="text-xs font-mono text-mid px-1">{TRIP_WHOLE_DRIVE_ONLY}</p>}
       {!range && trip.thermalProgression && (
         <>

@@ -1,4 +1,4 @@
-// The changelog section "What's new" shows (#416 ticket 4, owner Q84 / Q87): the one whose heading names the release the
+// The changelog section "What's new" shows (#416 ticket 4): the one whose heading names the release the
 // dialog speaks of ("## … (slice 2)" for 'slice-2'), not simply the newest section, so a later slice's section can open
 // and grow before its release name moves. Pure: the dialog hands it web/CHANGELOG.md's text.
 

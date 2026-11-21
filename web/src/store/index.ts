@@ -82,7 +82,7 @@ export const useStore = create<SapphireState>((set) => ({
 }))
 
 /**
- * The Current drive as the Drive library holds it (#416 ticket 1, owner Q15): the drive the address names (`id`), its
+ * The Current drive as the Drive library holds it (#416 ticket 1): the drive the address names (`id`), its
  * state (lib/driveLibrary.ts `currentDriveState`), and the drive itself, with its points and log, once it is shown (null
  * otherwise). The one reading of it: the drive's page and its views all use this, and none keeps its own.
  */
