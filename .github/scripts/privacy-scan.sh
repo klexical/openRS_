@@ -52,7 +52,9 @@
 # Paths are read NUL-separated, so a name that git would quote is scanned like any other.
 #
 # Prints where, never what: the number of list entries, one line per finding (commit, then file:line or the field; a
-# path that itself matches the list is withheld) and a total. Never a matched text, a list entry or a scanned line.
+# path that itself matches the list is withheld) and a summary line of counts (identifier matches, gitleaks findings and
+# suppressions, files waiting for the OK and reviewed, images in the PR's text, the total), which a merge step reads.
+# Never a matched text, a list entry or a scanned line.
 # Exit 0: nothing found; 1: a finding; 2: usage, or a missing or unusable list or scanner (fails closed).
 set -eEuo pipefail
 # any failing command exits 2, never 1 (a finding): the 0 / 1 / 2 contract holds
@@ -486,11 +488,15 @@ keep "$T/prtext" "" "in the pull request title or branch name" ""
 awk '{ printf "\tpull request description line %d\t\t\n", NR }' "$T/body" >> "$WHERE"; cat "$T/body" >> "$TEXT"
 # an image or attachment in the title or description: a screenshot, which nothing here can read; it waits for the OK.
 # Any "![" counts: inline, reference-style (the link defined on a later line), collapsed and shortcut images alike
-IMG='!\[|<(img|video|picture|object|embed|svg)[[:space:]>/]|user-attachments/|private-user-images|camo\.githubusercontent'
+# An HTML tag's name may end its line, with the attributes and closing bracket on the next.
+# The summary counts these on their own ("pull request images N", OK'd or not): unlike a file, a past revision of the
+# description stays readable after an edit, so the merge step treats a past image like a past identifier match
+IMG='!\[|<(img|video|picture|object|embed|svg)([[:space:]>/]|$)|user-attachments/|private-user-images|camo\.githubusercontent'
+primg=0
 if grep -q -a -i -E -e "$IMG" "$T/body"; then
-  printf '\tan image or attachment in the pull request description\t\t\n' >> "$T/compressed"; fi
+  printf '\tan image or attachment in the pull request description\t\t\n' >> "$T/compressed"; primg=$((primg+1)); fi
 if jq -r '.pull_request.title // ""' "$GITHUB_EVENT_PATH" | grep -q -a -i -E -e "$IMG"; then
-  printf '\tan image or attachment in the pull request title\t\t\n' >> "$T/compressed"; fi
+  printf '\tan image or attachment in the pull request title\t\t\n' >> "$T/compressed"; primg=$((primg+1)); fi
 [ "$(wc -l < "$TEXT")" -eq "$(wc -l < "$WHERE")" ] || die "internal: the scanned lines and their places are out of step"
 
 # line numbers of TEXT that match the list, and of added lines that carry gitleaks' allow marker
@@ -584,5 +590,5 @@ glcount=$(wc -l < "$T/glhits")
 
 cat "$T/out.list" "$T/out.bin" "$T/out.allow" "$T/out.gl" "$T/out.comp" "$T/out.reviewed"
 total=$(cat "$T/out.list" "$T/out.bin" "$T/out.allow" "$T/out.gl" "$T/out.comp" | wc -l)
-echo "privacy scan: $n new commit(s); identifier matches $(($(wc -l < "$T/out.list") + $(wc -l < "$T/out.bin"))), gitleaks findings $glcount, gitleaks suppressions $(wc -l < "$T/out.allow"), compressed files $(wc -l < "$T/out.comp") unreviewed and $(wc -l < "$T/out.reviewed") reviewed; $total finding(s) in all"
+echo "privacy scan: $n new commit(s); identifier matches $(($(wc -l < "$T/out.list") + $(wc -l < "$T/out.bin"))), gitleaks findings $glcount, gitleaks suppressions $(wc -l < "$T/out.allow"), compressed files $(wc -l < "$T/out.comp") unreviewed and $(wc -l < "$T/out.reviewed") reviewed; pull request images $primg; $total finding(s) in all"
 [ "$total" -eq 0 ] || exit 1
