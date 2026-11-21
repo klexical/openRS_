@@ -4,7 +4,9 @@
 # gitleaks is a stub here, which records its arguments and writes the report a case gives it; with GITLEAKS_REAL=<path>
 # of a real gitleaks binary (the workflow sets it), the last cases also run the real scanner on a seeded fake key.
 # Every case also checks that no seeded identifier, in any case, and no seeded secret reaches the output.
+# Needs bash 4 or later and GNU tools (Linux, as CI runs it): on macOS, run it in a Linux container (N6).
 set -uo pipefail
+[ "${BASH_VERSINFO[0]}" -ge 4 ] || { echo "test-privacy-scan.sh needs bash 4 or later (GNU tools; CI runs it on Linux)"; exit 2; }
 HERE=$(cd "$(dirname "$0")" && pwd)
 SCAN=${SCAN:-$HERE/privacy-scan.sh}
 OWNER=263109723+klexical@users.noreply.github.com
@@ -17,6 +19,7 @@ STUB=$T/gitleaks-stub
 cat > "$STUB" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$@" > "$STUB_ARGS"; printf '%s\n' "${GIT_ATTR_SOURCE:-}" > "$STUB_ARGS.attr"
+src=${!#}; { cd "$src" && pwd -P; [ -e "$src/.gitleaksignore" ] && echo ignore-file || echo no-ignore-file; } > "$STUB_ARGS.src" 2>&1
 while [ $# -gt 0 ]; do [ "$1" = --report-path ] && { shift; cp "$STUB_REPORT" "$1"; }; shift; done
 exit "${STUB_RC:-0}"
 EOF
@@ -40,12 +43,14 @@ sha() { g rev-parse "$1"; }
 OUT=$T/out
 scan() { # scan [<base>]: runs the check as the workflow does; base defaults to main's tip, staging's and main's tips excluded
   local base; base=$(sha "${1:-main}")
-  jq -n --arg t "${TITLE:-}" --arg b "${BODY:-}" --arg r "${BRANCH:-feature/x}" \
-    '{pull_request: {title: $t, body: $b, head: {ref: $r}}}' > "$T/event.json"
+  jq -n --arg t "${TITLE:-}" --arg b "${BODY:-}" --arg r "${BRANCH:-feature/x}" --arg a "${ACTION:-synchronize}" \
+    --arg l "${LABEL:-}" '{action: $a, pull_request: {title: $t, body: $b, head: {ref: $r}}}
+      + (if $l == "" then {} else {label: {name: $l}} end)' > "$T/event.json"
   (cd "$T/r" && PRIVACY_IDENTIFIERS=${LIST-$LISTV} GITLEAKS=${GL-$STUB} GITHUB_EVENT_PATH=${EVENT-$T/event.json} \
     bash "$SCAN" "$base" "$(sha HEAD)" "$(sha staging)" "$(sha main)") > "$OUT" 2>&1
 }
-leaks() { grep -q -i -F -e "$ID1" -e "$ID2" "$OUT" || { [ -n "${PLANTED:-}" ] && grep -q -F -e "$PLANTED" "$OUT"; }; }
+MAC=02:5A:1E:7C:3D:9B; VIN=1ZZFXTEST7A000001   # synthetic MAC- and VIN-shaped entries (Q4)
+leaks() { grep -q -i -F -e "$ID1" -e "$ID2" -e 7C3D9B -e 7c:3d:9b -e 7C-3D-9B -e TEST7A000001 "$OUT" || { [ -n "${PLANTED:-}" ] && grep -q -F -e "$PLANTED" "$OUT"; }; }
 expect() { # expect <exit> <case name> [<text the output must hold>...]
   local want=$1 name=$2 rc=$3; shift 3; local why=""
   [ "$rc" -eq "$want" ] || why="exit $rc, wanted $want"
@@ -131,11 +136,94 @@ done
 repo; put .gitleaksignore 'x\n'; commit "on main"; g checkout -q -b feature; g rm -q .gitleaksignore; commit "removed"
 run 1 "removing a .gitleaksignore is a finding too" "a change to a gitleaks ignore or config file .gitleaksignore"
 
+# ── compressed files: ZIPs unpacked, the rest need a reviewer's OK (Q180) ──────────────────────────────────────────
+mkzip() { # mkzip <zip path> <member name> <member content (printf %b)> [<member name> <content>]...
+  local z=$1; shift; python3 -I - "$T/r/$z" "$@" <<'PY'
+import sys, zipfile
+z, rest = sys.argv[1], sys.argv[2:]
+with zipfile.ZipFile(z, "w", zipfile.ZIP_DEFLATED) as zf:
+    for i in range(0, len(rest), 2):
+        zf.writestr(rest[i], rest[i + 1].encode().decode("unicode_escape").encode("latin-1"))
+PY
+  g add -- "$z"
+}
+repo; g checkout -q -b feature; mkzip a.zip doc.txt 'clean text\n' sub/two.txt 'more\n'; commit "a clean ZIP"
+run 0 "a clean ZIP passes: its members are unpacked and scanned"
+repo; g checkout -q -b feature; mkzip a.zip doc.txt 'clean\n' notes.txt "deflated $ID1 inside\n"; commit "a ZIP"
+run 1 "a ZIP member's deflated content fails, by member number" "FINDING $(c12): ZIP member #2 content a.zip"
+repo; g checkout -q -b feature; mkzip a.zip "exports/$ID2.csv" 'x\n'; commit "a ZIP"
+run 1 "a ZIP member's name fails, by number, never printed" "FINDING $(c12): ZIP member name (#1 of the ZIP) a.zip"
+repo; g checkout -q -b feature; printf 'inner %s\n' "$ID1" | gzip -c > "$T/inner.gz"
+python3 -I -c 'import sys,zipfile; zipfile.ZipFile(sys.argv[1],"w").write(sys.argv[2],"inner.gz")' "$T/r/b.zip" "$T/inner.gz"
+g add b.zip; commit "a ZIP holding a gzip"
+run 1 "a compressed ZIP member needs a reviewer's OK" "FINDING $(c12): compressed ZIP member #1 (gzip) b.zip (needs a reviewer's OK"
+repo; g checkout -q -b feature; printf 'x\n' > "$T/s.txt"; (cd "$T" && zip -q -P pw "$T/r/e.zip" s.txt); g add e.zip; commit "encrypted"
+run 1 "an encrypted ZIP member is a finding (it cannot be scanned)" "FINDING $(c12): ZIP member #1 encrypted e.zip"
+repo; g checkout -q -b feature; put bad.zip 'PK\x03\x04 not really a zip'; commit "a broken ZIP"
+run 1 "a ZIP that cannot be read is a finding" "FINDING $(c12): a ZIP that cannot be read bad.zip"
+repo; g checkout -q -b feature; printf 'hello\n' | gzip -c > "$T/r/data.gz"; g add data.gz; commit "a gzip"
+run 1 "a gzip file needs a reviewer's OK" "FINDING $(c12): compressed file (gzip) data.gz (needs a reviewer's OK: the label privacy-ok-compressed)"
+ACTION=labeled LABEL=privacy-ok-compressed run 0 "the label privacy-ok-compressed being added is the OK (that run passes)" \
+  "REVIEWED $(c12): compressed file (gzip) data.gz" "0 finding(s) in all"
+ACTION=labeled LABEL=bug run 1 "another label being added is no OK" "compressed file (gzip) data.gz (needs a reviewer's OK"
+ACTION=synchronize LABEL=privacy-ok-compressed run 1 "a later push's run is no OK, even with the label on the event" \
+  "compressed file (gzip) data.gz (needs a reviewer's OK"
+repo; g checkout -q -b feature; put icon.png '\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR'; commit "a PNG"
+run 1 "a PNG needs a reviewer's OK" "FINDING $(c12): compressed file (PNG) icon.png"
+repo; g checkout -q -b feature; put "$ID1.gz" '\x1f\x8b\x08\x00'; commit "a gzip with an identifier in its name"
+run 1 "a compressed file's path that matches the list is withheld" \
+  "compressed file (gzip) (a path that matches the list, withheld)"
+
+# ── second Mac read: binary to text, UTF-16, separators (G1, G3, Q4) ─────────────────────────────────────────────
+repo; put b.dat 'x\000y\n'; commit "binary on main"; g checkout -q -b feature; put b.dat "now text with $ID1\n"; commit "to text"
+run 1 "a file that turns from binary to text is read whole (git sees binary on either side)" "FINDING $(c12): binary content b.dat"
+repo; put t.txt "plain\n"; commit "text on main"; g checkout -q -b feature; put t.txt "x\000$ID1\n"; commit "to binary"
+run 1 "a file that turns from text to binary is read whole" "FINDING $(c12): binary content t.txt"
+u16() { python3 -I -c 'import sys; sys.stdout.buffer.write(sys.argv[2].encode(sys.argv[1]))' "$@"; }
+repo; g checkout -q -b feature; { printf '\xff\xfe'; u16 utf-16-le "notes: $ID1 here"; } > "$T/r/u16le.txt"; g add u16le.txt; commit "UTF-16LE"
+run 1 "a UTF-16LE file fails" "FINDING $(c12): binary content u16le.txt"
+repo; g checkout -q -b feature; { printf '\xfe\xff'; u16 utf-16-be "odd ${ID2,,}"; } > "$T/r/u16be.txt"; g add u16be.txt; commit "UTF-16BE"
+run 1 "a UTF-16BE file fails, ignoring case" "FINDING $(c12): binary content u16be.txt"
+repo; g checkout -q -b feature; { printf 'x'; u16 utf-16-le "$ID1"; } > "$T/r/odd.bin"; g add odd.bin; commit "UTF-16 at an odd offset"
+run 1 "UTF-16 text at an odd byte offset fails" "FINDING $(c12): binary content odd.bin"
+repo; g checkout -q -b feature; u16 utf-16-le "member $ID2" > "$T/m.txt"
+python3 -I -c 'import sys,zipfile; zipfile.ZipFile(sys.argv[1],"w",zipfile.ZIP_DEFLATED).write(sys.argv[2],"m.txt")' "$T/r/u.zip" "$T/m.txt"
+g add u.zip; commit "a ZIP of UTF-16"
+run 1 "a deflated UTF-16 ZIP member fails" "FINDING $(c12): ZIP member #1 content u.zip"
+for spelled in "${MAC,,}" "${MAC//:/-}" "${MAC//:/ }" "${MAC//:/}" "025a.1e7c.3d9b"; do
+  repo; g checkout -q -b feature; put f.txt "one\nadapter $spelled seen\nthree\n"; commit "a MAC"
+  LIST=$(printf '%s\n%s\n' "$ID1" "$MAC") run 1 "a MAC-shaped entry matches the spelling ${spelled//[0-9a-fA-F]/h}" "FINDING $(c12): added line f.txt:2"
+done
+repo; g checkout -q -b feature; put f.txt "one\nadapter ${MAC//:/}\nthree\n"; commit "a MAC"
+LIST=$(printf '%s\n%s\n' "$ID1" "${MAC//:/-}") run 1 "a MAC-shaped entry written with dashes matches the bare spelling" "added line f.txt:2"
+for spelled in "$VIN" "${VIN,,}" "1ZZ-FXTEST-7A000001" "1ZZ FXTEST 7A000001"; do
+  repo; g checkout -q -b feature; put f.txt "one\nvin $spelled\nthree\n"; commit "a VIN"
+  LIST=$(printf '%s\n%s\n' "$ID1" "$VIN") run 1 "a VIN-shaped entry matches the spelling ${spelled//[0-9A-Za-z]/x}" "FINDING $(c12): added line f.txt:2"
+done
+repo; g checkout -q -b feature; put f.txt 'one\nnothing here 1ZZ\nthree\n'; commit "no VIN"
+LIST=$(printf '%s\n%s\n%s\n' "$ID1" "$VIN" "$MAC") run 0 "MAC- and VIN-shaped entries add no false match on unrelated text" "identifier list: 3 entr(y/ies)"
+
+# ── the developer's NITs (N1, N4, N5) ───────────────────────────────────────────────────────────────────────────────
+repo; g checkout -q -b feature; put "with space.txt" "one\n$ID1\n"; commit "a name with a space"
+run 1 "a name with a space keeps its line number (N1)" "FINDING $(c12): added line with space.txt:2"
+mkdir -p "$T/badpy"; printf '#!/usr/bin/env bash\nexit 1\n' > "$T/badpy/python3"; chmod +x "$T/badpy/python3"
+repo; g checkout -q -b feature; commit "work"
+p0=$PATH; PATH=$T/badpy:$PATH; scan; rc=$?; PATH=$p0
+expect 2 "a failing helper exits 2 (fails closed), never 1 (a finding) (N4)" $rc "fails closed"
+mkdir -p "$T/spygit"; REALGIT=$(command -v git)
+printf '#!/usr/bin/env bash\n[ -z "${PRIVACY_IDENTIFIERS+x}" ] || echo seen >> "%s"\nexec "%s" "$@"\n' "$T/spy.log" "$REALGIT" > "$T/spygit/git"
+chmod +x "$T/spygit/git"; rm -f "$T/spy.log"
+repo; g checkout -q -b feature; put f.txt "one\n$ID2\n"; commit "work"
+p0=$PATH; PATH=$T/spygit:$PATH; scan; rc=$?; PATH=$p0
+expect 1 "git never runs with the list in its environment (N5)" $rc "added line f.txt:2"
+if [ -e "$T/spy.log" ]; then fail=$((fail+1)); echo "FAIL git saw PRIVACY_IDENTIFIERS $(wc -l < "$T/spy.log") time(s) (N5)"
+else pass=$((pass+1)); echo "PASS git saw PRIVACY_IDENTIFIERS 0 times (N5)"; fi
+
 # ── merges ───────────────────────────────────────────────────────────────────────────────────────────────────────────
 merge_case() { # a feature branch and a side branch that both change f.txt line 2; the merge resolves it to <resolution>
   repo; g checkout -q -b feature; put f.txt 'one\nfeature\nthree\n'; commit "feature"
   g checkout -q -b side main; put f.txt 'one\nside\nthree\n'; commit "side"
-  g checkout -q feature; g merge -q side > /dev/null 2>&1; put f.txt "$1"; commit "merge side"
+  g checkout -q feature; GIT_COMMITTER_NAME=o GIT_COMMITTER_EMAIL=$OWNER GIT_AUTHOR_NAME=o GIT_AUTHOR_EMAIL=$OWNER g merge -q side > /dev/null 2>&1; put f.txt "$1"; commit "merge side"
 }
 merge_case 'one\nfeature and side\nthree\n'
 run 0 "a merge whose resolution is clean passes"
@@ -145,6 +233,11 @@ repo; g checkout -q -b side; put g.txt "$ID1\n"; commit "an identifier on a side
 g checkout -q -b feature; commit "work"
 GIT_AUTHOR_NAME=o GIT_AUTHOR_EMAIL=$OWNER GIT_COMMITTER_NAME=o GIT_COMMITTER_EMAIL=$OWNER g merge -q --no-ff -m "merge side" side
 run 1 "a merged branch's own new commit is scanned (the merge itself adds nothing)" "added line g.txt:1" "1 finding(s) in all"
+# N2: a resolution line taken from the second parent (on the base already) is not the merge's own line
+repo; g checkout -q -b feature; put f.txt 'one\nfeat\nthree\n'; commit "feature"
+g checkout -q main; put f.txt "one\n$ID1 on main\nthree\n"; commit "main already has it"; g checkout -q feature
+GIT_COMMITTER_NAME=o GIT_COMMITTER_EMAIL=$OWNER GIT_AUTHOR_NAME=o GIT_AUTHOR_EMAIL=$OWNER g merge -q main > /dev/null 2>&1; put f.txt "one\nfeat\n$ID1 on main\nthree\n"; commit "merge main"
+run 0 "a merge line that only the base side had (a ' +' or '+ ' line) is not the merge's own (N2)"
 
 # ── fails closed ─────────────────────────────────────────────────────────────────────────────────────────────────────
 repo; g checkout -q -b feature; commit "work"
@@ -172,8 +265,8 @@ expect 2 "a ref name is not taken for a SHA" $? "every argument a 40-hex SHA"
 
 # ── gitleaks, stubbed: what it is given, and what of its report is printed ──────────────────────────────────────────
 PLANTED=stub-planted-value-9f3e
-repo; g checkout -q -b feature; put f.txt 'one\ntwo\nthree\nfour\n'; commit "work"
-run 0 "gitleaks with an empty report passes"
+repo; g checkout -q -b feature; put f.txt 'one\ntwo\nthree\nfour\n'; commit "work"; echo 'x' > "$T/r/.gitleaksignore"
+run 0 "gitleaks with an empty report passes"; rm -f "$T/r/.gitleaksignore"
 args=$(cat "$STUB_ARGS")
 cfg=$(printf '%s\n' "$args" | awk 'p { print; exit } $0 == "--config" { p = 1 }')
 ok=1
@@ -182,6 +275,8 @@ for a in git --redact --exit-code --report-format json --gitleaks-ignore-path --
 done
 printf '%s\n' "$args" | grep -q -x -F -e "--diff-merges=first-parent $(sha HEAD) --not $(sha main) $(sha staging) $(sha main)" || ok=0
 case "$cfg" in "$T/r/"*|"") ok=0 ;; esac    # the config is the scan's own, never a file of the checkout
+# the source gitleaks reads: a folder with no .gitleaksignore, never the working tree (which holds one in this case, G2)
+[ "$(sed -n 2p "$STUB_ARGS.src")" = no-ignore-file ] && [ "$(sed -n 1p "$STUB_ARGS.src")" != "$(cd "$T/r" && pwd -P)" ] || ok=0
 [ "$(cat "$STUB_ARGS.attr")" = 4b825dc642cb6eb9a060e54bf8d69288fbee4904 ] || ok=0   # git under gitleaks reads no .gitattributes
 if [ "$ok" = 1 ]; then pass=$((pass+1)); echo "PASS gitleaks gets the new commits only (merges against their first parent), redaction, its own config and ignore file, and no attributes"
 else fail=$((fail+1)); echo "FAIL gitleaks arguments: $(printf '%s ' "$args" | tr '\n' ' ')"; fi
@@ -207,6 +302,10 @@ if [ -n "${GITLEAKS_REAL:-}" ]; then
     "FINDING $(c12): gitleaks rule aws-access-token conf.txt:2"
   repo; g checkout -q -b feature; put f.txt 'one\ntwo\nthree\nfour\n'; commit "work"
   GL=$GITLEAKS_REAL run 0 "the real gitleaks passes a clean commit"
+  repo; g checkout -q -b feature; put conf.txt "one\nkey = $PLANTED\n"; commit "a seeded key"
+  printf '%s:conf.txt:aws-access-token:2\n' "$(sha HEAD)" > "$T/r/.gitleaksignore"    # in the working tree, as on a base
+  GL=$GITLEAKS_REAL run 1 "the real gitleaks ignores a .gitleaksignore in the working tree (G2)" \
+    "FINDING $(c12): gitleaks rule aws-access-token conf.txt:2"
   merge_case "one\nkey = $PLANTED\nthree\n"
   GL=$GITLEAKS_REAL run 1 "the real gitleaks finds a key added in a merge's own resolution" \
     "FINDING $(c12): gitleaks rule aws-access-token f.txt:2"
