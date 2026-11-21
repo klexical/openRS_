@@ -55,7 +55,8 @@
 # Prints where, never what: the number of list entries, one line per finding (commit, then file:line or the field; a
 # path that itself matches the list is withheld) and a summary line of counts (identifier matches, gitleaks findings and
 # suppressions, files waiting for the OK and reviewed, images in the PR's text, the total) that names the pull request
-# by number, which a merge step reads.
+# by number and the head it scanned, and says whether the privacy-ok-compressed label was needed (OK'd or not); a merge
+# step reads it.
 # Never a matched text, a list entry or a scanned line.
 # Exit 0: nothing found; 1: a finding; 2: usage, or a missing or unusable list or scanner (fails closed).
 set -eEuo pipefail
@@ -620,5 +621,6 @@ cat "$T/out.list" "$T/out.bin" "$T/out.allow" "$T/out.gl" "$T/out.comp" "$T/out.
 total=$(cat "$T/out.list" "$T/out.bin" "$T/out.allow" "$T/out.gl" "$T/out.comp" | wc -l)
 prnum=$(jq -r '.pull_request.number' "$GITHUB_EVENT_PATH")
 [[ $prnum =~ ^[1-9][0-9]*$ ]] || die "the pull request's number is not a whole number: fails closed"
-echo "privacy scan: $n new commit(s); pull request $prnum; identifier matches $(($(wc -l < "$T/out.list") + $(wc -l < "$T/out.bin"))), gitleaks findings $glcount, gitleaks suppressions $(wc -l < "$T/out.allow"), compressed files $(wc -l < "$T/out.comp") unreviewed and $(wc -l < "$T/out.reviewed") reviewed; pull request images $primg; $total finding(s) in all"
+okneed=no; [ ! -s "$T/compressed" ] || okneed=yes   # anything that waits for privacy-ok-compressed, OK'd or not
+echo "privacy scan: $n new commit(s); pull request $prnum; head $head; ok label needed $okneed; identifier matches $(($(wc -l < "$T/out.list") + $(wc -l < "$T/out.bin"))), gitleaks findings $glcount, gitleaks suppressions $(wc -l < "$T/out.allow"), compressed files $(wc -l < "$T/out.comp") unreviewed and $(wc -l < "$T/out.reviewed") reviewed; pull request images $primg; $total finding(s) in all"
 [ "$total" -eq 0 ] || exit 1
