@@ -5,6 +5,8 @@
 # privacy-scan.sh --history <tip sha>... — the one-time full-history scan: every commit reachable from the tips, with
 # no pull request text and no event file (privacy-history.yml, run by hand on main). It prints counts by kind only,
 # never a commit, path or line: that run's log is public and the history it reads is kept.
+# privacy-scan.sh --history --places <tip sha>... — the same, also printing where each hit is, for a project session's
+# own run whose output stays in the project; it refuses to run when GITHUB_ACTIONS is set, so no workflow prints places.
 #
 # Reads from the environment:
 #   PRIVACY_IDENTIFIERS  the identifier list (the privacy-scan environment's secret of that name): one literal per
@@ -73,7 +75,11 @@ die() { echo "privacy scan: $1" >&2; exit 2; }
 # --history <tip sha>...: the one-time full-history scan (privacy-history.yml, by hand): every commit reachable from
 # the tips, with no pull request and no event file
 HISTORY=0; [ "${1:-}" != --history ] || { HISTORY=1; shift; }
-if [ "$HISTORY" = 1 ]; then [ $# -ge 1 ] || die "usage: privacy-scan.sh --history <tip sha>..."
+# --places (after --history only): print the finding lines as well; never where GITHUB_ACTIONS is set (a workflow's log)
+PLACES=0; [ "${1:-}" != --places ] || { PLACES=1; shift; }
+[ "$PLACES" = 0 ] || [ "$HISTORY" = 1 ] || die "--places is for --history only"
+[ "$PLACES" = 0 ] || [ -z "${GITHUB_ACTIONS+set}" ] || die "--places never runs in a workflow (GITHUB_ACTIONS is set): fails closed"
+if [ "$HISTORY" = 1 ]; then [ $# -ge 1 ] || die "usage: privacy-scan.sh --history [--places] <tip sha>..."
 else [ $# -ge 2 ] || die "usage: privacy-scan.sh <base sha> <head sha> [<also-exclude sha>...]"; fi
 # git 2.40 or later: an older git ignores GIT_ATTR_SOURCE without a word, and a .gitattributes rule could hide lines again
 gv=$(git version | sed -n 's/^git version \([0-9][0-9]*\)\.\([0-9][0-9]*\).*/\1 \2/p')
@@ -661,14 +667,16 @@ glcount=$(wc -l < "$T/glhits")
 # a path that spells "privacy scan:" is printed with the colon masked, so no finding line can pose as the summary line,
 # which a merge step reads; the summary is the last line printed
 # In --history mode nothing but counts is printed: the log of a history run is public and the history it reads is
-# kept, so no commit, path or line is shown, only counts by kind (gitleaks findings by rule name)
+# kept, so no commit, path or line is shown, only counts by kind (gitleaks findings by rule name). With --places
+# (never in a workflow) the finding lines follow the counts
 if [ "$HISTORY" = 1 ]; then
   echo "privacy history scan: identifier matches $(wc -l < "$T/out.list") on scanned lines and $(wc -l < "$T/out.bin") in files read whole or decoded"
   echo "privacy history scan: gitleaks suppression markers or ignore-file changes $(wc -l < "$T/out.allow")"
   cut -f2 "$T/glhits" | awk '{ n[$3]++ } END { for (r in n) print r "\t" n[r] }' | sort \
     | awk -F'\t' '{ print "privacy history scan: gitleaks rule " $1 ", " $2 " finding(s)" }'
   echo "privacy history scan: files for a reviewer (binary, compressed, ZIP members, embedded images) $(wc -l < "$T/out.comp")"
-else
+fi
+if [ "$HISTORY" = 0 ] || [ "$PLACES" = 1 ]; then
   cat "$T/out.list" "$T/out.bin" "$T/out.allow" "$T/out.gl" "$T/out.comp" "$T/out.reviewed" | sed 's/privacy\([^[:alnum:]]*\)scan:/privacy\1scan[:]/Ig'
 fi
 total=$(cat "$T/out.list" "$T/out.bin" "$T/out.allow" "$T/out.gl" "$T/out.comp" | wc -l)
