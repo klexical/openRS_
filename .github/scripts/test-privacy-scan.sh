@@ -18,9 +18,12 @@ LISTV=$(printf '# a comment line\n\n  %s  \r\n%s\n' "$ID1" "$ID2")
 STUB=$T/gitleaks-stub
 cat > "$STUB" <<'EOF'
 #!/usr/bin/env bash
-printf '%s\n' "$@" > "$STUB_ARGS"; printf '%s\n' "${GIT_ATTR_SOURCE:-}" > "$STUB_ARGS.attr"
-src=${!#}; { cd "$src" && pwd -P; [ -e "$src/.gitleaksignore" ] && echo ignore-file || echo no-ignore-file; } > "$STUB_ARGS.src" 2>&1
-while [ $# -gt 0 ]; do [ "$1" = --report-path ] && { shift; cp "$STUB_REPORT" "$1"; }; shift; done
+# "gitleaks git" records into $STUB_ARGS and reports $STUB_REPORT; "gitleaks dir" into $STUB_ARGS.dir, $STUB_REPORT_DIR
+if [ "$1" = dir ]; then A=$STUB_ARGS.dir; R=${STUB_REPORT_DIR:-}; else A=$STUB_ARGS; R=$STUB_REPORT; fi
+printf '%s\n' "$@" > "$A"; printf '%s\n' "${GIT_ATTR_SOURCE:-}" > "$A.attr"
+src=${!#}; { cd "$src" && pwd -P; [ -e "$src/.gitleaksignore" ] && echo ignore-file || echo no-ignore-file; } > "$A.src" 2>&1
+[ "$1" != dir ] || ls -A "$src" > "$A.files" 2>/dev/null
+while [ $# -gt 0 ]; do [ "$1" = --report-path ] && { shift; if [ -n "$R" ]; then cp "$R" "$1"; else echo '[]' > "$1"; fi; }; shift; done
 exit "${STUB_RC:-0}"
 EOF
 chmod +x "$STUB"
@@ -50,7 +53,9 @@ scan() { # scan [<base>]: runs the check as the workflow does; base defaults to 
     bash "$SCAN" "$base" "$(sha HEAD)" "$(sha staging)" "$(sha main)") > "$OUT" 2>&1
 }
 MAC=02:5A:1E:7C:3D:9B; VIN=1ZZFXTEST7A000001   # synthetic MAC- and VIN-shaped entries (Q4)
-leaks() { grep -q -i -F -e "$ID1" -e "$ID2" -e 7C3D9B -e 7c:3d:9b -e 7C-3D-9B -e TEST7A000001 "$OUT" || { [ -n "${PLANTED:-}" ] && grep -q -F -e "$PLANTED" "$OUT"; }; }
+leaks() { grep -q -i -F -e "$ID1" -e "$ID2" -e 7C3D9B -e 7c:3d:9b -e 7C-3D-9B -e TEST7A000001 "$OUT" \
+  || LC_ALL=C sed 's/[^A-Za-z0-9]//g' "$OUT" | grep -q -i -F -e 1E7C3D9B -e FXTEST7A000001 \
+  || { [ -n "${PLANTED:-}" ] && grep -q -F -e "$PLANTED" "$OUT"; }; }   # also with every separator removed
 expect() { # expect <exit> <case name> [<text the output must hold>...]
   local want=$1 name=$2 rc=$3; shift 3; local why=""
   [ "$rc" -eq "$want" ] || why="exit $rc, wanted $want"
@@ -203,6 +208,36 @@ done
 repo; g checkout -q -b feature; put f.txt 'one\nnothing here 1ZZ\nthree\n'; commit "no VIN"
 LIST=$(printf '%s\n%s\n%s\n' "$ID1" "$VIN" "$MAC") run 0 "MAC- and VIN-shaped entries add no false match on unrelated text" "identifier list: 3 entr(y/ies)"
 
+# ── what a separator, an encoding or a second scanner could still let past (the rebuild's own read) ────────────────────
+for spelled in "${MAC//:/_}" "${MAC//:/%3A}" "${MAC//:/ : }" "02:5a-1e_7c 3d.9b"; do
+  repo; g checkout -q -b feature; put f.txt "one\nadapter $spelled seen\nthree\n"; commit "a MAC"
+  LIST=$(printf '%s\n%s\n' "$ID1" "$MAC") run 1 "a MAC-shaped entry matches any separator: ${spelled//[0-9a-fA-F]/h}" "FINDING $(c12): added line f.txt:2"
+done
+repo; g checkout -q -b feature; put f.txt "one\nvin 1ZZ.FXTEST.7A000001 and 1ZZ_FXTEST_7A000001\nthree\n"; commit "a VIN"
+LIST=$(printf '%s\n%s\n' "$ID1" "$VIN") run 1 "a VIN-shaped entry matches any separator" "FINDING $(c12): added line f.txt:2"
+repo; g checkout -q -b feature; { printf '\xff\xfe'; u16 utf-16-le "mac ${MAC//:/_}"; } > "$T/r/m16.txt"; g add m16.txt; commit "UTF-16 MAC"
+LIST=$(printf '%s\n%s\n' "$ID1" "$MAC") run 1 "a MAC with any separator in a file read whole fails" "FINDING $(c12): binary content m16.txt"
+repo; g checkout -q -b feature; put "${MAC//:/_}.csv" "a\n$ID1\n"; commit "a file named after a MAC, underscores"
+LIST=$(printf '%s\n%s\n' "$ID1" "$MAC") run 1 "a path holding a MAC with any separator is withheld" \
+  "FINDING $(c12): added line (a path that matches the list, withheld):2"
+b64() { printf '%b' "$1" | base64 -w0; }
+repo; g checkout -q -b feature; put notes.md "one\nsee data:text/plain;base64,$(b64 "the adapter is $ID1 here")\n"; commit "base64"
+run 1 "an identifier inside base64 on an added line fails at its line" "FINDING $(c12): base64 on an added line, holding a list match notes.md:2"
+repo; g checkout -q -b feature; printf 'header\n%s\nfooter\n' "$(printf 'padding %.0s' {1..12}; printf 'then %s at the end of a long text' "$ID2")" > "$T/b.txt"
+{ printf 'one\n-----BEGIN DATA-----\n'; base64 -w 40 "$T/b.txt"; printf -- '-----END DATA-----\n'; } > "$T/r/wrapped.txt"; g add wrapped.txt; commit "wrapped base64"
+run 1 "an identifier inside base64 wrapped over several lines fails" "FINDING $(c12): base64 on an added line, holding a list match wrapped.txt:3"
+repo; g checkout -q -b feature; { printf '\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR'; head -c 300 /dev/zero; } > "$T/shot.png"
+put shot.svg "<svg><image href=\"data:image/png;base64,$(base64 -w0 "$T/shot.png")\"/></svg>\n"; commit "an embedded image"
+run 1 "a PNG embedded as base64 in a text file needs a reviewer's OK" \
+  "FINDING $(c12): base64 on an added line, decoding to a compressed file (PNG) shot.svg:1 (needs a reviewer's OK"
+ACTION=labeled LABEL=privacy-ok-compressed run 0 "the OK label covers an embedded image too" "REVIEWED $(c12): base64 on an added line, decoding to a compressed file (PNG) shot.svg:1"
+repo; g checkout -q -b feature; put body.txt "x\n"; commit "work"
+BODY="![shot](data:image/png;base64,$(base64 -w0 "$T/shot.png"))" run 1 "an image embedded as base64 in the PR description needs a reviewer's OK" \
+  "FINDING pull request: base64 on pull request description line 1, decoding to a compressed file (PNG)"
+repo; g checkout -q -b feature; for i in 1 2 3 4 5 6 7 8; do head -c 64 /dev/urandom > "$T/h"; printf '"integrity": "sha512-%s",\n' "$(base64 -w0 "$T/h")"; done > "$T/r/lock.json"
+printf '"short": "%s",\n' "$(printf '\x1f\x8b\x08\x00abcdefgh' | base64 -w0)" >> "$T/r/lock.json"; g add lock.json; commit "a lockfile"
+run 0 "short base64 (hashes, a few bytes after a magic) is no compressed-file finding"
+
 # ── the developer's NITs (N1, N4, N5) ───────────────────────────────────────────────────────────────────────────────
 repo; g checkout -q -b feature; put "with space.txt" "one\n$ID1\n"; commit "a name with a space"
 run 1 "a name with a space keeps its line number (N1)" "FINDING $(c12): added line with space.txt:2"
@@ -292,6 +327,28 @@ echo '[]' > "$STUB_REPORT"
 STUB_RC=1 run 2 "gitleaks failing fails closed" "gitleaks failed (exit 1"
 echo 'not json' > "$STUB_REPORT"; run 2 "an unreadable gitleaks report fails closed" "no readable report"
 echo '[]' > "$STUB_REPORT"; PLANTED=
+# the second gitleaks run reads what the first cannot: messages, the PR's text, ZIP members and files read whole
+repo; g checkout -q -b feature; mkzip a.zip doc.txt 'member text\n'; put img.bin '\x00\x01bin\x00'; commit "subject
+
+body"
+BODY="the description" run 0 "gitleaks dir is given the messages, the PR text, ZIP members and files read whole"
+dargs=$(cat "$STUB_ARGS.dir" 2>/dev/null); ok=1
+for a in dir --redact --exit-code --report-format json --gitleaks-ignore-path --no-banner --ignore-gitleaks-allow --max-decode-depth --max-archive-depth; do
+  printf '%s\n' "$dargs" | grep -q -x -F -e "$a" || ok=0
+done
+[ "$(sed -n 2p "$STUB_ARGS.dir.src" 2>/dev/null)" = no-ignore-file ] || ok=0
+[ "$(wc -l < "$STUB_ARGS.dir.files" 2>/dev/null || echo 0)" -ge 4 ] || ok=0    # a message, the PR text, a member, a binary
+grep -q -x -F -e --ignore-gitleaks-allow "$STUB_ARGS" || ok=0
+grep -q -x -F -e --max-decode-depth "$STUB_ARGS" || ok=0
+if [ "$ok" = 1 ]; then pass=$((pass+1)); echo "PASS gitleaks dir reads the scan's own folder of messages, PR text, members and binaries; both runs decode and ignore allow markers"
+else fail=$((fail+1)); echo "FAIL gitleaks dir arguments or folder: $(printf '%s ' "$dargs" | tr '\n' ' ') files: $(cat "$STUB_ARGS.dir.files" 2>/dev/null | wc -l)"; fi
+PLANTED=stub-planted-value-9f3e
+f1=$(head -n1 "$STUB_ARGS.dir.files")
+printf '[{"RuleID":"generic-api-key","File":"%s/%s","StartLine":3,"Secret":"%s"}]\n' "$(sed -n 1p "$STUB_ARGS.dir.src")" "$f1" "$PLANTED" > "$T/dir-report"
+STUB_REPORT_DIR=$T/dir-report run 1 "a gitleaks dir finding is printed by rule and place, never its secret or the scan's file name" \
+  "gitleaks rule generic-api-key" "gitleaks findings 1"
+grep -q -F -e "$(sed -n 1p "$STUB_ARGS.dir.src")" -e "/$f1" "$OUT" && { fail=$((fail+1)); echo "FAIL the dir finding printed the scan's own file name"; } || { pass=$((pass+1)); echo "PASS the dir finding names its place, not the scan's file"; }
+PLANTED=
 
 # ── gitleaks, the real binary (the workflow runs this part) ─────────────────────────────────────────────────────────
 if [ -n "${GITLEAKS_REAL:-}" ]; then
@@ -309,6 +366,18 @@ if [ -n "${GITLEAKS_REAL:-}" ]; then
   merge_case "one\nkey = $PLANTED\nthree\n"
   GL=$GITLEAKS_REAL run 1 "the real gitleaks finds a key added in a merge's own resolution" \
     "FINDING $(c12): gitleaks rule aws-access-token f.txt:2"
+  repo; g checkout -q -b feature; mkzip k.zip doc.txt 'clean\n' conf.txt "key = $PLANTED\n"; commit "a key in a ZIP member"
+  GL=$GITLEAKS_REAL run 1 "the real gitleaks finds a key inside a ZIP member" "FINDING $(c12): gitleaks rule aws-access-token in ZIP member #2 k.zip"
+  repo; g checkout -q -b feature; commit "subject
+
+key = $PLANTED"
+  GL=$GITLEAKS_REAL run 1 "the real gitleaks finds a key in a commit message" "FINDING $(c12): gitleaks rule aws-access-token in the message:3"
+  repo; g checkout -q -b feature; commit "work"
+  BODY=$(printf 'Summary\n\nkey = %s\n' "$PLANTED") GL=$GITLEAKS_REAL run 1 "the real gitleaks finds a key in the PR description" \
+    "FINDING pull request: gitleaks rule aws-access-token in the pull request description:3"
+  repo; g checkout -q -b feature; put conf.txt "one\nkey = $PLANTED # $ALLOW\n"; commit "a key with the allow marker"
+  GL=$GITLEAKS_REAL run 1 "the real gitleaks still reports a key that carries the allow marker" \
+    "FINDING $(c12): gitleaks rule aws-access-token conf.txt:2" "added line with a gitleaks allow marker conf.txt:2"
   PLANTED=
 else
   echo "SKIP the real gitleaks cases (GITLEAKS_REAL is not set; the workflow sets it)"
