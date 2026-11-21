@@ -52,31 +52,13 @@ paths:
     after a same-day staging merge skips, Q115; today's one nightly is judged under its own name, so a stable cut's new
     base skips too, Q119), and fails the run otherwise, a second nightly that day included; a read-only token is
     shown no draft releases), `checks` (ci.yml's build and lint commands and the release script tests), `release` (the recipe),
-    `launch` (`scripts/start-emulator.sh` starts an API 36 emulator with `-gpu swangle` (under `swiftshader_indirect` it
-    crashed on its host render thread, #363) under a wrapper that writes its exit status to
-    `emulator.exit`, prints its version (from `emulator/source.properties`) and process id, writes `emulator.pid` beside
-    `emulator.log`, records its first start time and image (`emulator.started`, `emulator.args`), asks the kernel to
-    print fatal signals, prints the GLES renderer the log's first `gles_mode_selected:` names (on a failed boot too) and,
-    after the boot, stops (the emulator with it) unless it is swangle; then `scripts/launch-check.sh`: Play Store disabled, a `free -m` baseline, log
-    cleared before the cold start, same process after 10 s, no verifier rejection, fatal exception or ANR; every adb
-    call named and limited to 60 s; a failure prints `adb devices`, the emulator processes, whether the `emulator.pid`
-    process is alive and named by the kernel's kill lines, the device log's process and crash lines and its events
-    buffer's kills and deaths (a line naming a key left out, the Maps and weather key values redacted by their shape),
-    the host's memory and kernel kill lines, `df -h`, the emulator's exit messages from the whole `emulator.log` and its
-    tail; the device-log, events, kernel and signature sections say "(no matching lines)", "(read cut short: …)" or
-    "(could not read: …)" rather than nothing, and the output ends with `--- end of diagnostics`; also the emulator's exit
-    status, its helper processes (only the emulator's own, `emulator/crashpad_handler` and `emulator/netsimd` by their
-    place in the SDK, never another program's crash handler, which the dump decode does not wait for either; process id
-    and name only: BSD pgrep's -l / -a print whole command lines), the host's
-    load, the kernel's fault and fatal-signal lines (kind and thread name, a fatal signal's number; no error code,
-    address, register or object name), and through `scripts/crash-facts.py` the crash database the emulator's log names
-    (a count, and per file its kind, size and time after the cold start, no names) and the newest dump written after
-    that attempt's cold start (its age, then signal, thread name, module + offset, fault address class: never a raw
-    address, a register or the dump, the owner's rule), and a liveness trace every 2 s (the emulator's CPU % over each interval from `/proc`, and its resident kB); the check is repeated once in the same step only for a vanished emulator (a lost adb connection, the
-    `emulator.pid` process gone, no emulator process left, the app's process unchanged at the trace's last answer; fail
-    closed without a trace, and only on the decision's explicit OK) when the job's 15 minutes leave a second boot (`JOB_LIMIT_S`, pinned against the job's
-    `timeout-minutes`), with each attempt headed and a summary line for any end but a plain pass, an argument
-    failure included),
+    `launch` (`scripts/start-emulator.sh`, then `scripts/launch-check.sh`: an API 36 emulator under `-gpu swangle` (it
+    crashed under `swiftshader_indirect`, #363), then a cold start checked for a verifier rejection, fatal exception or
+    ANR, with one retry only for a vanished emulator (the owner's decision). Each script's header says what it checks
+    and prints, and its tests pin that (`scripts/test-start-emulator.sh`, `scripts/test-launch-check.sh`,
+    `scripts/test-crash-facts.py`; `JOB_LIMIT_S` against the job's `timeout-minutes` in `test-release-workflows.rb`).
+    The diagnostics redact key values by their shape and never print a raw address, a register or a dump (the owner's
+    rule)),
     `attest`, then `publish` and `cleanup` (#363), the only jobs with `contents: write`, each only when the mode's
     publish output is `'true'`, the run is on main and the gate said build. `publish` (`scripts/nightly-publish.sh`)
     stops quietly only when today's tag is already published and checks out as its last step checks it; a draft for

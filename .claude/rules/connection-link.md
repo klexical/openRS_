@@ -111,8 +111,6 @@ paths:
     decoding to Normal / Off / Sport counts (raw 3 does not advance `esc_frames`). `firmware/tests/run.sh` runs the real
     `focusrs.c` against host stubs (`tests/stubs/`). Firmware detection ≠ control capability.
   - The label is not to be relied on in a car until #125's hardware acceptance (the raw 0x1C0 run read from an export).
-- **ESC command while the state is unknown (#288)** — `EscCommand` sends nothing (Outcome.Refused) for an unknown target or
-  while the car's ESC state is unknown: no 0x1C0 on this connection, or raw 3. GARAGE disables its ESC chips then.
 - **Drive-mode confirmation (#252)** — the adapter's OK is "ACCEPTED".
   - `executeDriveModeChange` confirms only from CAN observed AFTER the request on the same link generation: two agreeing
     resolved 0x1B0 reports (stamp `driveMode`), and for Sport / Track also two agreeing documented 0x420 details
@@ -148,14 +146,6 @@ paths:
   refusing `T` ≤ 0x7FF is the firmware source (it sets `T` from the frame's extended flag, Pro and USB); the SLCAN log
   records parsed IDs, never `t` vs `T`, so a real session's refused frame-line count is the hardware check. A line with a non-hex data character is refused without printing it anywhere (logcat
   included). `SlcanParserTest` carries real 29-bit IDs for the extended cases.
-- **Launch control has one rule (#289)** — the only driver-facing indication is one "LC", `LaunchControl.shown(vs, nowMs)`:
-  connected, the `lcStatus420` stamp (set on every documented 0x420 in `CanDecoder.stampDetail`) at most 1.5 s old, and byte 6
-  bit 2 set. At connection start `CanDataService` clears both LC flags and both stamps (`lcStatus420`, `lc225`;
-  `LaunchControl.clearedForNewConnection`), and an OBD merge never brings a stamp back (`LaunchControl.CAN_TAGS` in `ObdMerge`).
-  Every surface reads it on `wallClockMs(500L)`, so "LC" goes away by itself when 0x420 stops (without the tick GARAGE kept
-  "LC" after the frames stopped). Never show a state word ("ON", "ENGAGED", "ARMED"), and never take LC from 0x225 or the
-  0x731 probe (DE00 / DE01 / DE02, undocumented DIDs at the keyless module's address): those are diagnostics only, with
-  source and age. The cluster check of bit 2 and the window's timing are #289
 - **A gap on an open connection fires no timeout; `ReceptionStall` names it (#356)** — frames can keep arriving far
   below the connection's own rate while the link stays up, so neither a no-frame timer nor the transport's read timeout
   ends it. `ReceptionStall` counts quarter seconds of `SystemClock.elapsedRealtime` (it keeps counting while the phone

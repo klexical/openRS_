@@ -9,8 +9,8 @@ Android app → `android/`  |  Firmware → `firmware/`  |  Sapphire (web dashbo
 
 ## Source Layout
 
-The per-file map of `android/app/src/main/java/com/openrs/dash/` is `.claude/rules/source-layout.md`; it loads when any file
-under `android/` is read or edited.
+The per-file map of `android/app/src/main/java/com/openrs/dash/` is `.claude/rules/source-layout.md`; Claude Code loads it
+when any file under `android/` is read or edited. It is not complete: list the folder for files it does not name.
 
 ## ECU Addresses
 
@@ -101,9 +101,10 @@ data[5] = B5,  data[6] = B6 …
 
 ## Known Gotchas
 
-The gotchas live in `.claude/rules/` as path-scoped Claude Code rules, one file per area. Each file loads on demand when a
-file matching its `paths:` globs is read or edited; the globs start with `**/` so they also match from a workspace that
-holds this repository in a subfolder. Rules for editing them:
+The gotchas live in `.claude/rules/` as path-scoped Claude Code rules, one file per area. In Claude Code each file loads on
+demand when a file matching its `paths:` globs is read or edited; the globs start with `**/` so they also match from a
+workspace that holds this repository in a subfolder. A session that does not load them by itself (a cloud project thread)
+opens every file whose globs match a file it will touch, before the first edit. Rules for editing them:
 
 - A new gotcha goes at the end of its area's file as `- **Title** — rule`; a cross-cutting one goes to
   `android-general.md`. An entry states the rule, its reason and the test or issue that holds the evidence. Dates, commit
@@ -118,6 +119,13 @@ holds this repository in a subfolder. Rules for editing them:
   path-scoped rules and subdirectory CLAUDE.md files on a 200K context window (150,000 on 1M) — split an area into two
   files rather than trim it.
 - The ECU / CAN ID tables, VehicleState rules and the Mode 22 layout above stay in this file: every session needs them.
+- A rule file holds what no check enforces. A rule that a unit test or a CI check fails on when it is broken is not
+  kept here: the test is the rule, and its name and KDoc carry the reason. An entry stays when its rule binds code not
+  yet written ("any new writer …"), when it records evidence or an unverified point (hardware, emulator-only, a source
+  read but not run), when an owner decision behind it is not in a test, or when `CODING_STANDARDS.md` points at it.
+- `CODING_STANDARDS.md` points at some entries by file and title, and the CI reviewer reads the entry a standard points
+  to. Renaming or removing such an entry changes a review rule: change `CODING_STANDARDS.md` in the same round (it is a
+  twin, see "Branch / Release Workflow").
 
 | File | Area | Loads when a matching file is read / edited |
 |---|---|---|
@@ -226,7 +234,9 @@ without the Android RC.
 staging and main: a change lands on both in one round (two PRs), or on staging alone with main taking it at stable.
 
 Commits carry the committer's GitHub noreply e-mail (`<id>+<login>@users.noreply.github.com`). The owner's account blocks
-pushes that would publish a private address (GH007), and fixing that afterwards means rewriting commits.
+pushes that would publish a private address (GH007), and fixing that afterwards means rewriting commits. The Commit
+identity check (`.github/workflows/commit-identity.yml`) fails a pull request whose new commits are not the owner's
+noreply identity or carry a `Claude-Session:` line.
 
 The RC, nightly and stable procedures, the release checklist, the changelog format and the release-note rules are in
 `.claude/rules/build-release.md`.
@@ -234,12 +244,10 @@ The RC, nightly and stable procedures, the release checklist, the changelog form
 **Release records.** Release facts live in `android/CHANGELOG.md` and on the GitHub Releases page; open work lives in the
 issue tracker. This file takes no dated status or work-log entries.
 
-Docs branches skip staging entirely — branch from main, PR to main.
-Never route README.md, assets/, or docs/ through staging. `CLAUDE.md`, `.claude/rules/` and `GLOSSARY.md` are the exception:
-they describe the code on staging, so a change that makes one of them wrong corrects it in the same branch. Documentation
-under `android/` that describes a code change travels with that code, through staging. The "never" line above means the
-repository's root `README.md`, `assets/` and `docs/`; `android/README.md` and `android/CONTRIBUTING.md` follow the clause
-before it when they describe the code change.
+Docs branches skip staging entirely: branch from main, PR to main. The root `README.md`, `assets/`, `docs/` and
+`firmware/README.md` never go through staging. `CLAUDE.md`, `.claude/rules/` and `GLOSSARY.md` describe the code on staging,
+so they take the code route, and a change that makes one of them wrong corrects it in the same branch. `android/README.md`
+and `android/CONTRIBUTING.md` travel with the code change they describe, through staging.
 
 ## Sapphire (`web/`)
 

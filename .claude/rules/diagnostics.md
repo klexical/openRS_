@@ -15,10 +15,6 @@ paths:
 ---
 # openRS_ Known Gotchas — DTC scans, DID prober, diagnostic export
 
-- **One DTC record per export (PR #238)** — `DiagnosticExporter.export` reads
-  `DiagnosticLogger.lastDtcScan` once and passes it to `buildSummaryAndDetail(ts, dtcScan = …)` and the `dtc_scan_*`
-  files; never read the ledger again inside one export. Ledger records are immutable, so one read is a snapshot.
-  `DiagnosticExportDtcSnapshotTest` (Context seam between the summary and the DTC files)
 - **DTC scan truth (#215)** — a module is OK only for a valid positive `59 02 …` reply (`DtcReply.classify`); 7F 19 NRC →
   REJECTED, malformed → MALFORMED, 7F 19 78 waits (P2* 5 s, cap 12 s) → else PENDING, none → TIMEOUT. The export record
   is published only through `DiagnosticLogger.dtcScans` (`DtcScanLedger`, session-scoped); never write a DtcScanRecord
@@ -31,10 +27,6 @@ paths:
   real-module capture (#215). Freeze-frame sub-function numbering (app 04 / 05 vs ISO 03 / 04) is unverified, best-effort
 - **Share intents set ClipData** (`DiagnosticExporter.shareClip`) beside `EXTRA_STREAM` — `createChooser` only passes the
   read grant to the share sheet through ClipData; without it the sheet's preview logs `Permission Denial … intentresolver`
-- **Diagnostic-export adapter status (#233)** — `/check_status` belongs to the session: `sessionStart` returns a
-  token + takes the initial reason (Bluetooth = not requested); `adapterStatusRequested/Fetched/Failed(token, …)` drop stale
-  tokens; exports build text + JSON from ONE `AdapterStatusSnapshot` (`buildSummaryAndDetail`). The `Firmware :` line is
-  the OPENRS? handshake — never derived from `/check_status` (`fw_version` there doesn't identify an openRS_ build)
 - **Text from outside the app → `LogText.sanitize[Reason]`** (probe write failures #220, DTC write failures #215): printable,
   bounded, MAC / `WiC_…` / long hex masked. Probe events use `SlcanTransport.kind`, never `transport.label` (BLE label has
   name + MAC); non-frame adapter lines are counted, never logged. Probe 1 is logged when written / failed, before the
@@ -46,10 +38,6 @@ paths:
   (request / FC failure → ERROR **before** PENDING; no session-write note beside PENDING); FC marked sent only on success;
   diverted replies are logged once before the scanner gets them; every request / FC write is a `# TX` comment line with
   its result; a failed one reads its failure word, never `sent` (`DiagnosticLogger.logTxLine`, #209)
-- **DTC retries carry their own note (#215)** — `scanSingleModule` / `retryScanModule` return `DtcModuleRetry`
-  (codes, status, note); the ledger record and DIAG's result apply it with ONE rule (`DtcScanLedger.withNote`: replaced on
-  failure, cleared on OK / genuine timeout). DIAG's NOT SCANNED row reads the DISPLAYED result
-  (`DtcScanView.notScannedText`) — never `DiagnosticLogger.lastDtcScan` (a newer auto-scan / session would label an older row)
 - **DID prober (#249)** — the scan runs in `diagnostics/DidProbeScan.kt` (`runDidProbeScan`); `DidProberSection`
   only starts it and shows the end.
   - A failed query never reaches the UI scope: any exception except cancellation (rethrown) ends the scan as

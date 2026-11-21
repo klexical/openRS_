@@ -69,11 +69,6 @@ paths:
   the system navigation-bar inset over the dashboard. Settings is its own dialog window and still sits over a message.
   A UI text dump reports a covered snackbar with bounds, so "shown" in a dump is not "visible" — a visibility claim
   needs a screenshot
-- **Header line count is fixed per layout (#283)** — `HeaderRow` decides one or two lines from the width, density, font scale
-  and demo mode only: the worst-case MODE / ESC pills and link pill that can co-occur (compact, measured, never placed) plus
-  the wordmark, the 44 dp cog and the 7 dp REC dot. Never feed live mode, ESC, REC or link state into that decision: a header
-  that changes height moves every page. The measured-only copies must stay out of the merged semantics tree, so TalkBack reads
-  each pill once (`EscHeaderPillTest` walks the merged tree; `HeaderFitMatrixTest` sweeps link and mode at the switch points).
 
 ## Theme Colors
 
