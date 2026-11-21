@@ -16,10 +16,11 @@
 # Against the list: every line each new commit adds (a merge: only the lines its own resolution adds); every path a new
 # commit touches; each new commit's author and committer names and addresses and its message; the pull request's
 # title, description and branch name. A file git judges binary on either side of a commit (--numstat "-" "-"), or
-# whose new content holds a NUL byte, is read whole, as bytes and as UTF-16 in either byte order. A ZIP is
+# whose new content holds a NUL byte, is read whole, as bytes and as UTF-16 or UTF-32 in either byte order. A ZIP is
 # unpacked and each member read whole and its name scanned; any other compressed file (gzip, PNG, JPEG, PDF, 7z and
-# the like), or a compressed ZIP member, is a finding until a reviewer's OK: the label privacy-ok-compressed being
-# added to the pull request (that label event's run only, so a later push needs a new OK). Base64 on any scanned line
+# the like), a compressed ZIP member or a Git LFS pointer is a finding until a reviewer's OK: the label
+# privacy-ok-compressed being added to the pull request (that label event's run only, so a later push needs a new
+# OK). Base64 on any scanned line
 # (or wrapped over several lines) is decoded: a list match inside is a finding; a run that decodes to a compressed
 # file of 100 bytes or more (an embedded image) needs the same OK. A MAC- or VIN-shaped entry is also matched with
 # every separator and %XX escape removed, from the entry and the scanned text alike.
@@ -101,6 +102,7 @@ def bare(text):  # letters and digits only (a %XX escape dropped): a MAC or VIN 
 def hits(data, ents, bares):
     texts = [data.decode("utf-8", errors="replace")]
     texts += [data[off:].decode(enc, errors="replace") for enc in ("utf-16-le", "utf-16-be") for off in (0, 1)]
+    texts += [data[off:].decode(enc, errors="replace") for enc in ("utf-32-le", "utf-32-be") for off in range(4)]
     for t in texts:
         t = t.casefold()
         if any(e in t for e in ents):
@@ -191,8 +193,8 @@ ALLOW=gitleaks; ALLOW="$ALLOW:allow"         # gitleaks' inline marker, spelled 
 
 # in_binpaths <path>: git judged the path binary on either side of this commit
 in_binpaths() { python3 -I -c 'import sys; sys.exit(0 if sys.argv[1].encode("utf-8", "surrogateescape") in open(sys.argv[2], "rb").read().split(b"\0") else 1)' "$1" "$T/binpaths"; }
-# blob_hits <file>: 1 when a file read whole holds one of the list's matches: as bytes (UTF-8 and ASCII), as UTF-16 in
-# either byte order at either alignment, or a MAC or VIN with any separator; 0 otherwise, never what matched
+# blob_hits <file>: 1 when a file read whole holds one of the list's matches: as bytes (UTF-8 and ASCII), as UTF-16 or
+# UTF-32 in either byte order at every alignment, or a MAC or VIN with any separator; 0 otherwise, never what matched
 blob_hits() {
   local h; h=$({ grep -c -a -i -F -f "$LIST" "$1" || true; })
   if [ "$h" -gt 0 ]; then echo 1; else python3 -I "$H" blob "$LIST" "$T/listbare" "$1"; fi
@@ -300,6 +302,11 @@ for r in d:
     [ "$(git cat-file -t "$c:$p" 2>/dev/null)" = blob ] || continue
     git cat-file blob "$c:$p" > "$T/blob"
     kind=$(compressed_kind "$T/blob")
+    # a Git LFS pointer: the file it stands for goes to LFS storage, never into these git objects, so nothing here
+    # can read it; it waits for a reviewer's OK like a compressed file
+    if [ "$(head -c 40 "$T/blob")" = "version https://git-lfs.github.com/spec/" ]; then
+      printf '%s\ta Git LFS pointer (its file is not in the pull request'"'"'s git objects)\t%s\t\n' "$c12" "$sp" >> "$T/compressed"
+    fi
     if [ "$kind" = zip ]; then
       scan_zip "$c12" "$sp" "$T/blob"
     elif [ -n "$kind" ]; then

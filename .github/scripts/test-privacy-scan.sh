@@ -220,6 +220,13 @@ LIST=$(printf '%s\n%s\n' "$ID1" "$MAC") run 1 "a MAC with any separator in a fil
 repo; g checkout -q -b feature; put "${MAC//:/_}.csv" "a\n$ID1\n"; commit "a file named after a MAC, underscores"
 LIST=$(printf '%s\n%s\n' "$ID1" "$MAC") run 1 "a path holding a MAC with any separator is withheld" \
   "FINDING $(c12): added line (a path that matches the list, withheld):2"
+repo; g checkout -q -b feature; u16 utf-32-le "notes: $ID1 here" > "$T/r/u32.txt"; g add u32.txt; commit "UTF-32LE"
+run 1 "a UTF-32 file fails" "FINDING $(c12): binary content u32.txt"
+repo; g checkout -q -b feature; { printf 'xyz'; u16 utf-32-be "${ID2,,}"; } > "$T/r/u32b.bin"; g add u32b.bin; commit "UTF-32BE, odd offset"
+run 1 "UTF-32BE text at an odd byte offset fails" "FINDING $(c12): binary content u32b.bin"
+repo; g checkout -q -b feature; put shots/drive.png 'version https://git-lfs.github.com/spec/v1\noid sha256:4d7a214614ab2935c943f9e0ff69d22eadbb8f32b1258daaa5e2ca24d17e2393\nsize 12345\n'; commit "an LFS pointer"
+run 1 "a Git LFS pointer needs a reviewer's OK (its content is not in the git objects)" \
+  "FINDING $(c12): a Git LFS pointer (its file is not in the pull request's git objects) shots/drive.png (needs a reviewer's OK"
 b64() { printf '%b' "$1" | base64 -w0; }
 repo; g checkout -q -b feature; put notes.md "one\nsee data:text/plain;base64,$(b64 "the adapter is $ID1 here")\n"; commit "base64"
 run 1 "an identifier inside base64 on an added line fails at its line" "FINDING $(c12): base64 on an added line, holding a list match notes.md:2"
