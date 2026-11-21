@@ -2,6 +2,8 @@
 # privacy-scan.sh <base sha> <head sha> [<also-exclude sha>...] — the pull request's NEW commits (as
 # check-commit-identity.sh picks them: reachable from head, not from base nor from any other sha given; the workflow
 # passes staging's and main's tips) and the pull request's own text, against the identifier list and gitleaks.
+# privacy-scan.sh --history <tip sha>... — the one-time full-history scan: every commit reachable from the tips, with
+# no pull request text and no event file (privacy-history.yml, run by hand on main).
 #
 # Reads from the environment:
 #   PRIVACY_IDENTIFIERS  the identifier list (the privacy-scan environment's secret of that name): one literal per
@@ -67,7 +69,11 @@ LISTRAW=${PRIVACY_IDENTIFIERS-}; unset PRIVACY_IDENTIFIERS
 export LC_ALL=C.UTF-8
 export GIT_ATTR_SOURCE=4b825dc642cb6eb9a060e54bf8d69288fbee4904   # the empty tree: no .gitattributes applies
 die() { echo "privacy scan: $1" >&2; exit 2; }
-[ $# -ge 2 ] || die "usage: privacy-scan.sh <base sha> <head sha> [<also-exclude sha>...]"
+# --history <tip sha>...: the one-time full-history scan (privacy-history.yml, by hand): every commit reachable from
+# the tips, with no pull request and no event file
+HISTORY=0; [ "${1:-}" != --history ] || { HISTORY=1; shift; }
+if [ "$HISTORY" = 1 ]; then [ $# -ge 1 ] || die "usage: privacy-scan.sh --history <tip sha>..."
+else [ $# -ge 2 ] || die "usage: privacy-scan.sh <base sha> <head sha> [<also-exclude sha>...]"; fi
 # git 2.40 or later: an older git ignores GIT_ATTR_SOURCE without a word, and a .gitattributes rule could hide lines again
 gv=$(git version | sed -n 's/^git version \([0-9][0-9]*\)\.\([0-9][0-9]*\).*/\1 \2/p')
 [ -n "$gv" ] || die "cannot read git's version: fails closed"
@@ -80,12 +86,17 @@ done
 [ -n "$LISTRAW" ] || die "the identifier list (secret PRIVACY_IDENTIFIERS) is missing or empty: fails closed"
 { [ -n "${GITLEAKS:-}" ] && [ -x "$GITLEAKS" ]; } || die "GITLEAKS does not name an executable gitleaks: fails closed"
 # the pull request's number, a whole number: the summary names it, so a merge step can find every run of the PR
-{ [ -n "${GITHUB_EVENT_PATH:-}" ] && jq -e '(.pull_request | type == "object") and (.pull_request.number | type == "number")
+[ "$HISTORY" = 1 ] || { [ -n "${GITHUB_EVENT_PATH:-}" ] && jq -e '(.pull_request | type == "object") and (.pull_request.number | type == "number")
     and (.pull_request.number | . == floor and . > 0)' "$GITHUB_EVENT_PATH" > /dev/null 2>&1; } \
   || die "GITHUB_EVENT_PATH does not name a pull request event: fails closed"
 
 umask 077
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
+# the history scan has no pull request: an empty one stands in for it (no text, no label, so nothing is OK'd)
+if [ "$HISTORY" = 1 ]; then
+  echo '{"action": "history", "pull_request": {"title": "", "body": "", "head": {"ref": ""}}}' > "$T/event.json"
+  GITHUB_EVENT_PATH=$T/event.json
+fi
 LIST=$T/list
 printf '%s\n' "$LISTRAW" | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' \
   | { grep -v -e '^$' -e '^#' || true; } > "$LIST"
@@ -310,8 +321,9 @@ elif cmd == "b64":        # b64 <list> <bare list> <text>: "<line>\thit" or "<li
 PY
 python3 -I "$H" expand "$LIST" "$T/listbare"
 
-base=$1; head=$2; shift 2
-commits=$(git rev-list "$head" --not "$base" "$@")
+if [ "$HISTORY" = 1 ]; then tips="$*"; RANGE=("$@")
+else base=$1; head=$2; shift 2; RANGE=("$head" --not "$base" "$@"); fi
+commits=$(git rev-list "${RANGE[@]}")
 
 # Every scanned line goes to TEXT; the same line number of WHERE says where it came from (commit, what, path, line),
 # tab-separated. Matching runs once over TEXT; only WHERE lines are ever printed.
@@ -591,7 +603,7 @@ if [ "$n" -gt 0 ]; then
   "$GITLEAKS" git --no-banner --redact --exit-code 0 --log-level error --config "$T/gitleaks.toml" \
     --gitleaks-ignore-path "$T/gitleaksignore" --ignore-gitleaks-allow --max-decode-depth 2 \
     --report-format json --report-path "$T/gl.json" \
-    --log-opts "--diff-merges=first-parent $head --not $base $*" "$T/glsrc" > "$T/gl.log" 2>&1 || rc=$?
+    --log-opts "--diff-merges=first-parent ${RANGE[*]}" "$T/glsrc" > "$T/gl.log" 2>&1 || rc=$?
   [ "$rc" -eq 0 ] || die "gitleaks failed (exit $rc; its output is not shown): fails closed"
   jq -e 'type == "array"' "$T/gl.json" > /dev/null 2>&1 || die "gitleaks wrote no readable report: fails closed"
   jq -r '.[] | [(.Commit // "" | .[0:12]), ("gitleaks rule " + (.RuleID // "?")), (.File // ""), ((.StartLine // "") | tostring)] | @tsv' \
@@ -619,8 +631,12 @@ glcount=$(wc -l < "$T/glhits")
 # which a merge step reads; the summary is the last line printed
 cat "$T/out.list" "$T/out.bin" "$T/out.allow" "$T/out.gl" "$T/out.comp" "$T/out.reviewed" | sed 's/privacy\([^[:alnum:]]*\)scan:/privacy\1scan[:]/Ig'
 total=$(cat "$T/out.list" "$T/out.bin" "$T/out.allow" "$T/out.gl" "$T/out.comp" | wc -l)
-prnum=$(jq -r '.pull_request.number' "$GITHUB_EVENT_PATH")
-[[ $prnum =~ ^[1-9][0-9]*$ ]] || die "the pull request's number is not a whole number: fails closed"
+if [ "$HISTORY" = 1 ]; then who="history of ${tips// /,}"
+else
+  prnum=$(jq -r '.pull_request.number' "$GITHUB_EVENT_PATH")
+  [[ $prnum =~ ^[1-9][0-9]*$ ]] || die "the pull request's number is not a whole number: fails closed"
+  who="pull request $prnum; head $head"
+fi
 okneed=no; [ ! -s "$T/compressed" ] || okneed=yes   # anything that waits for privacy-ok-compressed, OK'd or not
-echo "privacy scan: $n new commit(s); pull request $prnum; head $head; ok label needed $okneed; identifier matches $(($(wc -l < "$T/out.list") + $(wc -l < "$T/out.bin"))), gitleaks findings $glcount, gitleaks suppressions $(wc -l < "$T/out.allow"), compressed files $(wc -l < "$T/out.comp") unreviewed and $(wc -l < "$T/out.reviewed") reviewed; pull request images $primg; $total finding(s) in all"
+echo "privacy scan: $n new commit(s); $who; ok label needed $okneed; identifier matches $(($(wc -l < "$T/out.list") + $(wc -l < "$T/out.bin"))), gitleaks findings $glcount, gitleaks suppressions $(wc -l < "$T/out.allow"), compressed files $(wc -l < "$T/out.comp") unreviewed and $(wc -l < "$T/out.reviewed") reviewed; pull request images $primg; $total finding(s) in all"
 [ "$total" -eq 0 ] || exit 1
