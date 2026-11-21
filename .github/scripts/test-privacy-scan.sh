@@ -459,6 +459,19 @@ out=$(bash "$SCAN" 2>&1); rc=$?
 if [ "$rc" -eq 2 ]; then pass=$((pass+1)); echo "PASS no arguments is a usage error (exit 2)"; else fail=$((fail+1)); echo "FAIL no arguments: exit $rc"; fi
 (cd "$T/r" && PRIVACY_IDENTIFIERS=$LISTV GITLEAKS=$STUB GITHUB_EVENT_PATH=$T/event.json bash "$SCAN" main "$(sha HEAD)") > "$OUT" 2>&1
 expect 2 "a ref name is not taken for a SHA" $? "every argument a 40-hex SHA"
+# the one-time full-history scan: --history <tip>... reads every commit reachable from the tips, with no event file
+hist() { (cd "$T/r" && unset GITHUB_EVENT_PATH && PRIVACY_IDENTIFIERS=$LISTV GITLEAKS=$STUB bash "$SCAN" --history "$@") > "$OUT" 2>&1; }
+repo; put f.txt "one\n$ID1 two\n"; commit "on main"; m1=$(c12); put g.txt 'clean\n'; commit "clean"
+g checkout -q -b staging2; put h.txt "x\n"; commit "on staging"
+hist "$(sha main)" "$(sha staging2)"
+expect 1 "the history scan reads every commit on the tips, a match on main included" $? "FINDING $m1: added line f.txt:2" \
+  "privacy scan: 4 new commit(s); history of $(sha main),$(sha staging2); ok label needed no; identifier matches 1"
+grep -q '; pull request [0-9]' "$OUT" && { fail=$((fail+1)); echo "FAIL the history summary names a pull request"; } \
+  || { pass=$((pass+1)); echo "PASS the history summary names no pull request, so no merge step takes it for one"; }
+repo; put g.txt 'clean\n'; commit "clean"; hist "$(sha main)"
+expect 0 "a clean history passes with no event file" $? "; history of $(sha main); ok label needed no;"
+hist; expect 2 "the history scan needs a tip" $? "usage: privacy-scan.sh"
+hist main; expect 2 "the history scan takes SHAs only" $? "every argument a 40-hex SHA"
 
 # ── gitleaks, stubbed: what it is given, and what of its report is printed ──────────────────────────────────────────
 PLANTED=stub-planted-value-9f3e
