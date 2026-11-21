@@ -5,7 +5,7 @@ import { storeWithSessions } from '../../test/storeState'
 import { DashboardPanel } from './DashboardPanel'
 import type { Session } from '../../types/session'
 
-// QA's FINAL on delivery A, R3 (the spec review's C4): the page stores an address's range as written until the drive is
+// #416 ticket 2: the page stores an address's range as written until the drive is
 // shown and the range is clamped; a view drawn in between must never show a range the drive does not have. The views
 // read the selection clamped to their drive. Invented data only, dated 2096: five points a second apart (0:00 to 0:04),
 // a stored duration of 4 s.
@@ -25,7 +25,7 @@ const drive: Session = {
 const duration = () => screen.getByText('Duration', { selector: 'span' }).parentElement!.textContent
 afterEach(() => { cleanup(); useStore.setState({ selection: { range: null, cursor: null } }) })
 
-describe('#416 ticket 2: a view draws only a range its drive has (QA R3)', () => {
+describe('#416 ticket 2: a view draws only a range its drive has', () => {
   it('a range past the drive\'s end, still in the selection: the Dashboard draws the clamped range', () => {
     useStore.setState({ ...storeWithSessions([drive], 'a'), selection: { range: { from: 2000, to: 90_000 }, cursor: null } })
     render(<DashboardPanel />)

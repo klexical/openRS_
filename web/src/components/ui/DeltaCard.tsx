@@ -21,7 +21,7 @@ function neutralThreshold(unit: string): number {
 
 /**
  * One Compare card: the compared drive's figure, its difference from the base drive, and the base's figure. A drive
- * without the reading shows "—", and then no difference or percentage is drawn (#416 ticket 3, owner Q82).
+ * without the reading shows "—", and then no difference or percentage is drawn (#416 ticket 3).
  */
 export function DeltaCard({ delta }: { delta: KpiDelta }) {
   const diff = delta.diff

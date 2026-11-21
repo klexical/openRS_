@@ -71,7 +71,7 @@ export function cursorWithin(cursor: number | null, range: TimeRange | null): nu
 
 /**
  * Set the range (null: the whole drive), dropping a cursor that falls outside it. An empty or reversed range is the whole
- * drive: the selection never holds one (QA's FINAL on delivery A, R3). The address is written by the page.
+ * drive: the selection never holds one (#416 ticket 2). The address is written by the page.
  */
 export function setRange(asked: TimeRange | null): void {
   const range = asked && asked.to > asked.from ? asked : null
@@ -82,7 +82,7 @@ export function setRange(asked: TimeRange | null): void {
 /**
  * The selection's range for a drive of these [points], clamped to it: what a view draws. The page stores an address's
  * range as written until the drive is shown and clamps it then; a view drawn in between never sees a range the drive does
- * not have (QA's FINAL on delivery A, R3).
+ * not have (#416 ticket 2).
  */
 export function useDriveRange(points: readonly { ts: number }[] | undefined): TimeRange | null {
   const range = useStore((s) => s.selection.range)

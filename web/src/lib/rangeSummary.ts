@@ -8,12 +8,12 @@ import { numReading, tempReading } from './readings'
 import { pointsInRange, type TimeRange } from './selection'
 
 /**
- * Under a narrowed range on the Dashboard, in place of the figures that cannot be cut to it (#416 ticket 2; the owner's
- * Q152: they are left out while a range is set).
+ * Under a narrowed range on the Dashboard, in place of the figures that cannot be cut to it (#416 ticket 2: they are left
+ * out while a range is set).
  */
 export const WHOLE_DRIVE_ONLY = 'Fuel, aggression, thermal progression and tyre pressures are for the whole drive.'
 /**
- * Trip's own line under a narrowed range, in place of thermal progression (the owner's Q154). Trip's tyre-pressure
+ * Trip's own line under a narrowed range, in place of thermal progression (#416 ticket 2). Trip's tyre-pressure
  * charts follow the range, so the Dashboard's line, which names tyre pressures, would be wrong there.
  */
 export const TRIP_WHOLE_DRIVE_ONLY = 'Thermal progression is for the whole drive.'
@@ -23,7 +23,7 @@ export interface RangeSummary {
   durationMs: number
   /**
    * A sum of straight lines between the points inside the range that have a position: an estimate, never the app's
-   * recorded figure (#284). Null when none of them has one (QA's FINAL on delivery A, R2).
+   * recorded figure (#284). Null when none of them has one: a point at 0/0 has no position (#416).
    */
   distanceKm: number | null
   distanceSource: 'estimate'

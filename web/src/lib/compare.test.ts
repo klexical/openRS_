@@ -127,10 +127,10 @@ describe('computeDeltas', () => {
   })
 })
 
-// #414, as changed by #416 ticket 3 (owner Q82): a drive without coolant or oil readings is stored with the import's −99
+// #414, as changed by #416 ticket 3: a drive without coolant or oil readings is stored with the import's −99
 // "no reading" marker as its peak. Its card stays, with no figure for that drive and no difference computed from the
 // marker. Invented values only.
-describe('computeDeltas: a peak temperature that is the "no reading" marker (#414, Q82)', () => {
+describe('computeDeltas: a peak temperature that is the "no reading" marker (#414, #416)', () => {
   const card = (d: ReturnType<typeof computeDeltas>, label: string) => d.find((x) => x.label === label)
   it('a drive without coolant or oil readings, against one with them: the cards stay, with no figure and no difference for it', () => {
     const without = makeSummary({ peakCoolantC: -99, peakOilTempC: -99 })
@@ -156,7 +156,7 @@ describe('computeDeltas: a peak temperature that is the "no reading" marker (#41
   })
 })
 
-// #416 ticket 3 (owner Q82): when one drive lacks a reading, on any card, the card stays: each drive shows its own figure,
+// #416 ticket 3: when one drive lacks a reading, on any card, the card stays: each drive shows its own figure,
 // none for the drive without it (the page draws "—"), and no difference or percentage for that pair. A reading that was
 // never received is never a value. Invented values only.
 describe('computeDeltas: a card when one drive lacks a reading (#416 ticket 3)', () => {

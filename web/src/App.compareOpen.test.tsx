@@ -4,8 +4,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, cleanup, act, screen, waitFor, within } from '@testing-library/react'
 import type { Session } from './types/session'
 
-// #416 ticket 3: Compare compares the drives that did open (owner Q91, Q92), and keeps a card when one drive lacks a
-// reading (Q82). The whole App over an in-memory IndexedDB and the real storage module, passed through a mock that can
+// #416 ticket 3: Compare compares the drives that did open, and keeps a card when one drive lacks a
+// reading. The whole App over an in-memory IndexedDB and the real storage module, passed through a mock that can
 // fail one drive's read; only the map is stubbed. Invented data only, dated 2096.
 
 const gate = vi.hoisted(() => ({ failLoad: new Set<string>() }))
@@ -79,7 +79,7 @@ describe('#416 ticket 3: Compare compares the drives that did open', () => {
     expect(screen.queryByText(/^Base drive:/)).toBeNull()                    // the base drive opened: no line about it
   })
 
-  it('the first ticked drive cannot be read: the first that did open is the base, and one line says so (Q92)', async () => {
+  it('the first ticked drive cannot be read: the first that did open is the base, and one line says so', async () => {
     gate.failLoad.add('a')
     const err = quiet()
     await compare([drive('a', 1), drive('b', 2), drive('c', 3)], ['a', 'b', 'c'])
@@ -92,7 +92,7 @@ describe('#416 ticket 3: Compare compares the drives that did open', () => {
     expect([tag('Invented a'), tag('Invented b'), tag('Invented c')]).toEqual(['', 'Base', '#2'])
   })
 
-  it('fewer than two open: only the lines and one sentence, no figures (Q91)', async () => {
+  it('fewer than two open: only the lines and one sentence, no figures', async () => {
     gate.failLoad.add('b')
     const err = quiet()
     await compare([drive('a', 1), drive('b', 2)], ['a', 'b'])
@@ -111,7 +111,7 @@ describe('#416 ticket 3: Compare compares the drives that did open', () => {
   })
 })
 
-describe('#416 ticket 3: a card when one drive lacks a reading (Q82)', () => {
+describe('#416 ticket 3: a card when one drive lacks a reading', () => {
   const cardOf = (label: string) => screen.getByRole('group', { name: label })
 
   it('the compared drive lacks it: its figure is "—", the base\'s figure stays, no difference or percentage', async () => {
@@ -149,9 +149,9 @@ describe('#416 ticket 3: a card when one drive lacks a reading (Q82)', () => {
   })
 })
 
-// QA's FINAL on delivery A, R2: a drive whose export has no coordinates never received a distance (its stored 0 is the
+// #416 ticket 3: a drive whose export has no coordinates never received a distance (its stored 0 is the
 // sum of 0/0 points): "—" in Compare, and no difference.
-describe('#416 ticket 3: a drive without coordinates has no distance reading (QA R2)', () => {
+describe('#416 ticket 3: a drive without coordinates has no distance reading', () => {
   const cardOf = (label: string) => screen.getByRole('group', { name: label })
   it('the Distance card: "—" for the drive without coordinates, the other\'s figure, no difference', async () => {
     await compare([drive('a', 1, { distanceKm: 31.4 }), drive('b', 2, { distanceKm: 0 }, false)], ['a', 'b'])
@@ -163,8 +163,8 @@ describe('#416 ticket 3: a drive without coordinates has no distance reading (QA
   })
 })
 
-// QA's FINAL, R4: a ticked drive with no stored record has no place in the picker: the first drive that opened is the base.
-describe('#416 ticket 3: a ticked drive no longer stored takes no place (QA R4)', () => {
+// #416 ticket 3: a ticked drive with no stored record has no place in the picker: the first drive that opened is the base.
+describe('#416 ticket 3: a ticked drive no longer stored takes no place', () => {
   it('the drives that opened keep their places from the first one', async () => {
     await compare([drive('a', 1), drive('b', 2)], ['gone', 'a', 'b'])
     expect(await screen.findByText('Invented b vs Invented a', {}, { timeout: 5000 })).toBeInTheDocument()

@@ -4,14 +4,14 @@ import { join } from 'node:path'
 import { importZip } from './import'
 import { compareCards } from './compare'
 
-// QA's FINAL on delivery A, R2 (from QA's case qa/runs/qaCompareNoGps.test.ts): a drive whose export has no coordinates
+// #416 ticket 3: a drive whose export has no coordinates
 // never received a distance. Its stored summary says 0 (the sum of 0/0 points); Compare reads the points and shows no
 // figure for it and no difference. Peaks, averages and duration keep their real zeros. The fixtures are the project's own.
 
 const FIXTURES = join(process.cwd(), 'src/lib/__fixtures__/android-exports/')
 const fixture = (name: string) => new File([readFileSync(FIXTURES + name)], name, { type: 'application/zip' })
 
-describe('#416 ticket 3: Compare and a drive without coordinates (QA R2)', () => {
+describe('#416 ticket 3: Compare and a drive without coordinates', () => {
   it('the fixture without coordinates: points, every one at 0/0, a stored distance of 0', async () => {
     const s = await importZip(fixture('drive-nogps-telemetry.zip'))
     expect(s.trip!.points.length).toBeGreaterThan(1)

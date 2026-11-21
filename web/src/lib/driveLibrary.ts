@@ -198,7 +198,7 @@ function readCurrent(id: string | null): void {
  * Read the compared drives (as App's effect did): the Current drive is reused from memory, unless it is in [fresh] or
  * its copy is stale (`staleCurrentId`, owner Q14); one guard (K6, K10). A drive whose read fails is named in
  * `compareFailedIds` for Compare to say so (#407), and the copies become the drives this read did open, so no copy from
- * an earlier read stays beside it (owner Q13) and Compare compares the drives that did open (#416 ticket 3, Q91, Q92);
+ * an earlier read stays beside it (owner Q13) and Compare compares the drives that did open (#416 ticket 3);
  * a new read clears the names. Never rejects.
  */
 function readCompared(ids: string[], fresh: string[] = []): Promise<void> {

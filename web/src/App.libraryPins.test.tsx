@@ -314,7 +314,7 @@ describe('the compared drives (pins, Drive library commit 1)', () => {
     await waitFor(() => expect(useStore.getState().compareSessions[0]?.name).toBe('Renamed behind the page'))
   })
 
-  // Q13 as changed by #416 ticket 3 (owner Q91, Q92): the drives that did open are kept, from this read only
+  // Q13 as changed by #416 ticket 3: the drives that did open are kept, from this read only
   it('Q13: a failed read of the compared drives clears the copies already shown; the drive this read opened stays', async () => {
     await seed([drive('a', 1), drive('b', 2)])
     const { useStore } = await boot()
@@ -344,7 +344,7 @@ describe('the compared drives (pins, Drive library commit 1)', () => {
     err.mockRestore()
     expect(alert.textContent).toBe("Couldn't open Invented c.")                               // the line (#407)
     expect(useStore.getState().compareSessionIds).toEqual(['c', 'd'])
-    // the old copies are cleared (owner, Q13); d, which did open, is kept (#416 ticket 3), one drive alone is not compared (Q91)
+    // the old copies are cleared (owner, Q13); d, which did open, is kept (#416 ticket 3), one drive alone is not compared (#416 ticket 3)
     expect(useStore.getState().compareSessions.map((s) => s.id)).toEqual(['d'])
     expect(document.body.textContent).not.toMatch(/ vs /)                                    // no figures
     expect(screen.getByText('Compare needs at least two drives that open.')).toBeInTheDocument()

@@ -5,7 +5,7 @@ import { hasPosition } from './distance'
 
 /**
  * One card of Compare: a figure of two drives (the base and one other) and their difference. A drive without the reading
- * has no figure (null; the card draws "—"), and then the pair has no difference or percentage (#416 ticket 3, owner Q82).
+ * has no figure (null; the card draws "—"), and then the pair has no difference or percentage (#416 ticket 3).
  */
 export interface KpiDelta {
   label: string
@@ -43,7 +43,7 @@ export interface NormalizedPoint {
  * Compare's cards for two trip summaries. A figure is a reading only when the drive received it: a field an older record
  * lacks, a value that is not a finite number, the import's −99 temperature marker (#414), a fuel used or fuel economy of
  * 0 (the import's "could not compute") and an absent aggression score are no reading. A card stays when one drive has the reading, with
- * no figure for the other and no difference (#416 ticket 3, owner Q82); a card with no reading on either side, or with 0
+ * no figure for the other and no difference (#416 ticket 3); a card with no reading on either side, or with 0
  * on both, is left out.
  */
 export function computeDeltas(base: TripSummary, comp: TripSummary): KpiDelta[] {
@@ -75,7 +75,7 @@ export function computeDeltas(base: TripSummary, comp: TripSummary): KpiDelta[] 
 
 /**
  * Compare's cards for two drives (the page's call). A drive whose points have no coordinates never received a distance:
- * its summary's 0 is the sum of 0/0 points, so it has no distance reading here (QA's FINAL on delivery A, R2). Read from
+ * its summary's 0 is the sum of 0/0 points, so it has no distance reading here (#416). Read from
  * the points, so it holds for drives stored before as well.
  */
 export function compareCards(base: TripData, comp: TripData): KpiDelta[] {
