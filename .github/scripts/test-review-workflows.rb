@@ -154,24 +154,28 @@ pon = on_of.(psw)
 check.(pon.is_a?(Hash) && pon.keys == ["pull_request_target"] && pon.dig("pull_request_target", "branches")&.sort == %w[main staging] &&
        pon.dig("pull_request_target", "types") == %w[opened synchronize reopened edited ready_for_review labeled unlabeled],
        "privacy-scan.yml: pull_request_target only, PRs to staging and main, the label events included")
-check.(psw["permissions"] == {} && psw["jobs"].keys == ["privacy-scan"], "privacy-scan.yml: no workflow-level permission, one job")
+check.(psw["permissions"] == {} && psw["jobs"].keys == %w[privacy-scan privacy-scan-status],
+       "privacy-scan.yml: no workflow-level permission; the scan job and plan B's status job")
 ps = psw["jobs"]["privacy-scan"]
-pss_all = ps["steps"] || []
-# plan B: the last step posts the commit status privacy-scan on the PR head, only while vars.PRIVACY_SCAN_STATUS is on
+pss = ps["steps"] || []            # the scan's steps; the one that holds the list is the last of them
+check.(ps["permissions"] == {} && ps["environment"] == "privacy-scan" && !ps.key?("if") && !ps.key?("needs") &&
+       ps["continue-on-error"].nil? && pss.none? { |s| s.key?("continue-on-error") || s.key?("if") },
+       "privacy-scan: no token permission at all, environment privacy-scan, no condition on the job or a step, a hard check")
+# plan B: a job of its own posts the commit status privacy-scan on the PR head, naming the run attempt, only while
+# vars.PRIVACY_SCAN_STATUS is on; it holds no secret and no environment, and only it can write
 PLANB_IF = "always() && vars.PRIVACY_SCAN_STATUS == 'on'"
-planb = pss_all.last || {}
-pss = pss_all[0...-1]              # the scan's own steps; the one that holds the list is the last of them (id scan)
-check.(ps["permissions"] == { "contents" => "read", "statuses" => "write" } && ps["environment"] == "privacy-scan" && !ps.key?("if") &&
-       ps["continue-on-error"].nil? && pss_all.none? { |s| s.key?("continue-on-error") } && pss.none? { |s| s.key?("if") },
-       "privacy-scan: contents read (statuses write for plan B only), environment privacy-scan, no condition on the job or a scan step, a hard check")
-check.(planb["if"] == PLANB_IF && !planb.to_s.include?("secrets.") && !planb.key?("uses") &&
+pb = psw.dig("jobs", "privacy-scan-status") || {}
+planb = (pb["steps"] || []).first || {}
+check.(pb["needs"] == "privacy-scan" && pb["if"] == PLANB_IF && pb["permissions"] == { "statuses" => "write" } && !pb.key?("environment") &&
+       (pb["steps"] || []).size == 1 && !pb.to_s.include?("secrets.") && !planb.key?("uses") && !planb.key?("if") &&
        planb["env"] == { "GH_TOKEN" => "${{ github.token }}", "REPO" => "${{ github.repository }}",
-                         "HEAD" => "${{ github.event.pull_request.head.sha }}", "OUTCOME" => "${{ steps.scan.outcome }}",
-                         "RUN_ID" => "${{ github.run_id }}" } &&
-       planb["run"].to_s.include?('state=failure; if [ "$OUTCOME" = success ]; then state=success; fi') &&
+                         "HEAD" => "${{ github.event.pull_request.head.sha }}", "RESULT" => "${{ needs.privacy-scan.result }}",
+                         "RUN_ID" => "${{ github.run_id }}", "RUN_ATTEMPT" => "${{ github.run_attempt }}" } &&
+       planb["run"].to_s.include?('state=failure; if [ "$RESULT" = success ]; then state=success; fi') &&
        planb["run"].to_s.include?('gh api -X POST "repos/$REPO/statuses/$HEAD"') && planb["run"].to_s.include?("-f context=privacy-scan") &&
-       (pss.last || {})["id"] == "scan",
-       "privacy-scan: plan B, the last step, posts privacy-scan on the PR head only while the switch is on: success only when the scan step succeeded, no secret")
+       planb["run"].to_s.include?('-f target_url="https://github.com/$REPO/actions/runs/$RUN_ID/attempts/$RUN_ATTEMPT"') &&
+       !planb["run"].to_s.include?("${{"),
+       "privacy-scan-status: plan B, its own job, posts privacy-scan on the PR head for its run attempt only while the switch is on: success only when the scan job succeeded, no secret")
 check.(pss.none? { |s| s.key?("uses") } && !File.read(File.join(dir, "privacy-scan.yml")).match?(/^\s*-?\s*uses:/),
        "privacy-scan: no `uses:` at all (no checkout of the PR, no third-party action with the secret)")
 first = pss.first || {}
@@ -215,20 +219,22 @@ check.(on_of.(phw).is_a?(Hash) && on_of.(phw).keys == ["workflow_dispatch"] && o
 ph = phw["jobs"]["privacy-history"] || {}
 phs = ph["steps"] || []
 phtext = File.read(File.join(dir, "privacy-history.yml"))
-check.(ph["permissions"] == { "contents" => "read" } && ph["environment"] == "privacy-scan" && !ph.key?("if") &&
+check.(ph["permissions"] == {} && ph["environment"] == "privacy-scan" && !ph.key?("if") &&
        phs.none? { |s| s.key?("if") || s.key?("continue-on-error") || s.key?("uses") } && !phtext.match?(/^\s*-?\s*uses:/),
-       "privacy-history: contents read, environment privacy-scan, no condition, no `uses:`")
+       "privacy-history: no token permission, environment privacy-scan, no condition, no `uses:`")
 check.((phs.first || {})["run"].to_s.include?('[ "$REF" = refs/heads/main ] ||') && (phs.first || {})["env"] == { "REF" => "${{ github.ref }}" },
        "privacy-history: the first step fails any ref but main")
 phf = phs.find { |s| s["run"].to_s.include?("git fetch") } || {}
 check.(phf["run"].to_s.include?('git show "$GITHUB_SHA:.github/scripts/privacy-scan.sh" > "$RUNNER_TEMP/privacy-scan.sh"') &&
-       !phf["run"].to_s.match?(/git (checkout|switch|worktree|reset)|read-tree|refs\/pull/),
-       "privacy-history: staging and main fetched as objects, never checked out; the script comes from the run's own commit")
+       %w[+refs/heads/*:refs/remotes/origin/* +refs/tags/*:refs/tags/* +refs/pull/*/head:refs/remotes/pull/*].all? { |r| phf["run"].to_s.include?("\"#{r}\"") } &&
+       phf["run"].to_s.include?('git rev-parse -q --verify "$o^{commit}"') && phf["run"].to_s.include?("sort -u") &&
+       !phf["run"].to_s.match?(/git (checkout|switch|worktree|reset)|read-tree/),
+       "privacy-history: every branch, tag and pull request head fetched as objects, never checked out, each tip peeled and once only; the script comes from the run's own commit")
 phl = phs.last || {}
 check.(phs.select { |s| s.to_s.include?("secrets.") } == [phl] && phtext.scan("secrets.").size == 1 &&
        phl["env"] == { "PRIVACY_IDENTIFIERS" => PSEC, "GITLEAKS" => "${{ runner.temp }}/gitleaks/gitleaks" } &&
        phl["run"].to_s.lines.map(&:strip).reject(&:empty?) ==
-         ['cd "$RUNNER_TEMP/objects"', 'read -r STAGING MAIN < "$RUNNER_TEMP/tips"', 'bash "$RUNNER_TEMP/privacy-scan.sh" --history "$STAGING" "$MAIN"'],
+         ['cd "$RUNNER_TEMP/objects"', 'mapfile -t TIPS < "$RUNNER_TEMP/tips"', 'bash "$RUNNER_TEMP/privacy-scan.sh" --history "${TIPS[@]}"'],
        "privacy-history: the list reaches the last step only, which runs builtins and the script's --history only")
 check.(!phs.empty? && phs.none? { |s| s["run"].to_s.include?("${{") } && phs.find { |s| s["run"].to_s.include?("sha256sum -c") }&.dig("env") == glstep["env"],
        "privacy-history: no ${{ }} in any run, and the same pinned gitleaks as the PR scan")
