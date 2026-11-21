@@ -18,8 +18,9 @@
 # commit touches; each new commit's raw commit object (every header line, the author and committer names, addresses
 # and dates, the encoding, any extra header, and the message; an object that is binary or names an encoding is also
 # read whole); the pull request's title, description and branch name. Every entry of 8 letters and digits or more (and
-# every MAC- or VIN-shaped entry) is also matched "bare": with \uXXXX, \xXX, %XX, + and HTML entities decoded, a 0x
-# before hex dropped and every character but letters and digits removed, from the entry and the scanned line alike.
+# every MAC- or VIN-shaped entry) is also matched "bare": with \uXXXX, \xXX, %XX, + and HTML entities decoded, NFKC
+# applied (full-width letters read as plain ones), a 0x before hex dropped and every character but letters and digits
+# removed, from the entry and the scanned line alike.
 # A file git judges binary on either side of a commit (--numstat "-" "-"), whose new content holds a NUL byte anywhere,
 # or that is not UTF-8, is read whole, as bytes and as UTF-16 or UTF-32 in either byte order; a binary file that is not
 # a ZIP is also a finding until a reviewer's OK, as it may hold compressed data. A ZIP (found by its structure, at any
@@ -32,8 +33,10 @@
 # decoded, padded rather than cut, and decoded again if it is base64 itself; gzip, zlib, bzip2, xz and lzma found in it
 # by their checksummed formats are decompressed. A list match in any of these is a finding; a run that decodes to a
 # compressed file of 100 bytes or more (an embedded image) needs the same OK. Not covered: raw deflate inside base64,
-# an identifier split across lines, homoglyphs and zero-width characters, quoted-printable, hex dumps, and a check name
-# built by an expression in a workflow (the merge step confirms the check's source; see the PR text).
+# base32, ascii85, uuencode, rot13, quoted-printable, hex dumps, homoglyphs, an identifier split across lines, a
+# shorter entry spelled another way, what an OK'd binary holds inside (SQLite, PDF and the like), and a check name the
+# workflow-file OK misses (built by an expression, a YAML escape or an escaped line break, or a check run made through
+# the API); the merge step confirms the check's source, see the PR text.
 # gitleaks, default rules only (its config is the scan's own), base64 decoded, its inline allow marker ignored, twice:
 # over the new commits' patches, on an empty source folder whose .git file points at the repository, so no
 # .gitleaksignore or .gitleaks.toml applies; and over the scan's own folder of copies of what the patches do not
@@ -124,6 +127,7 @@ def bare(text):
     # entities, \uXXXX and \xXX escapes, and a 0x before a byte; any separator, or none, then reads the same
     t = U_ESC.sub(lambda m: chr(int(m.group(1) or m.group(2), 16)), text)
     t = html.unescape(urllib.parse.unquote_plus(t, errors="replace"))
+    t = unicodedata.normalize("NFKC", t)       # full-width and other compatibility forms read as plain letters
     t = re.sub(r"0x(?=[0-9a-fA-F]{2})", "", t.casefold())
     return re.sub(r"[\W_]", "", t)
 
@@ -246,7 +250,7 @@ def unpack(d):
 cmd = sys.argv[1]
 # the other modules only where they are used: classify runs once per file, and its start-up time is most of the run
 if cmd not in ("classify", "kind", "texts"):
-    import base64, bz2, gzip, html, lzma, urllib.parse, zipfile, zlib
+    import base64, bz2, gzip, html, lzma, unicodedata, urllib.parse, zipfile, zlib
 if cmd == "expand":
     expand(sys.argv[2], sys.argv[3])
 elif cmd == "classify":   # classify <file>...: per file, "<kind or ->\t<binary 0/1>\t<a ZIP Python can open 0/1>"
@@ -480,8 +484,9 @@ jq -r '.pull_request.body // ""' "$GITHUB_EVENT_PATH" | tr -d '\r' > "$T/body"; 
 jq -r '(.pull_request.title // ""), (.pull_request.head.ref // "")' "$GITHUB_EVENT_PATH" > "$T/prtext"
 keep "$T/prtext" "" "in the pull request title or branch name" ""
 awk '{ printf "\tpull request description line %d\t\t\n", NR }' "$T/body" >> "$WHERE"; cat "$T/body" >> "$TEXT"
-# an image or attachment in the title or description: a screenshot, which nothing here can read; it waits for the OK
-IMG='!\[[^]]*\]\(|<(img|video|picture|object|embed|svg)[[:space:]>/]|user-attachments/|private-user-images|camo\.githubusercontent'
+# an image or attachment in the title or description: a screenshot, which nothing here can read; it waits for the OK.
+# Any "![" counts: inline, reference-style (the link defined on a later line), collapsed and shortcut images alike
+IMG='!\[|<(img|video|picture|object|embed|svg)[[:space:]>/]|user-attachments/|private-user-images|camo\.githubusercontent'
 if grep -q -a -i -E -e "$IMG" "$T/body"; then
   printf '\tan image or attachment in the pull request description\t\t\n' >> "$T/compressed"; fi
 if jq -r '.pull_request.title // ""' "$GITHUB_EVENT_PATH" | grep -q -a -i -E -e "$IMG"; then

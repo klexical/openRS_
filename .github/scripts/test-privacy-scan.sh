@@ -306,11 +306,23 @@ BODY='Summary\n\n![shot](https://github.com/user-attachments/assets/0f0f0f0f-aaa
 BODY='before <img width="300" src="x.png"> after' run 1 "an <img> in the PR description needs the OK" "an image or attachment in the pull request description"
 BODY='see the [notes](https://example.com/page) and ![]()' run 1 "even an empty markdown image needs the OK" "an image or attachment in the pull request description"
 BODY='a [plain link](https://example.com/page) only' run 0 "a plain link in the PR description is fine"
+# a reference-style image: the image names a link defined on a later line (and the collapsed and shortcut forms);
+# the bodies hold real line breaks
+BODY=$'Summary\n\n![shot][1]\n\n[1]: https://example.com/x.png' run 1 "a reference-style image in the PR description needs the OK" \
+  "an image or attachment in the pull request description"
+BODY=$'Summary ![shot][] here\n\n[shot]: https://example.com/x.png' run 1 "a collapsed reference image needs the OK" \
+  "an image or attachment in the pull request description"
+BODY=$'Summary ![shot] here\n\n[shot]: https://example.com/x.png' run 1 "a shortcut reference image needs the OK" \
+  "an image or attachment in the pull request description"
+BODY=$'Summary ![a long\nalt text](https://example.com/x.png)' run 1 "an image whose alt text spans two lines needs the OK" \
+  "an image or attachment in the pull request description"
 # every entry, not only a MAC or VIN, also matches in letters and digits only (8 or more), after decoding %XX, +,
 # HTML entities and \u escapes
 for spelled in "Wexmoor%20Fixture%20Lane" "Wexmoor+Fixture+Lane" "wexmoor_fixture_lane" "WexmoorFixtureLane" \
     "Wexmoor  Fixture Lane" "Wexmoor&#32;Fixture&#x20;Lane" 'Wexmoor Fixture Lane' "$(printf 'Wexmoor\xc2\xa0Fixture Lane')" \
-    "%57%65%78%6d%6f%6f%72%20%46%69%78%74%75%72%65%20%4c%61%6e%65"; do
+    "%57%65%78%6d%6f%6f%72%20%46%69%78%74%75%72%65%20%4c%61%6e%65" \
+    "$(printf '\xef\xbc\xb7\xef\xbd\x85\xef\xbd\x98\xef\xbd\x8d\xef\xbd\x8f\xef\xbd\x8f\xef\xbd\x92 Fixture Lane')" \
+    "$(printf 'Wex\xe2\x80\x8bmoor Fix\xe2\x80\x8dture Lane')"; do
   repo; g checkout -q -b feature; put f.txt "one\nat $spelled today\n" 2>/dev/null || { printf 'one\nat %s today\n' "$spelled" > "$T/r/f.txt"; g add f.txt; }
   printf 'one\nat %s today\n' "$spelled" > "$T/r/f.txt"; g add f.txt; commit "a place spelled another way"
   run 1 "a place entry matches spelled ${spelled:0:12}…" "FINDING $(c12): added line f.txt:2"
