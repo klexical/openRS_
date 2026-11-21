@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { useActiveSession, useOpeningDrive } from '../../store'
+import { useCurrentDrive } from '../../store'
 import { EmptyState } from '../ui/EmptyState'
 import { SectionLabel } from '../ui/SectionLabel'
 import { ObserverNotesSection, eventTypeLabel } from '../ui/ObserverNotes'
@@ -13,8 +13,9 @@ import { DID_STATUS_LABEL, didInventorySummary, didStatus, lastAnswerText, type 
 /** An ID cell (CAN ID, DID, module) is data: fixed cyan, never the paint (owner, 2026-11-15, Q7). */
 const ID_CELL = { color: colors.cyan }
 export function DiagnosticsPanel() {
-  const session = useActiveSession()
-  const opening = useOpeningDrive()
+  const { state, session } = useCurrentDrive()
+  // nothing to draw while the drive is read, or after its read failed (the drive's page says so; #384)
+  const opening = state === 'being read' || state === 'read failed'
 
   if (opening) return <div aria-busy="true" />   // #384: the selected drive is still being read
 

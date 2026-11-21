@@ -1,13 +1,13 @@
 import 'fake-indexeddb/auto'
 import { IDBFactory } from 'fake-indexeddb'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, cleanup, act, screen, waitFor } from '@testing-library/react'
+import { render, cleanup, act, screen, waitFor, within } from '@testing-library/react'
 import JSZip from 'jszip'
 import type { Session } from './types/session'
 
 // #414 at the whole app: Compare over the database stand-in (fake-indexeddb) and the real storage module; only the map is
 // stubbed. A drive without coolant or oil readings is stored with the import's −99 "no reading" marker as its peak, and
-// Compare shows no Peak Coolant or Peak Oil card for it. Invented data only, dated 2096.
+// Compare shows no Peak Coolant or Peak Oil figure for it (since #416 ticket 3 the cards stay, with "—" for it). Invented data only, dated 2096.
 
 vi.mock('./components/charts/GpsMap', () => ({ GpsMap: () => null }))
 
@@ -77,15 +77,16 @@ describe('#414: Compare and a drive without coolant or oil readings', () => {
     await act(async () => { useStore.getState().setCompare([withTemps.id, without.id]); useStore.getState().setCompareOpen(true) })
     await screen.findByText(`${without.name} vs ${withTemps.name}`, {}, { timeout: 5000 })
     await screen.findByText('Peak RPM')
-    expect(screen.queryByText('Peak Coolant')).toBeNull()
-    expect(screen.queryByText('Peak Oil')).toBeNull()
+    // #416 ticket 3 (Q82): the cards stay, with no figure for the drive without the reading
+    expect(within(screen.getByRole('group', { name: 'Peak Coolant' })).getByTestId('figure').textContent).toBe('—')
+    expect(within(screen.getByRole('group', { name: 'Peak Oil' })).getByTestId('figure').textContent).toBe('—')
   })
 
 
-  it('compared with a drive that has them, it shows no Peak Coolant or Peak Oil figure', async () => {
+  it('compared with a drive that has them, it shows no Peak Coolant or Peak Oil figure (the cards stay: #416 ticket 3)', async () => {
     await comparing([drive('a', 1, -99, -99), drive('b', 2, 92, 104)], ['b', 'a'])
-    expect(screen.queryByText('Peak Coolant')).toBeNull()
-    expect(screen.queryByText('Peak Oil')).toBeNull()
+    expect(within(screen.getByRole('group', { name: 'Peak Coolant' })).getByTestId('figure').textContent).toBe('—')
+    expect(within(screen.getByRole('group', { name: 'Peak Oil' })).getByTestId('figure').textContent).toBe('—')
     expect(document.body.textContent).not.toMatch(/-99/)
   })
 

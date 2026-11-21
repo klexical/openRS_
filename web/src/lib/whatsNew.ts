@@ -3,8 +3,11 @@
 // it is (owner, 2026-11-14) and it is never shown again after one.
 import { storageCreatedNow, storageStatus } from './storage'
 
-/** The update "What's new" speaks of: a new name here shows it once more to everyone who had Sapphire before. */
-const RELEASE = 'slice-2'
+/**
+ * The update "What's new" speaks of: a new name here shows it once more to everyone who had Sapphire before. The dialog
+ * shows this release's own changelog section (#416 ticket 4); it moves to a slice in that slice's last delivery (Q84).
+ */
+export const RELEASE = 'slice-2'
 const SEEN_KEY = 'sapphire_whats_new_seen'
 
 function seen(): boolean {

@@ -99,7 +99,8 @@ describe('boost provenance through import (#207)', () => {
     const boostRows = (a: TripSummary, b: TripSummary) => computeDeltas(a, b).filter((d) => /boost|tip/i.test(d.label))
     expect(boostRows(base, tip)).toHaveLength(1)
     expect(boostRows(base, can)).toHaveLength(0)
-    expect(boostRows(base, none)).toHaveLength(0)
+    // #416 ticket 3 (Q82): a drive with no boost reading keeps the card, with no figure for it and no difference
+    expect(boostRows(base, none)).toEqual([expect.objectContaining({ label: 'Peak TIP', baseValue: 8.9, compValue: null, diff: null, pctChange: null })])
     const pts = (await importZip(await zipOf({ 'drive_20261029_120000.csv': v13Csv }))).trip!.points
     expect(normalizePoints(pts).map((p) => p.boostPsi)).toEqual([null, 8.9, null, 3.1, null])
   })

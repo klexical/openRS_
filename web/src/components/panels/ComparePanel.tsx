@@ -6,7 +6,7 @@ import { SectionLabel } from '../ui/SectionLabel'
 import { DeltaCard } from '../ui/DeltaCard'
 import { ComparisonChart } from '../charts/ComparisonChart'
 import { GpsMap } from '../charts/GpsMap'
-import { computeDeltas, overlayBoostSource } from '../../lib/compare'
+import { compareCards, overlayBoostSource } from '../../lib/compare'
 import { boostLabel } from '../../lib/boost'
 import { estimateSuffix } from '../../lib/distance'
 import { fmtDateShort } from '../../lib/format'
@@ -27,15 +27,21 @@ export function ComparePanel() {
     [sessions]
   )
 
+  // the drives that did open, in ticked order: the first of them is the base (#416 ticket 3, owner Q92)
   const hasEnough = compareSessions.length >= 2
   const baseSession = compareSessions[0]
+  const firstTickedFailed = compareIds.length > 0 && failedIds.includes(compareIds[0])
+  // the picker's places follow the comparison: a ticked drive that did not open has none, nor one no longer stored here
+  // (QA's FINAL on delivery A, R4), so the base is the first that did
+  const placed = compareIds.filter((id) => !failedIds.includes(id) && sessions.some((d) => d.id === id))
+  const nameOf = (id: string) => sessions.find((d) => d.id === id)?.name ?? 'a compared drive'
 
   // KPI deltas: compare each session against the first (baseline)
   const allDeltas = useMemo(() => {
     if (!hasEnough || !baseSession?.trip) return []
     return compareSessions.slice(1).map((s) => {
       if (!s.trip) return []
-      return computeDeltas(baseSession.trip!.summary, s.trip.summary)
+      return compareCards(baseSession.trip!, s.trip)
     })
   }, [compareSessions, hasEnough, baseSession])
 
@@ -56,9 +62,9 @@ export function ComparePanel() {
       <SectionLabel>Select Sessions to Compare (2–4)</SectionLabel>
       <div className="space-y-1.5">
         {eligibleSessions.map((sess) => {
-          const idx = compareIds.indexOf(sess.id)
-          const isSelected = idx >= 0
-          const color = isSelected ? SESSION_COLORS[idx % SESSION_COLORS.length] : undefined
+          const idx = placed.indexOf(sess.id)
+          const isSelected = compareIds.includes(sess.id)
+          const color = idx >= 0 ? SESSION_COLORS[idx % SESSION_COLORS.length] : undefined   // its line's colour, once it has a place
 
           return (
             <button
@@ -76,8 +82,8 @@ export function ComparePanel() {
               <div
                 className="w-3 h-3 rounded-full shrink-0 border-2"
                 style={{
-                  backgroundColor: isSelected ? color : 'transparent',
-                  borderColor: isSelected ? color : colors.dim,
+                  backgroundColor: color ?? 'transparent',
+                  borderColor: color ?? colors.dim,
                 }}
               />
               <div className="flex-1 min-w-0">
@@ -88,7 +94,7 @@ export function ComparePanel() {
                   <span>v{sess.meta.appVersion}</span>
                 </div>
               </div>
-              {isSelected && (
+              {idx >= 0 && (
                 <span className="text-[10px] font-mono uppercase tracking-wider"
                   style={{ color }}
                 >
@@ -112,9 +118,16 @@ export function ComparePanel() {
       {/* A compared drive that could not be read (#407), named as the list calls it now */}
       {failedIds.map((id) => (
         <p key={id} role="alert" className="text-sm font-mono" style={{ color: colors.warn }}>
-          Couldn't open {sessions.find((d) => d.id === id)?.name ?? 'a compared drive'}.
+          Couldn't open {nameOf(id)}.
         </p>
       ))}
+      {/* the drives that did open are compared (#416 ticket 3): the base they are compared with (Q92), or why not (Q91) */}
+      {failedIds.length > 0 && hasEnough && firstTickedFailed && (
+        <p className="text-sm font-mono text-frost">Base drive: {baseSession.name} ({nameOf(compareIds[0])} couldn't be opened).</p>
+      )}
+      {failedIds.length > 0 && !hasEnough && (
+        <p className="text-sm font-mono text-frost">Compare needs at least two drives that open.</p>
+      )}
 
       {/* Comparison results */}
       {hasEnough && (

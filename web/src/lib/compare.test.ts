@@ -86,11 +86,11 @@ describe('computeDeltas', () => {
     expect(delta!.pctChange).toBeCloseTo(50, 5)          // ▲ +5 (+50 %), not (−50 %)
   })
 
-  it('handles non-finite values gracefully', () => {
+  it('handles non-finite values gracefully: no figure and no difference from them (#416 ticket 3: the card stays)', () => {
     const base = makeSummary({ peakRpm: NaN })
     const comp = makeSummary({ peakRpm: 6000 })
     const deltas = computeDeltas(base, comp)
-    expect(deltas.find((d) => d.label === 'Peak RPM')).toBeUndefined()
+    expect(deltas.find((d) => d.label === 'Peak RPM')).toMatchObject({ baseValue: null, compValue: 6000, diff: null, pctChange: null })
   })
 
   // T6F: Aggression score delta
@@ -127,31 +127,80 @@ describe('computeDeltas', () => {
   })
 })
 
-// #414: a drive without coolant or oil readings is stored with the import's −99 "no reading" marker as its peak; Compare
-// leaves that figure out, as for any missing value, and computes no difference from it. Invented values only.
-describe('computeDeltas: a peak temperature that is the "no reading" marker (#414)', () => {
-  const labels = (d: ReturnType<typeof computeDeltas>) => d.map((x) => x.label)
-  it('a drive without coolant or oil readings, against one with them: no Peak Coolant or Peak Oil difference', () => {
+// #414, as changed by #416 ticket 3 (owner Q82): a drive without coolant or oil readings is stored with the import's −99
+// "no reading" marker as its peak. Its card stays, with no figure for that drive and no difference computed from the
+// marker. Invented values only.
+describe('computeDeltas: a peak temperature that is the "no reading" marker (#414, Q82)', () => {
+  const card = (d: ReturnType<typeof computeDeltas>, label: string) => d.find((x) => x.label === label)
+  it('a drive without coolant or oil readings, against one with them: the cards stay, with no figure and no difference for it', () => {
     const without = makeSummary({ peakCoolantC: -99, peakOilTempC: -99 })
     const withTemps = makeSummary({ peakCoolantC: 92, peakOilTempC: 104 })
-    for (const [base, comp] of [[without, withTemps], [withTemps, without], [without, without]]) {
-      const got = labels(computeDeltas(base, comp))
-      expect(got).not.toContain('Peak Coolant')
-      expect(got).not.toContain('Peak Oil')
-      expect(got).toContain('Peak RPM')                          // the other figures stay
-    }
+    expect(card(computeDeltas(withTemps, without), 'Peak Coolant')).toMatchObject({ baseValue: 92, compValue: null, diff: null, pctChange: null })
+    expect(card(computeDeltas(without, withTemps), 'Peak Oil')).toMatchObject({ baseValue: null, compValue: 104, diff: null, pctChange: null })
+    const neither = computeDeltas(without, without)
+    expect(card(neither, 'Peak Coolant')).toBeUndefined()           // no figure on either side: nothing to show
+    expect(card(neither, 'Peak Oil')).toBeUndefined()
+    expect(card(neither, 'Peak RPM')).toBeDefined()                 // the other figures stay
   })
 
-  it('only the missing one is left out: a drive with coolant but no oil reading keeps Peak Coolant', () => {
+  it('only the missing one loses its difference: a drive with coolant but no oil reading keeps Peak Coolant\'s', () => {
     const got = computeDeltas(makeSummary({ peakCoolantC: 90, peakOilTempC: -99 }), makeSummary({ peakCoolantC: 95, peakOilTempC: 101 }))
-    expect(labels(got)).not.toContain('Peak Oil')
-    expect(got.find((d) => d.label === 'Peak Coolant')?.diff).toBe(5)
+    expect(card(got, 'Peak Oil')).toMatchObject({ baseValue: null, compValue: 101, diff: null })
+    expect(card(got, 'Peak Coolant')?.diff).toBe(5)
   })
 
   it('a real peak stays a figure: sub-zero and 0 °C peaks compare', () => {
     const got = computeDeltas(makeSummary({ peakCoolantC: -12, peakOilTempC: 0 }), makeSummary({ peakCoolantC: 8, peakOilTempC: 3 }))
     expect(got.find((d) => d.label === 'Peak Coolant')?.diff).toBe(20)
     expect(got.find((d) => d.label === 'Peak Oil')?.diff).toBe(3)
+  })
+})
+
+// #416 ticket 3 (owner Q82): when one drive lacks a reading, on any card, the card stays: each drive shows its own figure,
+// none for the drive without it (the page draws "—"), and no difference or percentage for that pair. A reading that was
+// never received is never a value. Invented values only.
+describe('computeDeltas: a card when one drive lacks a reading (#416 ticket 3)', () => {
+  const card = (d: ReturnType<typeof computeDeltas>, label: string) => d.find((x) => x.label === label)
+  it('boost: a drive with no boost reading against one with it keeps the card, figures only', () => {
+    const none = makeSummary({ peakBoostPsi: null, peakBoostSource: null })
+    const some = makeSummary({ peakBoostPsi: 17.5, peakBoostSource: 'CAN_0F8' })
+    expect(card(computeDeltas(some, none), 'Peak Boost')).toMatchObject({ baseValue: 17.5, compValue: null, diff: null, pctChange: null })
+    expect(card(computeDeltas(none, some), 'Peak Boost')).toMatchObject({ baseValue: null, compValue: 17.5, diff: null, pctChange: null })
+    expect(card(computeDeltas(none, none), 'Peak Boost')).toBeUndefined()
+  })
+
+  it('boost of two different measurements is still not one card (#207): no figures beside each other', () => {
+    const tip = makeSummary({ peakBoostPsi: 19, peakBoostSource: 'TIP_033E' })
+    const can = makeSummary({ peakBoostPsi: 17.5, peakBoostSource: 'CAN_0F8' })
+    expect(computeDeltas(tip, can).map((d) => d.label).filter((l) => /Peak (Boost|TIP)/.test(l))).toEqual([])
+  })
+
+  it('aggression: a drive without a score (absent) keeps the card with no figure for it', () => {
+    const scored = makeSummary({ aggressionScore: 64 })
+    const unscored = makeSummary()
+    expect(card(computeDeltas(scored, unscored), 'Aggression')).toMatchObject({ baseValue: 64, compValue: null, diff: null })
+    expect(card(computeDeltas(unscored, scored), 'Aggression')).toMatchObject({ baseValue: null, compValue: 64, diff: null })
+  })
+
+  it('fuel used: 0 is the import\'s "fewer than two fuel readings or no drop", never a figure (the Dashboard shows it only above 0)', () => {
+    const got = computeDeltas(makeSummary({ fuelUsedL: 0 }), makeSummary({ fuelUsedL: 2 }))
+    expect(card(got, 'Fuel Used')).toMatchObject({ baseValue: null, compValue: 2, diff: null, pctChange: null })
+  })
+
+  it('fuel economy: 0 is the import\'s "could not compute", never a figure', () => {
+    const got = computeDeltas(makeSummary({ avgFuelEconomy: 9.4 }), makeSummary({ avgFuelEconomy: 0 }))
+    expect(card(got, 'Fuel Economy')).toMatchObject({ baseValue: 9.4, compValue: null, diff: null, pctChange: null })
+  })
+
+  it('a field an older record does not have is no reading either', () => {
+    const older = makeSummary()
+    delete (older as Partial<TripSummary>).avgRpm
+    expect(card(computeDeltas(makeSummary({ avgRpm: 3100 }), older), 'Avg RPM')).toMatchObject({ baseValue: 3100, compValue: null, diff: null })
+  })
+
+  it('both drives with the reading: the figures and their difference, as before', () => {
+    expect(card(computeDeltas(makeSummary({ peakRpm: 6000 }), makeSummary({ peakRpm: 6300 })), 'Peak RPM'))
+      .toMatchObject({ baseValue: 6000, compValue: 6300, diff: 300, pctChange: 5 })
   })
 })
 

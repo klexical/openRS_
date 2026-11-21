@@ -19,13 +19,19 @@ function neutralThreshold(unit: string): number {
   }
 }
 
+/**
+ * One Compare card: the compared drive's figure, its difference from the base drive, and the base's figure. A drive
+ * without the reading shows "—", and then no difference or percentage is drawn (#416 ticket 3, owner Q82).
+ */
 export function DeltaCard({ delta }: { delta: KpiDelta }) {
-  const improved = delta.higherIsBetter ? delta.diff > 0 : delta.diff < 0
-  const neutral = Math.abs(delta.diff) < neutralThreshold(delta.unit)
+  const diff = delta.diff
+  const improved = diff !== null && (delta.higherIsBetter ? diff > 0 : diff < 0)
+  const neutral = diff === null || Math.abs(diff) < neutralThreshold(delta.unit)
   const arrowColor = neutral ? colors.dim : improved ? colors.ok : colors.orange
-  const arrow = neutral ? '—' : delta.diff > 0 ? '▲' : '▼'
+  const arrow = neutral ? '—' : diff > 0 ? '▲' : '▼'
 
-  const fmtValue = (v: number) => {
+  const fmtValue = (v: number | null) => {
+    if (v === null) return '—'
     if (delta.unit === 'ms') return fmtDuration(v)
     if (delta.unit === 'G') return fmtNumber(v, 2)
     if (delta.unit === 'L/100km') return fmtNumber(v, 1)
@@ -40,25 +46,27 @@ export function DeltaCard({ delta }: { delta: KpiDelta }) {
   }
 
   return (
-    <div className="rounded-lg border border-brd bg-surf2 p-3 flex flex-col gap-1 min-w-[140px]">
+    <div role="group" aria-label={delta.label} className="rounded-lg border border-brd bg-surf2 p-3 flex flex-col gap-1 min-w-[140px]">
       <span className="text-[10px] font-mono uppercase tracking-widest text-dim">{delta.label}</span>
       <div className="flex items-baseline gap-2">
-        <span className="text-lg font-display font-bold text-frost">
+        <span data-testid="figure" className="text-lg font-display font-bold text-frost">
           {fmtValue(delta.compValue)}
         </span>
-        <span className="text-xs font-mono text-dim">{delta.unit !== 'ms' ? delta.unit : ''}</span>
+        <span className="text-xs font-mono text-dim">{delta.unit !== 'ms' && delta.compValue !== null ? delta.unit : ''}</span>
       </div>
-      <div className="flex items-center gap-1.5 mt-0.5">
-        <span className="text-xs font-mono font-semibold" style={{ color: arrowColor }}>
-          {arrow} {fmtDiff(delta.diff)}
-        </span>
-        {!neutral && (
-          <span className="text-[10px] font-mono" style={{ color: arrowColor }}>
-            ({delta.pctChange > 0 ? '+' : ''}{fmtNumber(delta.pctChange, 1)}%)
+      {diff !== null && (
+        <div className="flex items-center gap-1.5 mt-0.5">
+          <span className="text-xs font-mono font-semibold" style={{ color: arrowColor }}>
+            {arrow} {fmtDiff(diff)}
           </span>
-        )}
-      </div>
-      <span className="text-[10px] font-mono text-dim/60">
+          {!neutral && delta.pctChange !== null && (
+            <span className="text-[10px] font-mono" style={{ color: arrowColor }}>
+              ({delta.pctChange > 0 ? '+' : ''}{fmtNumber(delta.pctChange, 1)}%)
+            </span>
+          )}
+        </div>
+      )}
+      <span data-testid="base" className="text-[10px] font-mono text-dim/60">
         base: {fmtValue(delta.baseValue)}
       </span>
     </div>

@@ -79,6 +79,8 @@ describe('#384 ticket 09: "What\'s new" is shown once after the update, not on a
     await boot()
     const dialog = await screen.findByRole('dialog', { name: "What's new" }, { timeout: 3000 })
     expect(within(dialog).getByText('Home is the list of drives, with addresses')).toBeInTheDocument()     // web/CHANGELOG.md
+    // slice 3's section is newer, but this dialog speaks of slice 2: none of slice 3's titles (#416 ticket 4, Q84)
+    expect(within(dialog).queryByText("What's new shows the update it speaks of")).toBeNull()
     expect(screen.getByRole('region', { name: 'Drives' })).toBeInTheDocument()                             // the list is behind it
     fireEvent.click(within(dialog).getByRole('button', { name: 'Got it' }))
     expect(whatsNew()).toBeNull()

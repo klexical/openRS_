@@ -7,7 +7,7 @@ import type {
 } from '../types/session'
 import { parseBoostSource, type BoostSource } from './boost'
 import { parseExportSchemaVersion } from './exportSchema'
-import { recordedDistanceKm } from './distance'
+import { haversine, recordedDistanceKm } from './distance'
 import { parseDidInventory } from './didInventory'
 
 /** Thrown when an imported ZIP cannot be parsed — named with its file by the import action (lib/importFiles.ts). */
@@ -609,15 +609,6 @@ function avg(arr: number[]): number {
   return arr.length === 0 ? 0 : arr.reduce((a, b) => a + b, 0) / arr.length
 }
 
-function haversine(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371
-  const dLat = (lat2 - lat1) * Math.PI / 180
-  const dLon = (lon2 - lon1) * Math.PI / 180
-  const a = Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-    Math.sin(dLon / 2) ** 2
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-}
 
 const FOCUS_RS_TANK_LITRES = 52.3
 
