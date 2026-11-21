@@ -3,7 +3,8 @@
 # check-commit-identity.sh picks them: reachable from head, not from base nor from any other sha given; the workflow
 # passes staging's and main's tips) and the pull request's own text, against the identifier list and gitleaks.
 # privacy-scan.sh --history <tip sha>... — the one-time full-history scan: every commit reachable from the tips, with
-# no pull request text and no event file (privacy-history.yml, run by hand on main).
+# no pull request text and no event file (privacy-history.yml, run by hand on main). It prints counts by kind only,
+# never a commit, path or line: that run's log is public and the history it reads is kept.
 #
 # Reads from the environment:
 #   PRIVACY_IDENTIFIERS  the identifier list (the privacy-scan environment's secret of that name): one literal per
@@ -658,9 +659,19 @@ glcount=$(wc -l < "$T/glhits")
 
 # a path that spells "privacy scan:" is printed with the colon masked, so no finding line can pose as the summary line,
 # which a merge step reads; the summary is the last line printed
-cat "$T/out.list" "$T/out.bin" "$T/out.allow" "$T/out.gl" "$T/out.comp" "$T/out.reviewed" | sed 's/privacy\([^[:alnum:]]*\)scan:/privacy\1scan[:]/Ig'
+# In --history mode nothing but counts is printed: the log of a history run is public and the history it reads is
+# kept, so no commit, path or line is shown, only counts by kind (gitleaks findings by rule name)
+if [ "$HISTORY" = 1 ]; then
+  echo "privacy history scan: identifier matches $(wc -l < "$T/out.list") on scanned lines and $(wc -l < "$T/out.bin") in files read whole or decoded"
+  echo "privacy history scan: gitleaks suppression markers or ignore-file changes $(wc -l < "$T/out.allow")"
+  cut -f2 "$T/glhits" | awk '{ n[$3]++ } END { for (r in n) print r "\t" n[r] }' | sort \
+    | awk -F'\t' '{ print "privacy history scan: gitleaks rule " $1 ", " $2 " finding(s)" }'
+  echo "privacy history scan: files for a reviewer (binary, compressed, ZIP members, embedded images) $(wc -l < "$T/out.comp")"
+else
+  cat "$T/out.list" "$T/out.bin" "$T/out.allow" "$T/out.gl" "$T/out.comp" "$T/out.reviewed" | sed 's/privacy\([^[:alnum:]]*\)scan:/privacy\1scan[:]/Ig'
+fi
 total=$(cat "$T/out.list" "$T/out.bin" "$T/out.allow" "$T/out.gl" "$T/out.comp" | wc -l)
-if [ "$HISTORY" = 1 ]; then who="history of ${tips// /,}"
+if [ "$HISTORY" = 1 ]; then who="history of $(wc -w <<< "$tips") tip(s)"
 else
   prnum=$(jq -r '.pull_request.number' "$GITHUB_EVENT_PATH")
   [[ $prnum =~ ^[1-9][0-9]*$ ]] || die "the pull request's number is not a whole number: fails closed"
