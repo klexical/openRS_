@@ -152,8 +152,8 @@ check.(!File.read(File.join(dir, "commit-identity.yml")).include?("secrets."), "
 psw = load_wf.("privacy-scan.yml")
 pon = on_of.(psw)
 check.(pon.is_a?(Hash) && pon.keys == ["pull_request_target"] && pon.dig("pull_request_target", "branches")&.sort == %w[main staging] &&
-       pon.dig("pull_request_target", "types") == %w[opened synchronize reopened edited ready_for_review labeled],
-       "privacy-scan.yml: pull_request_target only, PRs to staging and main, the label event included")
+       pon.dig("pull_request_target", "types") == %w[opened synchronize reopened edited ready_for_review labeled unlabeled],
+       "privacy-scan.yml: pull_request_target only, PRs to staging and main, the label events included")
 check.(psw["permissions"] == {} && psw["jobs"].keys == ["privacy-scan"], "privacy-scan.yml: no workflow-level permission, one job")
 ps = psw["jobs"]["privacy-scan"]
 pss = ps["steps"] || []
@@ -178,6 +178,10 @@ check.(holders.size == 1 && holders.first.equal?(pss.last) && holders.first["env
        File.read(File.join(dir, "privacy-scan.yml")).scan("secrets.").size == 1,
        "privacy-scan: the list reaches the last step only, through env, and no other secret is read")
 check.(pss.none? { |s| s["run"].to_s.include?("${{") }, "privacy-scan: no ${{ }} in any run (values come through env)")
+lastrun = (pss.last || {})["run"].to_s.lines.map(&:strip).reject(&:empty?)
+check.(lastrun.size == 3 && lastrun[0] == 'cd "$RUNNER_TEMP/objects"' && lastrun[1] == 'read -r STAGING MAIN < "$RUNNER_TEMP/tips"' &&
+       lastrun[2].start_with?('bash "$RUNNER_TEMP/privacy-scan.sh"'),
+       "privacy-scan: the step that holds the list runs builtins and the script only (no git, no fetch)")
 glstep = pss.find { |s| s["run"].to_s.include?("sha256sum -c") }
 check.(glstep && glstep.dig("env", "GL_SHA256").to_s =~ /\A[0-9a-f]{64}\z/ && glstep.dig("env", "GL_VERSION").to_s =~ /\A\d+\.\d+\.\d+\z/ &&
        glstep["run"].index("sha256sum -c") < glstep["run"].index("tar -xzf"), "privacy-scan: gitleaks is checked against its pinned digest before it is unpacked")

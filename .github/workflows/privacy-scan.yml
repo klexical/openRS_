@@ -20,7 +20,7 @@ name: Privacy scan
 
 on:
   pull_request_target:               # the one such workflow: main's code only, see above
-    types: [opened, synchronize, reopened, edited, ready_for_review, labeled]   # labeled: a reviewer's OK for a compressed file
+    types: [opened, synchronize, reopened, edited, ready_for_review, labeled, unlabeled]   # labeled: a reviewer's OK; unlabeled takes it back
     branches: [staging, main]
 
 permissions: {}
@@ -28,7 +28,7 @@ permissions: {}
 jobs:
   privacy-scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     environment: privacy-scan
     permissions:
       contents: read
@@ -45,6 +45,7 @@ jobs:
           REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
           HEAD: ${{ github.event.pull_request.head.sha }}
+          BASE: ${{ github.event.pull_request.base.sha }}
         run: |
           git init -q "$RUNNER_TEMP/objects"
           cd "$RUNNER_TEMP/objects"
@@ -54,6 +55,10 @@ jobs:
           [ "$(git rev-parse refs/remotes/pr/head)" = "$HEAD" ] || { echo "the fetched PR head is not $HEAD"; exit 1; }
           [ -z "$(git ls-files)" ] || { echo "a working tree exists: nothing of the PR may be checked out"; exit 1; }
           git show "$GITHUB_SHA:.github/scripts/privacy-scan.sh" > "$RUNNER_TEMP/privacy-scan.sh"
+          git cat-file -e "$BASE^{commit}" 2>/dev/null || git fetch -q --no-tags "https://github.com/$REPO" "$BASE"
+          # the tips the scan excludes, for the next step, which runs no git itself: the list is in its environment
+          printf '%s %s\n' "$(git rev-parse --verify 'refs/remotes/origin/staging^{commit}')" \
+            "$(git rev-parse --verify 'refs/remotes/origin/main^{commit}')" > "$RUNNER_TEMP/tips"
 
       - name: gitleaks, pinned by version and digest
         env:
@@ -70,7 +75,8 @@ jobs:
       - name: The pull request's new commits and text
         # the only step that holds the list; values reach it through env, never ${{ }} in run. The PR's title,
         # description, branch name and any label event are read by the script from $GITHUB_EVENT_PATH, never put in
-        # env, which the runner prints in the public log
+        # env, which the runner prints in the public log. Only builtins run before the script, which unsets the list
+        # before its first command, so no other process gets it
         env:
           PRIVACY_IDENTIFIERS: ${{ secrets.PRIVACY_IDENTIFIERS }}
           GITLEAKS: ${{ runner.temp }}/gitleaks/gitleaks
@@ -78,7 +84,5 @@ jobs:
           HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
           cd "$RUNNER_TEMP/objects"
-          STAGING=$(git rev-parse --verify refs/remotes/origin/staging^{commit})
-          MAIN=$(git rev-parse --verify refs/remotes/origin/main^{commit})
-          git cat-file -e "$BASE^{commit}" 2>/dev/null || git fetch -q --no-tags "https://github.com/$GITHUB_REPOSITORY" "$BASE"
+          read -r STAGING MAIN < "$RUNNER_TEMP/tips"
           bash "$RUNNER_TEMP/privacy-scan.sh" "$BASE" "$HEAD" "$STAGING" "$MAIN"
