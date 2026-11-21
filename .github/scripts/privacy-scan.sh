@@ -7,6 +7,8 @@
 # never a commit, path or line: that run's log is public and the history it reads is kept.
 # privacy-scan.sh --history --places <tip sha>... — the same, also printing where each hit is, for a project session's
 # own run whose output stays in the project; it refuses to run when GITHUB_ACTIONS is set, so no workflow prints places.
+# With no list (no project session gets it, owner decision Q196) it places the gitleaks hits only and does not check
+# identifiers; with the list (the owner's own run) it places every hit.
 #
 # Reads from the environment:
 #   PRIVACY_IDENTIFIERS  the identifier list (the privacy-scan environment's secret of that name): one literal per
@@ -90,6 +92,12 @@ for s in "$@"; do
   [[ $s =~ ^[0-9a-f]{40}$ ]] || die "every argument a 40-hex SHA"
   git cat-file -e "$s^{commit}" 2>/dev/null || die "${s:0:12} is not a commit here (fetch the history first)"
 done
+# --places may run with no list: then no identifier is checked and only gitleaks hits are placed. A random stand-in
+# entry, which matches nothing, keeps every other step as it is
+NOLIST=0
+if [ -z "$LISTRAW" ] && [ "$PLACES" = 1 ]; then
+  NOLIST=1; LISTRAW="no-list-$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+fi
 [ -n "$LISTRAW" ] || die "the identifier list (secret PRIVACY_IDENTIFIERS) is missing or empty: fails closed"
 { [ -n "${GITLEAKS:-}" ] && [ -x "$GITLEAKS" ]; } || die "GITLEAKS does not name an executable gitleaks: fails closed"
 # the pull request's number, a whole number: the summary names it, so a merge step can find every run of the PR
@@ -112,7 +120,8 @@ entries=$(wc -l < "$LIST")
 [ "$entries" -gt 0 ] || die "the identifier list has no entry (only blank or # lines): fails closed"
 short=$(while IFS= read -r e; do [ "${#e}" -ge 4 ] || echo; done < "$LIST" | wc -l)   # characters, not bytes
 [ "$short" -eq 0 ] || die "$short list entr(y/ies) shorter than 4 characters: fails closed"
-echo "identifier list: $entries entr(y/ies)"
+if [ "$NOLIST" = 1 ]; then echo "identifier list: none (--places without the list: gitleaks hits placed only, identifiers not checked)"
+else echo "identifier list: $entries entr(y/ies)"; fi
 # One Python helper for what the shell cannot do safely: the MAC / VIN spellings, matching a file read whole, the
 # compression formats, and base64 runs. It is written to the scan's own folder and run isolated (-I).
 H=$T/helper.py
@@ -670,13 +679,16 @@ glcount=$(wc -l < "$T/glhits")
 # kept, so no commit, path or line is shown, only counts by kind (gitleaks findings by rule name). With --places
 # (never in a workflow) the finding lines follow the counts
 if [ "$HISTORY" = 1 ]; then
-  echo "privacy history scan: identifier matches $(wc -l < "$T/out.list") on scanned lines and $(wc -l < "$T/out.bin") in files read whole or decoded"
+  if [ "$NOLIST" = 1 ]; then echo "privacy history scan: identifier matches not checked (no list)"
+  else echo "privacy history scan: identifier matches $(wc -l < "$T/out.list") on scanned lines and $(wc -l < "$T/out.bin") in files read whole or decoded"; fi
   echo "privacy history scan: gitleaks suppression markers or ignore-file changes $(wc -l < "$T/out.allow")"
   cut -f2 "$T/glhits" | awk '{ n[$3]++ } END { for (r in n) print r "\t" n[r] }' | sort \
     | awk -F'\t' '{ print "privacy history scan: gitleaks rule " $1 ", " $2 " finding(s)" }'
   echo "privacy history scan: files for a reviewer (binary, compressed, ZIP members, embedded images) $(wc -l < "$T/out.comp")"
 fi
-if [ "$HISTORY" = 0 ] || [ "$PLACES" = 1 ]; then
+if [ "$NOLIST" = 1 ]; then
+  sed 's/privacy\([^[:alnum:]]*\)scan:/privacy\1scan[:]/Ig' "$T/out.gl"   # the gitleaks hits only
+elif [ "$HISTORY" = 0 ] || [ "$PLACES" = 1 ]; then
   cat "$T/out.list" "$T/out.bin" "$T/out.allow" "$T/out.gl" "$T/out.comp" "$T/out.reviewed" | sed 's/privacy\([^[:alnum:]]*\)scan:/privacy\1scan[:]/Ig'
 fi
 total=$(cat "$T/out.list" "$T/out.bin" "$T/out.allow" "$T/out.gl" "$T/out.comp" | wc -l)
@@ -687,5 +699,6 @@ else
   who="pull request $prnum; head $head"
 fi
 okneed=no; [ ! -s "$T/compressed" ] || okneed=yes   # anything that waits for privacy-ok-compressed, OK'd or not
-echo "privacy scan: $n new commit(s); $who; ok label needed $okneed; identifier matches $(($(wc -l < "$T/out.list") + $(wc -l < "$T/out.bin"))), gitleaks findings $glcount, gitleaks suppressions $(wc -l < "$T/out.allow"), compressed files $(wc -l < "$T/out.comp") unreviewed and $(wc -l < "$T/out.reviewed") reviewed; pull request images $primg; $total finding(s) in all"
+idm=$(($(wc -l < "$T/out.list") + $(wc -l < "$T/out.bin"))); [ "$NOLIST" = 0 ] || idm="not checked"
+echo "privacy scan: $n new commit(s); $who; ok label needed $okneed; identifier matches $idm, gitleaks findings $glcount, gitleaks suppressions $(wc -l < "$T/out.allow"), compressed files $(wc -l < "$T/out.comp") unreviewed and $(wc -l < "$T/out.reviewed") reviewed; pull request images $primg; $total finding(s) in all"
 [ "$total" -eq 0 ] || exit 1
