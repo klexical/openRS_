@@ -262,10 +262,15 @@ if [ -e "$T/spy.log" ]; then fail=$((fail+1)); echo "FAIL git saw PRIVACY_IDENTI
 else pass=$((pass+1)); echo "PASS git saw PRIVACY_IDENTIFIERS 0 times"; fi
 
 # ── merges ───────────────────────────────────────────────────────────────────────────────────────────────────────────
+# merged <case>: the case's HEAD must be a real merge (two parents): a merge that fails quietly (on a runner with no
+# git identity, say) would leave an ordinary commit and the merge case would test nothing
+merged() { if g rev-parse -q --verify HEAD^2 > /dev/null; then pass=$((pass+1)); echo "PASS $1: HEAD is a merge"
+           else fail=$((fail+1)); echo "FAIL $1: HEAD is not a merge (the merge failed)"; fi; }
 merge_case() { # a feature branch and a side branch that both change f.txt line 2; the merge resolves it to <resolution>
   repo; g checkout -q -b feature; put f.txt 'one\nfeature\nthree\n'; commit "feature"
   g checkout -q -b side main; put f.txt 'one\nside\nthree\n'; commit "side"
   g checkout -q feature; GIT_COMMITTER_NAME=o GIT_COMMITTER_EMAIL=$OWNER GIT_AUTHOR_NAME=o GIT_AUTHOR_EMAIL=$OWNER g merge -q side > /dev/null 2>&1; put f.txt "$1"; commit "merge side"
+  merged "merge_case"
 }
 merge_case 'one\nfeature and side\nthree\n'
 run 0 "a merge whose resolution is clean passes"
@@ -274,11 +279,13 @@ run 1 "a line a merge's own resolution adds fails" "FINDING $(c12): added line f
 repo; g checkout -q -b side; put g.txt "$ID1\n"; commit "an identifier on a side branch"; g checkout -q main
 g checkout -q -b feature; commit "work"
 GIT_AUTHOR_NAME=o GIT_AUTHOR_EMAIL=$OWNER GIT_COMMITTER_NAME=o GIT_COMMITTER_EMAIL=$OWNER g merge -q --no-ff -m "merge side" side
+merged "a merged side branch"
 run 1 "a merged branch's own new commit is scanned (the merge itself adds nothing)" "added line g.txt:1" "1 finding(s) in all"
 # a resolution line taken from the second parent (on the base already) is not the merge's own line
 repo; g checkout -q -b feature; put f.txt 'one\nfeat\nthree\n'; commit "feature"
 g checkout -q main; put f.txt "one\n$ID1 on main\nthree\n"; commit "main already has it"; g checkout -q feature
 GIT_COMMITTER_NAME=o GIT_COMMITTER_EMAIL=$OWNER GIT_AUTHOR_NAME=o GIT_AUTHOR_EMAIL=$OWNER g merge -q main > /dev/null 2>&1; put f.txt "one\nfeat\n$ID1 on main\nthree\n"; commit "merge main"
+merged "a merge of main"
 run 0 "a merge line that only the base side had (a ' +' or '+ ' line) is not the merge's own"
 
 # ── fails closed ─────────────────────────────────────────────────────────────────────────────────────────────────────
