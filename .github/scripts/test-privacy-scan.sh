@@ -348,7 +348,8 @@ for spelled in "Wexmoor%20Fixture%20Lane" "Wexmoor+Fixture+Lane" "wexmoor_fixtur
     "Wexmoor  Fixture Lane" "Wexmoor&#32;Fixture&#x20;Lane" 'Wexmoor Fixture Lane' "$(printf 'Wexmoor\xc2\xa0Fixture Lane')" \
     "%57%65%78%6d%6f%6f%72%20%46%69%78%74%75%72%65%20%4c%61%6e%65" \
     "$(printf '\xef\xbc\xb7\xef\xbd\x85\xef\xbd\x98\xef\xbd\x8d\xef\xbd\x8f\xef\xbd\x8f\xef\xbd\x92 Fixture Lane')" \
-    "$(printf 'Wex\xe2\x80\x8bmoor Fix\xe2\x80\x8dture Lane')"; do
+    "$(printf 'Wex\xe2\x80\x8bmoor Fix\xe2\x80\x8dture Lane')" "$(printf 'Wexmoo\xcc\x81r Fixture\xcc\x88 Lane')" \
+    "$(printf 'W\xc3\xa9xmoor Fixture Lane')"; do
   repo; g checkout -q -b feature; put f.txt "one\nat $spelled today\n" 2>/dev/null || { printf 'one\nat %s today\n' "$spelled" > "$T/r/f.txt"; g add f.txt; }
   printf 'one\nat %s today\n' "$spelled" > "$T/r/f.txt"; g add f.txt; commit "a place spelled another way"
   run 1 "a place entry matches spelled ${spelled:0:12}…" "FINDING $(c12): added line f.txt:2"

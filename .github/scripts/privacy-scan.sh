@@ -19,9 +19,9 @@
 # commit touches; each new commit's raw commit object (every header line, the author and committer names, addresses
 # and dates, the encoding, any extra header, and the message; an object that is binary or names an encoding is also
 # read whole); the pull request's title, description and branch name. Every entry of 8 letters and digits or more (and
-# every MAC- or VIN-shaped entry) is also matched "bare": with \uXXXX, \xXX, %XX, + and HTML entities decoded, NFKC
-# applied (full-width letters read as plain ones), a 0x before hex dropped and every character but letters and digits
-# removed, from the entry and the scanned line alike.
+# every MAC- or VIN-shaped entry) is also matched "bare": with \uXXXX, \xXX, %XX, + and HTML entities decoded, NFKD
+# applied and accents dropped (full-width and accented letters read as plain ones), a 0x before hex dropped and every
+# character but letters and digits removed, from the entry and the scanned line alike.
 # A file git judges binary on either side of a commit (--numstat "-" "-"), whose new content holds a NUL byte anywhere,
 # or that is not UTF-8, is read whole, as bytes and as UTF-16 or UTF-32 in either byte order; a binary file that is not
 # a ZIP is also a finding until a reviewer's OK, as it may hold compressed data. A ZIP (found by its structure, at any
@@ -133,7 +133,9 @@ def bare(text):
     # entities, \uXXXX and \xXX escapes, and a 0x before a byte; any separator, or none, then reads the same
     t = U_ESC.sub(lambda m: chr(int(m.group(1) or m.group(2), 16)), text)
     t = html.unescape(urllib.parse.unquote_plus(t, errors="replace"))
-    t = unicodedata.normalize("NFKC", t)       # full-width and other compatibility forms read as plain letters
+    # full-width and other compatibility forms read as plain letters, and accents are dropped: NFKD splits a letter
+    # from its accent (NFKC would join "e" and a combining accent into one letter that no entry holds)
+    t = "".join(c for c in unicodedata.normalize("NFKD", t) if not unicodedata.combining(c))
     t = re.sub(r"0x(?=[0-9a-fA-F]{2})", "", t.casefold())
     return re.sub(r"[\W_]", "", t)
 
