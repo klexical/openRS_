@@ -105,12 +105,33 @@ paths:
     an earlier tag whose versionCode it can't read (exception list `LEGACY_TAGS`, empty) or a checkout without tags, and it
     rejects APKs up to rc.6 (they embed `2.2.7`, the convention then) — expected, not a defect of those releases.
 - **Release API keys (#235)** — `apiKey(name)` in `app/build.gradle.kts`: `local.properties`, else the
-  environment; optional for every build. The release recipe (`release-apk.yml`) maps the repository secrets `MAPS_API_KEY` /
+  environment; optional for every build. The release recipe (`release-apk.yml`) maps the release environments' secrets `MAPS_API_KEY` /
   `OPENWEATHER_API_KEY` and runs `scripts/check-release-config.sh` (Maps required, weather
   a notice); `verify-release.sh` step 5 (`check-apk-maps-key.sh`) fails an APK with an absent / empty / placeholder Maps
   key, so it rejects keyless local builds and the published rc.6 asset (blank TRIP map). Scripts print lengths only — never a
-  key value. `OPENWEATHER_API_KEY` is not configured as a repository secret, so published builds have no weather —
-  expected, not a bug
+  key value. `OPENWEATHER_API_KEY` empty means published builds have no weather — expected, not a bug
+- **Release secrets live in two environments (Q182)** — `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`,
+  `KEY_PASSWORD`, `MAPS_API_KEY` and `OPENWEATHER_API_KEY` are held, the same six in each, by `release` (deployment refs:
+  the branch main only, no reviewer: the nightly and main pushes) and `release-tag` (deployment refs: tags `android-v*`
+  only, the owner as required reviewer: RC and stable). A run on a tag uses the tagged commit's own workflow files, so a
+  tag run waits for the owner's approval; a ruleset blocks creating, moving and deleting `android-v*` tags except nightly
+  tags (exclude pattern `android-v*-nightly.*`), with no bypass (Q191: a personal repository cannot list GitHub Actions
+  as a bypass, so nightly tags are excluded and the nightly still tags itself; the daily audit (A3, being built) is to
+  report any nightly-tag creation, move or deletion not made by `github-actions[bot]` and any nightly tag whose commit is
+  not its release's). **Cutting an RC or stable tag:** the owner
+  switches that ruleset off (Settings → Rules → Rulesets, Enforcement Disabled) for about a minute, pushes the tag, and
+  switches it back to Active; nobody else cuts these tags. The owner approves a `release-tag` deployment only for a tag
+  the owner just cut, never for a `-nightly.` tag (ci.yml skips nightly tags; an approval request for one is a red
+  flag). `release-apk.yml` takes the environment name as a required input
+  and its one job declares it; nightly.yml's `release` passes `release`, ci.yml's tag-path `release-apk` passes
+  `release-tag`, and both pass exactly the six secrets by name. A called workflow sees a secret only when the caller
+  passes its name (an unpassed environment secret is empty, with no error), and the environment's copy then wins; while
+  a repository copy exists, a name missing from the environment falls back to it, so a green run proves the
+  environments only once the repository copies are gone. Never `inherit`: it would also hand over the review token. A
+  missing keystore fails the recipe (never an unsigned APK). GitHub checks the caller's run ref: the nightly runs under
+  main's ref (it builds staging's tip, but the ref is main's), so a nightly "Run workflow" on another ref fails at the
+  release job rather than dry-running. No other job declares either environment or names these secrets
+  (`test-release-workflows.rb`)
 - **RC maintenance assets** — the rc.7 release carries `openrs-2.2.7-rc.7-build38.apk` beside the tag's own asset. Its
   name is not the release's exact `openRS_v<name>.apk`, the only asset the updater takes (#364, `VersionIdentityTest`), so
   the in-app updater never offers it, and What's New is once per release NAME. The one-shot publisher that added it was
