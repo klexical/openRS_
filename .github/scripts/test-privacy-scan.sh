@@ -51,7 +51,7 @@ scan() { # scan [<base>]: runs the check as the workflow does; base defaults to 
         + (if $n == "" then {} else {number: (try ($n | tonumber) catch $n)} end))}
       + (if $l == "" then {} else {label: {name: $l}} end)' > "$T/event.json"
   (cd "$T/r" && PRIVACY_IDENTIFIERS=${LIST-$LISTV} GITLEAKS=${GL-$STUB} GITHUB_EVENT_PATH=${EVENT-$T/event.json} \
-    bash "$SCAN" "$base" "$(sha HEAD)" "$(sha staging)" "$(sha main)") > "$OUT" 2>&1
+    timeout "${TO:-0}" bash "$SCAN" "$base" "$(sha HEAD)" "$(sha staging)" "$(sha main)") > "$OUT" 2>&1   # TO: a time limit
 }
 MAC=02:5A:1E:7C:3D:9B; VIN=1ZZFXTEST7A000001   # synthetic MAC- and VIN-shaped entries
 leaks() { grep -q -i -F -e "$ID1" -e "$ID2" -e 7C3D9B -e 7c:3d:9b -e 7C-3D-9B -e TEST7A000001 "$OUT" \
@@ -241,6 +241,14 @@ run 1 "plain wrapped base64 still fails" "base64 on an added line, holding a lis
 repo; g checkout -q -b feature; { printf 'x\000y\n{"d": "'; paste -sd'|' "$T/w76" | sed 's/|/\\n/g'; printf '"}\n'; } > "$T/r/e.bin"
 g add e.bin; commit "escaped base64 in a binary file"
 ACTION=labeled LABEL=privacy-ok-compressed run 1 "escaped wrapped base64 in a binary file is joined, with the OK too" "FINDING $(c12): binary content e.bin"
+# one element per line: the token's longest base64 run is its piece, not its last
+repo; g checkout -q -b feature; { printf 'one\n'; sed 's|.*|<l>&</l>|' "$T/w76"; } > "$T/r/w.xml"; g add w.xml; commit "one element per line"
+run 1 "wrapped base64 with one XML element per line is joined" "base64 on an added line, holding a list match w.xml:2"
+# the joining pass is linear: a 200 KB data URI followed by a character the piece search keeps ends in seconds
+{ printf '\x89PNG\r\n\x1a\n'; head -c 150000 /dev/urandom; } > "$T/big.png"
+repo; g checkout -q -b feature; printf '<svg><image href="data:image/png;base64,%s"/></svg>\n' "$(base64 -w0 "$T/big.png")" > "$T/r/big.svg"
+g add big.svg; commit "a large embedded image"
+TO=60 run 1 "a 200 KB data URI in an SVG is scanned within 60 s" "base64 on an added line, decoding to a compressed file (PNG) big.svg:1"
 u16() { python3 -I -c 'import sys; sys.stdout.buffer.write(sys.argv[2].encode(sys.argv[1]))' "$@"; }
 repo; g checkout -q -b feature; { printf '\xff\xfe'; u16 utf-16-le "notes: $ID1 here"; } > "$T/r/u16le.txt"; g add u16le.txt; commit "UTF-16LE"
 run 1 "a UTF-16LE file fails" "FINDING $(c12): binary content u16le.txt"

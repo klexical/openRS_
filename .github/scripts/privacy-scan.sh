@@ -216,10 +216,10 @@ def b64runs(data):
     # base64 runs of DATA (bytes), by line: a run inside a line (20 characters or more, or 8 or more that mix cases or
     # hold a digit or + /), or lines of base64 and nothing else joined (wrapped base64, its last line of any length);
     # each reported at its first line. Then a second pass for wrapped base64 whose pieces are not on lines of their
-    # own: the text is split on escaped line ends (\n, \r), bare CRs and white space; each token's trailing base64
-    # run (trailing quotes, commas and brackets dropped) is a piece, a token of comment marks or quotes alone is
-    # passed over, and pieces of 16 or more characters are joined as wrapped lines are, the last of any length. A
-    # joined run is kept only when it spans two or more pieces and the first pass did not find it
+    # own: the text is split on escaped line ends (\n, \r), bare CRs and white space; each token's longest base64
+    # run (so quotes, commas, brackets and tags around it drop away) is a piece, a token of comment marks or quotes
+    # alone is passed over, and pieces of 16 or more characters are joined as wrapped lines are, the last of any
+    # length. A joined run is kept only when it spans two or more pieces and the first pass did not find it
     lines = data.split(b"\n")
     runs, cur = [], None
     for n, line in enumerate(lines, 1):
@@ -244,8 +244,9 @@ def b64runs(data):
         for tok in re.split(rb"\\[nr]|\s+", line):
             if not tok or re.fullmatch(B64SKIP, tok):
                 continue
-            m = re.search(B64 + rb"+={0,2}$", tok.rstrip(b"\"',;)]}\\"))
-            piece = m.group() if m else b""
+            # the token's longest base64 run, found in one linear pass (a search anchored at the end backtracks
+            # from every start, quadratic on a long data URI)
+            piece = max(re.findall(B64 + rb"+={0,2}", tok), key=len, default=b"")
             if chain is not None and piece:
                 chain[1] += piece; chain[2] += 1
                 if piece.endswith(b"=") or len(piece) < 16:
