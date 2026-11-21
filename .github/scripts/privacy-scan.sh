@@ -68,26 +68,112 @@ entries=$(wc -l < "$LIST")
 short=$(while IFS= read -r e; do [ "${#e}" -ge 4 ] || echo; done < "$LIST" | wc -l)   # characters, not bytes
 [ "$short" -eq 0 ] || die "$short list entr(y/ies) shorter than 4 characters: fails closed"
 echo "identifier list: $entries entr(y/ies)"
-# a MAC- or VIN-shaped entry also matches its other spellings (Q4): a MAC as six pairs joined by colons, dashes, spaces
-# or nothing, or three quads joined by dots; a VIN bare, or as 3-6-8 groups joined by a dash or a space
-python3 -I - "$LIST" <<'PY'
-import re, sys
-path = sys.argv[1]
-entries = [l.rstrip("\n") for l in open(path, encoding="utf-8")]
-out = list(entries)
-for e in entries:
-    bare = re.sub(r"[-:. ]", "", e)
-    if re.fullmatch(r"([0-9A-Fa-f]{2}[-: ]?){5}[0-9A-Fa-f]{2}|[0-9A-Fa-f]{4}\.[0-9A-Fa-f]{4}\.[0-9A-Fa-f]{4}", e):
-        p = [bare[i:i + 2] for i in range(0, 12, 2)]
-        out += [s.join(p) for s in (":", "-", " ", "")] + [".".join(bare[i:i + 4] for i in range(0, 12, 4))]
-    elif re.fullmatch(r"[A-HJ-NPR-Za-hj-npr-z0-9]{17}", bare):
-        out += [bare, bare[:3] + "-" + bare[3:9] + "-" + bare[9:], bare[:3] + " " + bare[3:9] + " " + bare[9:]]
-seen, final = set(), []
-for e in out:
-    if e.lower() not in seen:
-        seen.add(e.lower()); final.append(e)
-open(path, "w", encoding="utf-8").write("".join(x + "\n" for x in final))
+# One Python helper for what the shell cannot do safely: the MAC / VIN spellings, matching a file read whole, the
+# compression formats, and base64 runs. It is written to the scan's own folder and run isolated (-I).
+H=$T/helper.py
+cat > "$H" <<'PY'
+import base64, re, sys
+
+MAGIC = [(b"PK\x03\x04", "zip"), (b"PK\x05\x06", "zip"), (b"PK\x07\x08", "zip"), (b"\x1f\x8b", "gzip"),
+         (b"\x89PNG", "PNG"), (b"BZh", "bzip2"), (b"\xfd7zXZ\x00", "xz"), (b"\x28\xb5\x2f\xfd", "zstd"),
+         (b"7z\xbc\xaf\x27\x1c", "7z"), (b"Rar!", "RAR"), (b"\xff\xd8\xff", "JPEG"), (b"GIF8", "GIF"),
+         (b"%PDF", "PDF"), (b"LZIP", "lzip"), (b"\x04\x22\x4d\x18", "LZ4")]
+
+def kind(data):
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "WebP"
+    for m, k in MAGIC:
+        if data.startswith(m):
+            return k
+    return ""
+
+def entries(path):
+    return [l.rstrip("\n").casefold() for l in open(path, encoding="utf-8") if l.strip()]
+
+def bare(text):  # letters and digits only (a %XX escape dropped): a MAC or VIN with any separator reads the same
+    return re.sub(r"[^0-9a-z]", "", re.sub(r"%[0-9a-f]{2}", "", text))
+
+def hits(data, ents, bares):
+    texts = [data.decode("utf-8", errors="replace")]
+    texts += [data[off:].decode(enc, errors="replace") for enc in ("utf-16-le", "utf-16-be") for off in (0, 1)]
+    for t in texts:
+        t = t.casefold()
+        if any(e in t for e in ents):
+            return True
+        if bares and any(b in bare(t) for b in bares):
+            return True
+    return False
+
+def expand(path, barepath):
+    # a MAC- or VIN-shaped entry also matches its usual spellings literally, and once more with every separator
+    # removed, from the entry and the scanned text alike (any separator, or none)
+    ents = [l.rstrip("\n") for l in open(path, encoding="utf-8")]
+    out, bares = list(ents), []
+    for e in ents:
+        b = re.sub(r"[-:. _]", "", e)
+        if re.fullmatch(r"([0-9A-Fa-f]{2}[-: _]?){5}[0-9A-Fa-f]{2}|[0-9A-Fa-f]{4}\.[0-9A-Fa-f]{4}\.[0-9A-Fa-f]{4}", e):
+            p = [b[i:i + 2] for i in range(0, 12, 2)]
+            out += [s.join(p) for s in (":", "-", " ", "")] + [".".join(b[i:i + 4] for i in range(0, 12, 4))]
+            bares.append(b.casefold())
+        elif re.fullmatch(r"[A-HJ-NPR-Za-hj-npr-z0-9]{17}", b):
+            out += [b, b[:3] + "-" + b[3:9] + "-" + b[9:], b[:3] + " " + b[3:9] + " " + b[9:]]
+            bares.append(b.casefold())
+    seen, final = set(), []
+    for e in out:
+        if e.casefold() not in seen:
+            seen.add(e.casefold()); final.append(e)
+    open(path, "w", encoding="utf-8").write("".join(x + "\n" for x in final))
+    open(barepath, "w", encoding="utf-8").write("".join(x + "\n" for x in sorted(set(bares))))
+
+def b64runs(textpath):
+    # base64 runs of TEXT, by line: a run of 20 or more base64 characters inside a line, or lines that are base64
+    # and nothing else, joined (wrapped base64); each reported at its first line
+    runs, cur = [], None
+    for n, line in enumerate(open(textpath, "rb").read().split(b"\n"), 1):
+        t = line.strip()
+        if re.fullmatch(rb"[A-Za-z0-9+/_-]{16,}={0,2}", t):
+            if cur is None:
+                cur = [n, b""]; runs.append(cur)
+            cur[1] += t
+            if t.endswith(b"="):
+                cur = None
+            continue
+        cur = None
+        runs += [[n, m.group()] for m in re.finditer(rb"[A-Za-z0-9+/_-]{20,}={0,2}", line)]
+    return runs
+
+def decodings(run):
+    for urlsafe in (False, True):
+        r = run.rstrip(b"=")
+        r = r.replace(b"-", b"+").replace(b"_", b"/") if urlsafe else r
+        for off in range(4):
+            c = r[off:]
+            c = c[:len(c) - len(c) % 4]
+            if len(c) >= 16:
+                try:
+                    yield base64.b64decode(c, validate=True)
+                except ValueError:
+                    pass
+
+cmd = sys.argv[1]
+if cmd == "expand":
+    expand(sys.argv[2], sys.argv[3])
+elif cmd == "kind":
+    print(kind(open(sys.argv[2], "rb").read(16)))
+elif cmd == "blob":   # blob <list> <bare list> <file>: 1 when the file holds a match, else 0; never what matched
+    print(1 if hits(open(sys.argv[4], "rb").read(), entries(sys.argv[2]), entries(sys.argv[3])) else 0)
+elif cmd == "b64":    # b64 <list> <bare list> <text>: "<line>\thit" or "<line>\tcompressed <kind>" per base64 run
+    ents, bares = entries(sys.argv[2]), entries(sys.argv[3])
+    for n, run in b64runs(sys.argv[4]):
+        found = set()
+        for d in decodings(run):
+            if "hit" not in found and hits(d, ents, bares):
+                found.add("hit"); print(f"{n}\thit")
+            k = kind(d) if len(d) >= 100 else ""   # a screenshot is larger; hashes and short tokens are not
+            if k and "comp" not in found:
+                found.add("comp"); print(f"{n}\tcompressed {k}")
 PY
+python3 -I "$H" expand "$LIST" "$T/listbare"
 
 base=$1; head=$2; shift 2
 commits=$(git rev-list "$head" --not "$base" "$@")
@@ -100,35 +186,18 @@ ALLOW=gitleaks; ALLOW="$ALLOW:allow"         # gitleaks' inline marker, spelled 
 
 # in_binpaths <path>: git judged the path binary on either side of this commit
 in_binpaths() { python3 -I -c 'import sys; sys.exit(0 if sys.argv[1].encode("utf-8", "surrogateescape") in open(sys.argv[2], "rb").read().split(b"\0") else 1)' "$1" "$T/binpaths"; }
-# blob_hits <file>: how many of the list's matches a file read whole holds: as bytes (UTF-8 and ASCII), or as UTF-16 in
-# either byte order at either alignment (G3); a count, never what matched
+# blob_hits <file>: 1 when a file read whole holds one of the list's matches: as bytes (UTF-8 and ASCII), as UTF-16 in
+# either byte order at either alignment, or a MAC or VIN with any separator; 0 otherwise, never what matched
 blob_hits() {
   local h; h=$({ grep -c -a -i -F -f "$LIST" "$1" || true; })
-  [ "$h" -gt 0 ] && { echo "$h"; return; }
-  python3 -I - "$LIST" "$1" <<'PY'
-import sys
-entries = [l.rstrip("\n").casefold() for l in open(sys.argv[1], encoding="utf-8") if l.strip()]
-data = open(sys.argv[2], "rb").read()
-hit = 0
-for enc in ("utf-16-le", "utf-16-be"):
-    for off in (0, 1):
-        text = data[off:].decode(enc, errors="replace").casefold()
-        if any(e in text for e in entries): hit = 1
-print(hit)
-PY
+  if [ "$h" -gt 0 ]; then echo 1; else python3 -I "$H" blob "$LIST" "$T/listbare" "$1"; fi
 }
 # compressed_kind <file>: the compression format its first bytes name, or nothing
-compressed_kind() {
-  local m; m=$(head -c 12 "$1" | od -An -tx1 -v | tr -d ' \n')
-  case "$m" in
-    504b0304*|504b0506*|504b0708*) echo zip ;;
-    1f8b*) echo gzip ;;            89504e47*) echo PNG ;;         425a68*) echo bzip2 ;;
-    fd377a585a00*) echo xz ;;      28b52ffd*) echo zstd ;;        377abcaf271c*) echo 7z ;;
-    52617221*) echo RAR ;;         ffd8ff*) echo JPEG ;;          47494638*) echo GIF ;;
-    25504446*) echo PDF ;;         4c5a4950*) echo lzip ;;        04224d18*) echo LZ4 ;;
-    52494646????????57454250*) echo WebP ;;
-  esac
-}
+compressed_kind() { python3 -I "$H" kind "$1"; }
+# keep <file> <c12> <what> <path>: a numbered copy for the second gitleaks run, which reads files whole; whole.idx's
+# line N says where copy N came from
+WHOLE=$T/whole; mkdir "$WHOLE"; : > "$T/whole.idx"; nw=0
+keep() { nw=$((nw+1)); cp "$1" "$WHOLE/$nw"; printf '%s\t%s\t%s\n' "$2" "$3" "$4" >> "$T/whole.idx"; }
 # scan_zip <c12> <path> <file>: each member's name and content against the list (by number, never by name); a member
 # that is itself compressed is listed for a reviewer's OK; an encrypted, oversized or unreadable one is a finding
 scan_zip() {
@@ -171,6 +240,7 @@ PY
     if [ "$status" != ok ]; then
       printf '%s\tZIP member #%s %s\t%s\t\n' "$c12" "$idx" "$status" "$sp" >> "$T/zipbad"; continue
     fi
+    keep "$d/$idx" "$c12" "in ZIP member #$idx" "$sp"
     local mk; mk=$(compressed_kind "$d/$idx")
     [ -z "$mk" ] || printf '%s\tcompressed ZIP member #%s (%s)\t%s\t\n' "$c12" "$idx" "$mk" "$sp" >> "$T/compressed"
     hit=$(blob_hits "$d/$idx")
@@ -185,7 +255,7 @@ for c in $commits; do
   add "$c12" "author address" "" "$(git log -1 --format=%ae "$c")"
   add "$c12" "committer name" "" "$(git log -1 --format=%cn "$c")"
   add "$c12" "committer address" "" "$(git log -1 --format=%ce "$c")"
-  git log -1 --format=%B "$c" > "$T/msg"
+  git log -1 --format=%B "$c" > "$T/msg"; keep "$T/msg" "$c12" "in the message" ""
   awk -v c="$c12" '{ printf "%s\tmessage line %d\t\t\n", c, NR }' "$T/msg" >> "$WHERE"; cat "$T/msg" >> "$TEXT"
   [ -z "$(tail -c1 "$T/msg")" ] || echo >> "$TEXT"      # keep TEXT and WHERE line for line
   # the paths the commit touches (a merge: the paths its resolution changes), each scanned as a line of its own
@@ -232,19 +302,27 @@ for r in d:
     fi
     nul=$(head -c 8000 "$T/blob" | LC_ALL=C tr -d -c '\000' | wc -c)   # its own step: a failing stage stops the scan (N3)
     [ "$nul" -gt 0 ] || [ -n "$kind" ] || in_binpaths "$p" || continue
+    keep "$T/blob" "$c12" "in a file read whole" "$sp"
     hit=$(blob_hits "$T/blob")
     [ "$hit" -eq 0 ] || printf '%s\tbinary content\t%s\t\n' "$c12" "$sp" >> "$T/binhits"
   done < "$T/paths.z"
 done
 add "" "pull request title" "" "$(jq -r '.pull_request.title // ""' "$GITHUB_EVENT_PATH" | tr '\n' ' ')"
 add "" "pull request branch name" "" "$(jq -r '.pull_request.head.ref // ""' "$GITHUB_EVENT_PATH" | tr '\n' ' ')"
-jq -r '.pull_request.body // ""' "$GITHUB_EVENT_PATH" | tr -d '\r' > "$T/body"
+jq -r '.pull_request.body // ""' "$GITHUB_EVENT_PATH" | tr -d '\r' > "$T/body"; keep "$T/body" "" "in the pull request description" ""
+jq -r '(.pull_request.title // ""), (.pull_request.head.ref // "")' "$GITHUB_EVENT_PATH" > "$T/prtext"
+keep "$T/prtext" "" "in the pull request title or branch name" ""
 awk '{ printf "\tpull request description line %d\t\t\n", NR }' "$T/body" >> "$WHERE"; cat "$T/body" >> "$TEXT"
 [ "$(wc -l < "$TEXT")" -eq "$(wc -l < "$WHERE")" ] || die "internal: the scanned lines and their places are out of step"
 
 # line numbers of TEXT that match the list, and of added lines that carry gitleaks' allow marker
 rc=0; grep -n -a -i -F -f "$LIST" -- "$TEXT" > "$T/raw" || rc=$?; [ "$rc" -le 1 ] || die "grep failed (exit $rc)"
 cut -d: -f1 "$T/raw" > "$T/hitlines"; rm -f "$T/raw"
+if [ -s "$T/listbare" ]; then   # a MAC or VIN with any separator: the same lines with every separator and %XX escape removed
+  LC_ALL=C sed -e 's/%[0-9A-Fa-f][0-9A-Fa-f]//g' -e 's/[^A-Za-z0-9]//g' "$TEXT" > "$T/textbare"
+  rc=0; grep -n -a -i -F -f "$T/listbare" -- "$T/textbare" > "$T/raw" || rc=$?; [ "$rc" -le 1 ] || die "grep failed (exit $rc)"
+  cut -d: -f1 "$T/raw" >> "$T/hitlines"; rm -f "$T/raw" "$T/textbare"
+fi
 rc=0; grep -n -a -i -F -e "$ALLOW" -- "$TEXT" > "$T/raw" || rc=$?; [ "$rc" -le 1 ] || die "grep failed (exit $rc)"
 cut -d: -f1 "$T/raw" > "$T/allowlines"; rm -f "$T/raw"
 
@@ -253,12 +331,28 @@ withhold() { # withhold <tsv file>: column 3 (a path) replaced where it matches 
   cut -f3 "$1" > "$T/wp"
   rc=0; grep -n -a -i -F -f "$LIST" -- "$T/wp" > "$T/raw" || rc=$?; [ "$rc" -le 1 ] || die "grep failed (exit $rc)"
   cut -d: -f1 "$T/raw" > "$T/wl"; rm -f "$T/raw"
+  if [ -s "$T/listbare" ]; then
+    LC_ALL=C sed -e 's/%[0-9A-Fa-f][0-9A-Fa-f]//g' -e 's/[^A-Za-z0-9]//g' "$T/wp" > "$T/wpbare"
+    rc=0; grep -n -a -i -F -f "$T/listbare" -- "$T/wpbare" > "$T/raw" || rc=$?; [ "$rc" -le 1 ] || die "grep failed (exit $rc)"
+    cut -d: -f1 "$T/raw" >> "$T/wl"; rm -f "$T/raw" "$T/wpbare"
+  fi
   awk -F'\t' -v OFS='\t' 'FILENAME == ARGV[1] { w[$1] = 1; next } { if (FNR in w) $3 = "(a path that matches the list, withheld)"; print }' "$T/wl" "$1"
 }
 fmt() { # one finding per line: commit, what, path:line
   awk -F'\t' '{ s = ($1 == "" ? "pull request" : $1) ": " $2; if ($3 != "") s = s " " $3 ($4 != "" ? ":" $4 : ""); print "FINDING " s }'
 }
 withhold "$WHERE" > "$T/where.safe"
+# base64 runs on the scanned lines: one that decodes to a list match is a finding; one that decodes to a compressed
+# file (an embedded image, say) joins the compressed files below, for a reviewer's OK
+python3 -I "$H" b64 "$LIST" "$T/listbare" "$TEXT" > "$T/b64"
+touch "$T/binhits" "$T/compressed"
+awk -F'\t' -v OFS='\t' -v bin="$T/binhits" -v comp="$T/compressed" '
+  FILENAME == ARGV[1] { k[$1] = (k[$1] == "" ? $2 : k[$1] "\n" $2); next }
+  FNR in k { on = ($2 == "added line" ? "an added line" : $2); n = split(k[FNR], ks, "\n")
+    for (i = 1; i <= n; i++) {
+      if (ks[i] == "hit") print $1, "base64 on " on ", holding a list match", $3, $4 >> bin
+      else { sub(/^compressed /, "", ks[i]); print $1, "base64 on " on ", decoding to a compressed file (" ks[i] ")", $3, $4 >> comp } } }' \
+  "$T/b64" "$T/where.safe"
 awk 'FILENAME == ARGV[1] { h[$1] = 1; next } FNR in h' "$T/hitlines" "$T/where.safe" | fmt > "$T/out.list"
 awk -F'\t' 'FILENAME == ARGV[1] { h[$1] = 1; next } (FNR in h) && $2 == "added line"' "$T/allowlines" "$T/where.safe" \
   | awk -F'\t' -v OFS='\t' '{ $2 = "added line with a gitleaks allow marker"; print }' | fmt > "$T/out.allow"
@@ -277,22 +371,38 @@ fi
 
 # gitleaks over the new commits' patches, default rules only, findings redacted, its own output never shown
 printf '[extend]\nuseDefault = true\n' > "$T/gitleaks.toml"; : > "$T/gitleaksignore"
-: > "$T/out.gl"; glcount=0
+: > "$T/out.gl"; : > "$T/glhits"
 if [ "$n" -gt 0 ]; then
   rc=0
   # the source is an empty folder whose .git file points at this repository: gitleaks finds no .gitleaksignore or
   # .gitleaks.toml there (8.28 loads the source's .gitleaksignore whatever --gitleaks-ignore-path says, G2)
   mkdir "$T/glsrc"; printf 'gitdir: %s\n' "$(git rev-parse --absolute-git-dir)" > "$T/glsrc/.git"
   "$GITLEAKS" git --no-banner --redact --exit-code 0 --log-level error --config "$T/gitleaks.toml" \
-    --gitleaks-ignore-path "$T/gitleaksignore" --report-format json --report-path "$T/gl.json" \
+    --gitleaks-ignore-path "$T/gitleaksignore" --ignore-gitleaks-allow --max-decode-depth 2 \
+    --report-format json --report-path "$T/gl.json" \
     --log-opts "--diff-merges=first-parent $head --not $base $*" "$T/glsrc" > "$T/gl.log" 2>&1 || rc=$?
   [ "$rc" -eq 0 ] || die "gitleaks failed (exit $rc; its output is not shown): fails closed"
   jq -e 'type == "array"' "$T/gl.json" > /dev/null 2>&1 || die "gitleaks wrote no readable report: fails closed"
   jq -r '.[] | [(.Commit // "" | .[0:12]), ("gitleaks rule " + (.RuleID // "?")), (.File // ""), ((.StartLine // "") | tostring)] | @tsv' \
     "$T/gl.json" > "$T/glhits"
-  glcount=$(wc -l < "$T/glhits")
-  [ "$glcount" -eq 0 ] || withhold "$T/glhits" | fmt > "$T/out.gl"
 fi
+# the second run reads what the git run cannot: the messages, the pull request's text, ZIP members and every file
+# read whole (binary or compressed; gitleaks opens archives itself), from the scan's own folder of numbered copies
+rc=0
+"$GITLEAKS" dir --no-banner --redact --exit-code 0 --log-level error --config "$T/gitleaks.toml" \
+  --gitleaks-ignore-path "$T/gitleaksignore" --ignore-gitleaks-allow --max-decode-depth 2 --max-archive-depth 3 \
+  --report-format json --report-path "$T/gld.json" "$WHOLE" > "$T/gld.log" 2>&1 || rc=$?
+[ "$rc" -eq 0 ] || die "gitleaks failed (exit $rc; its output is not shown): fails closed"
+jq -e 'type == "array"' "$T/gld.json" > /dev/null 2>&1 || die "gitleaks wrote no readable report: fails closed"
+# a finding's File is its copy's number in the folder (an archive member's after a "!"); whole.idx gives its place
+jq -r --arg w "$WHOLE/" '.[] | [((.File // "") | ltrimstr($w) | split("!")[0] | split("/")[0]), (.RuleID // "?"),
+    ((.StartLine // "") | tostring)] | @tsv' "$T/gld.json" \
+  | awk -F'\t' -v OFS='\t' 'FILENAME == ARGV[1] { c[FNR] = $1; w[FNR] = $2; p[FNR] = $3; next }
+      { n = $1 + 0; what = "gitleaks rule " $2 " " (n in w ? w[n] : "in a file of the scan"); ln = $3
+        if (p[n] == "" && ln != "") { what = what ":" ln; ln = "" }
+        print c[n], what, p[n], ln }' "$T/whole.idx" - >> "$T/glhits"
+glcount=$(wc -l < "$T/glhits")
+[ "$glcount" -eq 0 ] || withhold "$T/glhits" | fmt > "$T/out.gl"
 
 cat "$T/out.list" "$T/out.bin" "$T/out.allow" "$T/out.gl" "$T/out.comp" "$T/out.reviewed"
 total=$(cat "$T/out.list" "$T/out.bin" "$T/out.allow" "$T/out.gl" "$T/out.comp" | wc -l)
