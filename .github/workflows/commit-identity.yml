@@ -3,6 +3,7 @@ name: Commit identity
 # Every commit of a pull request to staging or main carries the owner's noreply address as author and committer, and no
 # `Claude-Session:` line, except that a merge made on GitHub may carry GitHub's committer address; commits already on
 # staging or main are not checked again. Fails the PR otherwise. No secret is used; the script and its test run here.
+# The second job runs the privacy scan's own tests, with no secret; the scan itself is privacy-scan.yml.
 
 on:
   pull_request:                      # never pull_request_target
@@ -47,3 +48,33 @@ jobs:
           STAGING=$(git rev-parse --verify origin/staging^{commit})
           MAIN=$(git rev-parse --verify origin/main^{commit})
           bash .github/scripts/check-commit-identity.sh "$BASE" "$HEAD" "$STAGING" "$MAIN"
+
+  # The privacy scan's own tests: a seeded list and a seeded key, the real gitleaks included. No secret; the scan
+  # itself, which holds the identifier list, is privacy-scan.yml (pull_request_target, main's code only).
+  privacy-scan-tests:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: gitleaks, pinned by version and digest
+        env:
+          GL_VERSION: 8.28.0
+          GL_SHA256: a65b5253807a68ac0cafa4414031fd740aeb55f54fb7e55f386acb52e6a840eb
+        run: |
+          mkdir -p "$RUNNER_TEMP/gitleaks"
+          cd "$RUNNER_TEMP/gitleaks"
+          curl -fsSL --retry 3 -o gl.tar.gz "https://github.com/gitleaks/gitleaks/releases/download/v${GL_VERSION}/gitleaks_${GL_VERSION}_linux_x64.tar.gz"
+          echo "$GL_SHA256  gl.tar.gz" | sha256sum -c --quiet
+          tar -xzf gl.tar.gz gitleaks
+          ./gitleaks version
+
+      - name: The scan's own tests (a seeded list and a seeded key; the real gitleaks included)
+        env:
+          GITLEAKS_REAL: ${{ runner.temp }}/gitleaks/gitleaks
+        run: bash .github/scripts/test-privacy-scan.sh
