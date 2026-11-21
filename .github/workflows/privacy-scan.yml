@@ -1,24 +1,26 @@
 name: Privacy scan
 
-# The privacy scan (A4; Q179): each pull request's new commits and its text against the identifier list and gitleaks,
-# printing counts and places only, never a match (.github/scripts/privacy-scan.sh).
+# The privacy scan: each pull request's new commits and its text against the identifier list and gitleaks, printing
+# counts and places only, never a match (.github/scripts/privacy-scan.sh).
 #
-# The list is the PRIVACY_IDENTIFIERS secret of the environment privacy-scan, whose deployment branches are staging and
-# main only. A job gets an environment's secrets only when its run's ref is one of those branches, so:
-# - a pull_request run (ref refs/pull/N/merge) never gets the list, so a PR's own edited copy of this workflow or of
-#   the script cannot read it;
-# - an on: push or workflow_dispatch workflow added on any other branch never gets it either.
-# This job runs on pull_request_target: GitHub takes this workflow from the base branch (staging or main) and the run's
-# ref is that branch, so the environment admits it. Nothing of the pull request runs here: there is no checkout; the
-# PR head is fetched as git objects only (no working tree), the script is taken from the base commit this workflow
-# came from (GITHUB_SHA), and the scan only reads those objects. A fork's pull request fails in the first step, before
-# the list is read, so a fork cannot use the scan to test guesses against the list.
+# The list is the PRIVACY_IDENTIFIERS secret of the environment privacy-scan, whose only deployment branch is main
+# (the default branch). GitHub gives a job an environment's secrets only when the run's ref passes that rule, so:
+# - a pull_request run (ref refs/pull/N/merge) never gets the list: a PR's own edited copy of this workflow, of the
+#   script or of any other workflow cannot read it;
+# - a workflow added on any other branch (on: push, workflow_dispatch, a tag) runs under that branch's or tag's ref
+#   and never gets it either; only a workflow file already on main can name the environment and pass.
+# This job runs on pull_request_target. GitHub takes a pull_request_target workflow from the default branch, whatever
+# the PR's base (staging or main), and the run's ref and GITHUB_SHA are main's tip, so the environment admits it and
+# the code that runs is main's, reviewed and merged. Nothing of the pull request runs here: there is no checkout; the
+# PR head is fetched as git objects only (no working tree); the script is taken from GITHUB_SHA; the scan only reads
+# those objects. A fork's pull request fails in the first step, before the list is read, so a fork cannot use the
+# scan to test guesses against the list. The copy of this file on staging never runs (it keeps the twins equal).
 #
 # No `uses:` here, so this workflow needs no actions.lock entry and runs no third-party code with the secret.
 
 on:
-  pull_request_target:               # only for this job (Q179): base-branch code only, see above
-    types: [opened, synchronize, reopened, edited, ready_for_review, labeled]   # labeled: a reviewer's OK (Q180)
+  pull_request_target:               # the one such workflow: main's code only, see above
+    types: [opened, synchronize, reopened, edited, ready_for_review, labeled]   # labeled: a reviewer's OK for a compressed file
     branches: [staging, main]
 
 permissions: {}

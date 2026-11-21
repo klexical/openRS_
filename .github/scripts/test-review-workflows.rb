@@ -1,8 +1,8 @@
 #!/usr/bin/env ruby
 # test-review-workflows.rb [<workflows dir>] — pins the shape of claude-review.yml and commit-identity.yml:
 # pull_request only, never pull_request_target; every job skips a fork's branch; the least permissions; the
-# subscription token, never an API key; the reviewer holds no write tool. Also privacy-scan.yml (Q179), the one
-# pull_request_target workflow: base-branch code only, no checkout, the list from the environment in one step only.
+# subscription token, never an API key; the reviewer holds no write tool. Also privacy-scan.yml, the one
+# pull_request_target workflow: main's code only, no checkout, the list from the environment in one step only.
 # Exit 0 when every check passes.
 require "yaml"
 dir = ARGV[0] || File.join(__dir__, "..", "workflows")
@@ -139,10 +139,10 @@ probe = "SHAPEPROBE-x_1"
          "the shape step prints exactly \"#{LINES[want]}\" for a token #{val.inspect.sub("SHAPEPROBE", "…")}, and exits 0")
 end
 
-# The privacy scan (A4, Q179). Its tests: a pull_request job in commit-identity.yml with no secret. The scan:
-# privacy-scan.yml on pull_request_target, so the workflow and the script come from the base branch; it runs nothing of
+# The privacy scan. Its tests: a pull_request job in commit-identity.yml with no secret. The scan:
+# privacy-scan.yml on pull_request_target, so the workflow and the script come from main (the default branch); it runs nothing of
 # the PR (no `uses:`, no checkout, the head fetched as objects); the list comes from the environment privacy-scan
-# (deployment branches staging and main only) and reaches one step only, through env.
+# (deployment branch main only) and reaches one step only, through env.
 tj = load_wf.("commit-identity.yml")["jobs"]["privacy-scan-tests"] || {}
 tss = tj["steps"] || []
 tst = tss.find { |s| s["run"].to_s.strip == "bash .github/scripts/test-privacy-scan.sh" }
@@ -171,7 +171,7 @@ fr = fetch["run"].to_s
 check.(fr.include?('"+refs/pull/$PR/head:refs/remotes/pr/head"') && fr.include?('[ "$(git rev-parse refs/remotes/pr/head)" = "$HEAD" ]') &&
        fr.include?('git show "$GITHUB_SHA:.github/scripts/privacy-scan.sh" > "$RUNNER_TEMP/privacy-scan.sh"') &&
        !fr.match?(/git (checkout|switch|worktree|reset)|read-tree/),
-       "privacy-scan: the PR head is fetched as objects and checked, never checked out; the script comes from the base commit")
+       "privacy-scan: the PR head is fetched as objects and checked, never checked out; the script comes from the run's own commit (main's)")
 PSEC = "${{ secrets.PRIVACY_IDENTIFIERS }}"
 holders = pss.select { |s| s.to_s.include?("secrets.") }
 check.(holders.size == 1 && holders.first.equal?(pss.last) && holders.first["env"]&.dig("PRIVACY_IDENTIFIERS") == PSEC &&
@@ -186,7 +186,7 @@ check.(glstep && tss.find { |s| s["run"].to_s.include?("sha256sum -c") }&.dig("e
 last = pss.last || {}
 check.(last["run"].to_s =~ /bash "\$RUNNER_TEMP\/privacy-scan\.sh" "\$BASE" "\$HEAD" "\$STAGING" "\$MAIN"/ &&
        !last["run"].to_s.include?("bash .github/") && last["env"]&.keys&.sort == %w[BASE GITLEAKS HEAD PRIVACY_IDENTIFIERS],
-       "privacy-scan: runs the base commit's script on the new commits; env holds the list, gitleaks and the two SHAs only")
+       "privacy-scan: runs the run's own commit's script on the new commits; env holds the list, gitleaks and the two SHAs only")
 check.(%w[pull_request.title pull_request.body pull_request.head.ref label.name].none? { |k| ps.to_s.include?(k) },
        "privacy-scan: the PR's title, body, branch name and labels never pass through env or ${{ }} (the script reads the event file)")
 
