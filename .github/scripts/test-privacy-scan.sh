@@ -530,6 +530,19 @@ grep -q '; pull request [0-9]' "$OUT" && { fail=$((fail+1)); echo "FAIL the hist
 repo; put g.txt 'clean\n'; commit "clean"; hist "$(sha main)"
 expect 0 "a clean history passes with no event file" $? "; history of 1 tip(s); ok label needed no;"
 hist; expect 2 "the history scan needs a tip" $? "usage: privacy-scan.sh"
+# --places: the finding lines too, for a project session's own run; never in a workflow (GITHUB_ACTIONS set)
+repo; put f.txt "one\n$ID1 two\n"; commit "on main"; m1=$(c12)
+(cd "$T/r" && unset GITHUB_EVENT_PATH GITHUB_ACTIONS && PRIVACY_IDENTIFIERS=$LISTV GITLEAKS=$STUB bash "$SCAN" --history --places "$(sha main)") > "$OUT" 2>&1
+expect 1 "the history scan with --places prints where each hit is" $? "FINDING $m1: added line f.txt:2" \
+  "privacy history scan: identifier matches 1 on scanned lines" "; history of 1 tip(s); ok label needed no; identifier matches 1"
+for ga in true ""; do
+  (cd "$T/r" && unset GITHUB_EVENT_PATH && GITHUB_ACTIONS=$ga PRIVACY_IDENTIFIERS=$LISTV GITLEAKS=$STUB bash "$SCAN" --history --places "$(sha main)") > "$OUT" 2>&1
+  expect 2 "--places refuses to run while GITHUB_ACTIONS is set (to \"$ga\")" $? "--places never runs in a workflow"
+  grep -q -e FINDING -e f.txt "$OUT" && { fail=$((fail+1)); echo "FAIL --places in a workflow printed a place"; } \
+    || { pass=$((pass+1)); echo "PASS --places in a workflow prints no place"; }
+done
+(cd "$T/r" && unset GITHUB_ACTIONS && PRIVACY_IDENTIFIERS=$LISTV GITLEAKS=$STUB bash "$SCAN" --places "$(sha main)" "$(sha HEAD)") > "$OUT" 2>&1
+expect 2 "--places is for --history only" $? "--places is for --history only"
 hist main; expect 2 "the history scan takes SHAs only" $? "every argument a 40-hex SHA"
 
 # ── gitleaks, stubbed: what it is given, and what of its report is printed ──────────────────────────────────────────
