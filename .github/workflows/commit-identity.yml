@@ -50,7 +50,7 @@ jobs:
           bash .github/scripts/check-commit-identity.sh "$BASE" "$HEAD" "$STAGING" "$MAIN"
 
   # The privacy scan's own tests: a seeded list and a seeded key, the real gitleaks included. No secret; the scan
-  # itself, which holds the identifier list, is privacy-scan.yml (pull_request_target, base-branch code only, Q179).
+  # itself, which holds the identifier list, is privacy-scan.yml (pull_request_target, main's code only).
   privacy-scan-tests:
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
