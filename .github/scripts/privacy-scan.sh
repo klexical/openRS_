@@ -89,14 +89,12 @@ echo "identifier list: $entries entr(y/ies)"
 # compression formats, and base64 runs. It is written to the scan's own folder and run isolated (-I).
 H=$T/helper.py
 cat > "$H" <<'PY'
-import base64, bz2, gzip, html, lzma, re, sys, urllib.parse, zipfile, zlib
+import re, sys
 
 MAGIC = [(b"PK\x03\x04", "zip"), (b"PK\x05\x06", "zip"), (b"PK\x07\x08", "zip"), (b"\x1f\x8b", "gzip"),
          (b"\x89PNG", "PNG"), (b"BZh", "bzip2"), (b"\xfd7zXZ\x00", "xz"), (b"\x28\xb5\x2f\xfd", "zstd"),
          (b"7z\xbc\xaf\x27\x1c", "7z"), (b"Rar!", "RAR"), (b"\xff\xd8\xff", "JPEG"), (b"GIF8", "GIF"),
          (b"%PDF", "PDF"), (b"LZIP", "lzip"), (b"\x04\x22\x4d\x18", "LZ4")]
-EXT = {"zip": ".zip", "gzip": ".gz", "bzip2": ".bz2", "xz": ".xz", "zstd": ".zst", "7z": ".7z", "RAR": ".rar",
-       "tar": ".tar"}
 
 def kind(data):
     if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
@@ -246,15 +244,21 @@ def unpack(d):
     return None
 
 cmd = sys.argv[1]
+# the other modules only where they are used: classify runs once per file, and its start-up time is most of the run
+if cmd not in ("classify", "kind", "texts"):
+    import base64, bz2, gzip, html, lzma, urllib.parse, zipfile, zlib
 if cmd == "expand":
     expand(sys.argv[2], sys.argv[3])
-elif cmd == "classify":   # classify <file>: "<kind or ->\t<binary 0/1>\t<a ZIP Python can open 0/1>"
-    data = open(sys.argv[2], "rb").read()
-    print(f"{kind(data) or '-'}\t{int(is_binary(data))}\t{int(zipfile.is_zipfile(sys.argv[2]))}")
+elif cmd == "classify":   # classify <file>...: per file, "<kind or ->\t<binary 0/1>\t<a ZIP Python can open 0/1>"
+    for f in sys.argv[2:]:
+        data = open(f, "rb").read()
+        zipok = False
+        if b"PK\x05\x06" in data:   # is_zipfile needs this end record somewhere; most files skip the zipfile import
+            import zipfile
+            zipok = zipfile.is_zipfile(f)
+        print(f"{kind(data) or '-'}\t{int(is_binary(data))}\t{int(zipok)}")
 elif cmd == "kind":
     print(kind(open(sys.argv[2], "rb").read(512)))
-elif cmd == "ext":        # ext <kind>: the extension gitleaks needs to open an archive of that kind
-    print(EXT.get(sys.argv[2], ""))
 elif cmd == "texts":      # texts <file> <out>: its UTF-16 / UTF-32 readings, if any, for gitleaks
     t = decoded_texts(open(sys.argv[2], "rb").read())
     if t:
@@ -291,7 +295,9 @@ add() { printf '%s\n' "$4" >> "$TEXT"; printf '%s\t%s\t%s\t%s\n' "$1" "$2" "$3" 
 ALLOW=gitleaks; ALLOW="$ALLOW:allow"         # gitleaks' inline marker, spelled so this file does not carry it
 
 # in_binpaths <path>: git judged the path binary on either side of this commit
-in_binpaths() { python3 -I -c 'import sys; sys.exit(0 if sys.argv[1].encode("utf-8", "surrogateescape") in open(sys.argv[2], "rb").read().split(b"\0") else 1)' "$1" "$T/binpaths"; }
+# (BINPATHS is filled once per commit, from --numstat)
+declare -A BINPATHS
+in_binpaths() { [ -n "${BINPATHS["$1"]+x}" ]; }
 # blob_hits <file>: 1 when a file read whole holds one of the list's matches: as bytes (UTF-8 and ASCII), as UTF-16 or
 # UTF-32 in either byte order at every alignment, or a MAC or VIN with any separator; 0 otherwise, never what matched
 blob_hits() {
@@ -300,15 +306,20 @@ blob_hits() {
 }
 # classify <file>: sets kind (the format its first bytes name, or nothing), binary (1: a NUL anywhere, or not UTF-8)
 # and zipok (1: Python opens it as a ZIP, a ZIP after a prefix included)
-classify() { local r; r=$(python3 -I "$H" classify "$1"); IFS=$'\t' read -r kind binary zipok <<< "$r"; [ "$kind" != - ] || kind=""; }
+classify() { local r; r=$(python3 -I "$H" classify "$1"); setclass "$r"; }
+setclass() { IFS=$'\t' read -r kind binary zipok <<< "$1"; [ "$kind" != - ] || kind=""; }
 # keep <file> <c12> <what> <path> [<kind>]: a numbered copy for the second gitleaks run, which reads files whole;
 # whole.idx's line N says where copy N came from. An archive's copy is named with its kind's extension, since
 # gitleaks opens archives by name, and a file with NULs also gets its UTF-16 / UTF-32 reading as text
 WHOLE=$T/whole; mkdir "$WHOLE"; : > "$T/whole.idx"; nw=0
 keep() {
-  local ext=""; [ -z "${5:-}" ] || ext=$(python3 -I "$H" ext "$5")
+  local ext=""
+  case "${5:-}" in zip) ext=.zip ;; gzip) ext=.gz ;; bzip2) ext=.bz2 ;; xz) ext=.xz ;; zstd) ext=.zst ;; 7z) ext=.7z ;;
+    RAR) ext=.rar ;; tar) ext=.tar ;; esac     # the names gitleaks opens as archives
   nw=$((nw+1)); cp "$1" "$WHOLE/$nw$ext"; printf '%s\t%s\t%s\n' "$2" "$3" "$4" >> "$T/whole.idx"
-  rm -f "$T/texts"; python3 -I "$H" texts "$1" "$T/texts"
+  rm -f "$T/texts"
+  # UTF-16 / UTF-32 readings exist only for a file with a NUL; the helper starts only then
+  [ "$(tr -cd '\000' < "$1" | head -c 1 | wc -c)" -eq 0 ] || python3 -I "$H" texts "$1" "$T/texts"
   if [ -s "$T/texts" ]; then nw=$((nw+1)); cp "$T/texts" "$WHOLE/$nw"; printf '%s\t%s\t%s\n' "$2" "$3" "$4" >> "$T/whole.idx"; fi
 }
 # scan_zip <c12> <path> <file>: each member's name and content against the list (by number, never by name); a member
@@ -405,24 +416,35 @@ for c in $commits; do
             if (pre == substr(plus, 1, np)) { print substr($0, np + 1) >> text; printf "%s\tadded line\t%s\t%d\n", c, path, ln >> where }
             ln++ } }'
   # git's own binary decision, against each parent (--root: a commit with none): "-" "-" in --numstat
-  : > "$T/binpaths"
+  BINPATHS=()
   parents=$(git log -1 --format=%P "$c")
   for pp in ${parents:-ROOT}; do
-    if [ "$pp" = ROOT ]; then git diff-tree --numstat -z --no-renames --root -r "$c"; else git diff-tree --numstat -z --no-renames -r "$pp" "$c"; fi \
-      | python3 -I -c 'import sys
-d = sys.stdin.buffer.read().split(b"\0")
-for r in d:
-    if r.startswith(b"-\t-\t"): sys.stdout.buffer.write(r[4:] + b"\0")' >> "$T/binpaths"
+    if [ "$pp" = ROOT ]; then git diff-tree --numstat -z --no-renames --root -r "$c"; else git diff-tree --numstat -z --no-renames -r "$pp" "$c"; fi > "$T/numstat"
+    while IFS= read -r -d '' r; do
+      case "$r" in $'-\t-\t'*) BINPATHS["${r:4}"]=1 ;; esac
+    done < "$T/numstat"
   done
   # each file the commit adds or changes: a ZIP is unpacked and each member scanned; any other compressed file is
   # listed for a reviewer's OK; a binary file's whole content is counted against the list, never printed
+  # first each blob is written out, then the helper classifies them all in one start-up, then each is scanned
+  rm -rf "$T/b"; mkdir "$T/b"; BPATHS=()
   while IFS= read -r -d '' p; do
-    sp=${p//[$'\t\n']/ }
     case "/$p" in */.gitleaksignore|*/.gitleaks.toml)
-      printf '%s\ta change to a gitleaks ignore or config file\t%s\t\n' "$c12" "$sp" >> "$T/glctl" ;; esac
+      printf '%s\ta change to a gitleaks ignore or config file\t%s\t\n' "$c12" "${p//[$'\t\n']/ }" >> "$T/glctl" ;; esac
     [ "$(git cat-file -t "$c:$p" 2>/dev/null)" = blob ] || continue
-    git cat-file blob "$c:$p" > "$T/blob"
-    classify "$T/blob"
+    git cat-file blob "$c:$p" > "$T/b/${#BPATHS[@]}"; BPATHS+=("$p")
+  done < "$T/paths.z"
+  CLASSES=()
+  if [ "${#BPATHS[@]}" -gt 0 ]; then
+    BFILES=(); for i in "${!BPATHS[@]}"; do BFILES+=("$T/b/$i"); done
+    python3 -I "$H" classify "${BFILES[@]}" > "$T/classes"
+    mapfile -t CLASSES < "$T/classes"
+    [ "${#CLASSES[@]}" -eq "${#BPATHS[@]}" ] || die "internal: the helper classified ${#CLASSES[@]} of ${#BPATHS[@]} files"
+  fi
+  for i in "${!BPATHS[@]}"; do
+    p=${BPATHS[$i]}; sp=${p//[$'\t\n']/ }
+    mv "$T/b/$i" "$T/blob"
+    setclass "${CLASSES[$i]}"
     # a Git LFS pointer: the file it stands for goes to LFS storage, never into these git objects, so nothing here
     # can read it; it waits for a reviewer's OK like a compressed file
     if [ "$(head -c 40 "$T/blob" | tr -d '\000')" = "version https://git-lfs.github.com/spec/" ]; then
@@ -449,7 +471,8 @@ for r in d:
     keep "$T/blob" "$c12" "in a file read whole" "$sp" "$kind"
     hit=$(blob_hits "$T/blob")
     [ "$hit" -eq 0 ] || printf '%s\tbinary content\t%s\t\n' "$c12" "$sp" >> "$T/binhits"
-  done < "$T/paths.z"
+  done
+  rm -rf "$T/b"
 done
 add "" "pull request title" "" "$(jq -r '.pull_request.title // ""' "$GITHUB_EVENT_PATH" | tr '\n' ' ')"
 add "" "pull request branch name" "" "$(jq -r '.pull_request.head.ref // ""' "$GITHUB_EVENT_PATH" | tr '\n' ' ')"
