@@ -35,5 +35,5 @@ export function haversine(lat1: number, lon1: number, lat2: number, lon2: number
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }
 
-/** A position the app recorded: the import stores a point without one at 0/0 (QA's FINAL on delivery A, R2). */
+/** A position the app recorded: the import stores a point without one at 0/0, so 0/0 is no position (#416). */
 export const hasPosition = (p: { lat: number; lng: number }) => p.lat !== 0 || p.lng !== 0
