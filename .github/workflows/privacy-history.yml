@@ -4,9 +4,10 @@ name: Privacy history scan
 # identifier list and gitleaks, with .github/scripts/privacy-scan.sh --history. Its log is public and the history it
 # reads is kept, so --history prints counts by kind only: no commit, path or line, and never a match. For the places,
 # a project session runs the same script with --history --places in its own container, with no identifier list (no
-# project session gets it, owner decision Q196), so it places the gitleaks hits only, and reports them only inside the
-# project. If this run's identifier count is not zero, the owner runs --places once with the list. --places refuses to
-# run where GITHUB_ACTIONS is set, so this workflow can never print places.
+# project session gets it, owner decision Q197), so it places the gitleaks hits only, by commit, rule and line with
+# every path withheld, and reports them only inside the project. If this run's identifier count is not zero, the owner
+# runs --places once with the list. --places refuses to run where GITHUB_ACTIONS is set, so this workflow can never
+# print places.
 #
 # By hand only ("Run workflow"), on main, and only by the owner: the list is the PRIVACY_IDENTIFIERS secret of the
 # environment privacy-scan, whose only deployment branch is main, so a run on any other ref gets no list (and fails in

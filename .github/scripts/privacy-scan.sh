@@ -7,8 +7,9 @@
 # never a commit, path or line: that run's log is public and the history it reads is kept.
 # privacy-scan.sh --history --places <tip sha>... — the same, also printing where each hit is, for a project session's
 # own run whose output stays in the project; it refuses to run when GITHUB_ACTIONS is set, so no workflow prints places.
-# With no list (no project session gets it, owner decision Q196) it places the gitleaks hits only and does not check
-# identifiers; with the list (the owner's own run) it places every hit.
+# With no list (no project session gets it, owner decision Q197) it places the gitleaks hits only, by commit, rule and
+# line with every path withheld, and does not check identifiers; with the list (the owner's own run) it places every
+# hit.
 #
 # Reads from the environment:
 #   PRIVACY_IDENTIFIERS  the identifier list (the privacy-scan environment's secret of that name): one literal per
@@ -597,6 +598,10 @@ cut -d: -f1 "$T/raw" > "$T/allowlines"; rm -f "$T/raw"
 
 # a path that itself matches the list is never printed
 withhold() { # withhold <tsv file>: column 3 (a path) replaced where it matches the list
+  # with no list (--places only) no path can be checked, so every path is withheld: commit, rule and line remain
+  if [ "$NOLIST" = 1 ]; then
+    awk -F'\t' -v OFS='\t' '{ if ($3 != "") $3 = "(a path, not shown: no list to check it against)"; print }' "$1"; return
+  fi
   cut -f3 "$1" > "$T/wp"
   rc=0; grep -n -a -i -F -f "$LIST" -- "$T/wp" > "$T/raw" || rc=$?; [ "$rc" -le 1 ] || die "grep failed (exit $rc)"
   cut -d: -f1 "$T/raw" > "$T/wl"; rm -f "$T/raw"
