@@ -7,6 +7,7 @@ import org.junit.Test
 class RingBufferTest {
 
     // ── Empty state ─────────────────────────────────────────────────────────
+    // Throwaway: tests where the privacy-scan check lands. Not for merging.
 
     @Test
     fun `empty buffer returns empty list`() {
