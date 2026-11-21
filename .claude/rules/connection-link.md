@@ -111,6 +111,8 @@ paths:
     decoding to Normal / Off / Sport counts (raw 3 does not advance `esc_frames`). `firmware/tests/run.sh` runs the real
     `focusrs.c` against host stubs (`tests/stubs/`). Firmware detection ≠ control capability.
   - The label is not to be relied on in a car until #125's hardware acceptance (the raw 0x1C0 run read from an export).
+- **ESC command while the state is unknown (#288)** — `EscCommand` sends nothing (Outcome.Refused) for an unknown target or
+  while the car's ESC state is unknown: no 0x1C0 on this connection, or raw 3. GARAGE disables its ESC chips then.
 - **Drive-mode confirmation (#252)** — the adapter's OK is "ACCEPTED".
   - `executeDriveModeChange` confirms only from CAN observed AFTER the request on the same link generation: two agreeing
     resolved 0x1B0 reports (stamp `driveMode`), and for Sport / Track also two agreeing documented 0x420 details
