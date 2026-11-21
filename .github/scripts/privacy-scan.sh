@@ -275,8 +275,20 @@ elif cmd == "texts":      # texts <file> <out>: its UTF-16 / UTF-32 readings, if
     t = decoded_texts(open(sys.argv[2], "rb").read())
     if t:
         open(sys.argv[3], "w", encoding="utf-8", errors="replace").write("\n".join(t))
-elif cmd == "blob":       # blob <list> <bare list> <file>: 1 when the file holds a match, else 0; never what matched
-    print(1 if hits(open(sys.argv[4], "rb").read(), entries(sys.argv[2]), entries(sys.argv[3])) else 0)
+elif cmd == "blob":       # blob <list> <bare list> <file>: "<1 when the file holds a match, else 0>\t<the kind of a
+    # compressed file a base64 run in it decodes to, or ->"; base64 is decoded as on a scanned line; never what matched
+    ents, bares = entries(sys.argv[2]), entries(sys.argv[3])
+    hit, comp = hits(open(sys.argv[4], "rb").read(), ents, bares), ""
+    for n, run in b64runs(sys.argv[4]):
+        for d in decodings(run):
+            u = unpack(d)
+            comp = comp or (u[0] if u else (kind(d) if len(d) >= 32 else ""))
+            hit = hit or hits(d, ents, bares) or bool(u and hits(u[1], ents, bares))
+            if hit and comp:
+                break
+        if hit and comp:
+            break
+    print(f"{int(hit)}\t{comp or '-'}")
 elif cmd == "bare":       # bare <in> <out>: each line in letters-and-digits-only form, line for line
     with open(sys.argv[3], "w", encoding="utf-8") as out:
         for line in open(sys.argv[2], "rb").read().split(b"\n")[:-1]:
@@ -310,11 +322,15 @@ ALLOW=gitleaks; ALLOW="$ALLOW:allow"         # gitleaks' inline marker, spelled 
 # (BINPATHS is filled once per commit, from --numstat)
 declare -A BINPATHS
 in_binpaths() { [ -n "${BINPATHS["$1"]+x}" ]; }
-# blob_hits <file>: 1 when a file read whole holds one of the list's matches: as bytes (UTF-8 and ASCII), as UTF-16 or
-# UTF-32 in either byte order at every alignment, or a MAC or VIN with any separator; 0 otherwise, never what matched
+# blob_hits <file>: sets hit (1 when a file read whole holds one of the list's matches: as bytes (UTF-8 and ASCII), as
+# UTF-16 or UTF-32 in either byte order at every alignment, a MAC or VIN with any separator, or inside a base64 run;
+# 0 otherwise, never what matched) and b64comp (the kind of a compressed file a base64 run in it decodes to, or empty)
 blob_hits() {
-  local h; h=$({ grep -c -a -i -F -f "$LIST" "$1" || true; })
-  if [ "$h" -gt 0 ]; then echo 1; else python3 -I "$H" blob "$LIST" "$T/listbare" "$1"; fi
+  local h r; h=$({ grep -c -a -i -F -f "$LIST" "$1" || true; })
+  if [ "$h" -gt 0 ]; then hit=1; b64comp=""; return; fi
+  r=$(python3 -I "$H" blob "$LIST" "$T/listbare" "$1"); IFS=$'\t' read -r hit b64comp <<< "$r"
+  [ "$b64comp" != - ] || b64comp=""
+  [[ $hit =~ ^[01]$ ]] || die "internal: the helper's blob answer is unreadable"
 }
 # classify <file>: sets kind (the format its first bytes name, or nothing), binary (1: a NUL anywhere, or not UTF-8)
 # and zipok (1: Python opens it as a ZIP, a ZIP after a prefix included)
@@ -380,8 +396,9 @@ PY
     keep "$d/$idx" "$c12" "in ZIP member #$idx" "$sp" "$kind"
     if [ -n "$kind" ]; then printf '%s\tcompressed ZIP member #%s (%s)\t%s\t\n' "$c12" "$idx" "$kind" "$sp" >> "$T/compressed"
     elif [ "$binary" = 1 ]; then printf '%s\tbinary ZIP member #%s, which may hold compressed data\t%s\t\n' "$c12" "$idx" "$sp" >> "$T/compressed"; fi
-    hit=$(blob_hits "$d/$idx")
+    blob_hits "$d/$idx"
     [ "$hit" -eq 0 ] || printf '%s\tZIP member #%s content\t%s\t\n' "$c12" "$idx" "$sp" >> "$T/binhits"
+    [ -z "$b64comp" ] || printf '%s\tbase64 in ZIP member #%s, decoding to a compressed file (%s)\t%s\t\n' "$c12" "$idx" "$b64comp" "$sp" >> "$T/compressed"
   done < "$d/index"
   rm -rf "$d"
 }
@@ -405,7 +422,7 @@ for c in $commits; do
   [ -z "$(tail -c1 "$T/hdr")" ] || echo >> "$TEXT"
   classify "$T/obj"
   if [ "$binary" = 1 ] || raw_header "$T/obj" | grep -q '^encoding '; then
-    hit=$(blob_hits "$T/obj"); [ "$hit" -eq 0 ] || printf '%s\tcommit object (read whole)\t\t\n' "$c12" >> "$T/binhits"
+    blob_hits "$T/obj"; [ "$hit" -eq 0 ] || printf '%s\tcommit object (read whole)\t\t\n' "$c12" >> "$T/binhits"
   fi
   awk -v c="$c12" '{ printf "%s\tmessage line %d\t\t\n", c, NR }' "$T/msg" >> "$WHERE"; cat "$T/msg" >> "$TEXT"
   [ -z "$(tail -c1 "$T/msg")" ] || echo >> "$TEXT"      # keep TEXT and WHERE line for line
@@ -481,8 +498,9 @@ for c in $commits; do
     fi
     [ "$binary" = 1 ] || [ -n "$kind" ] || [ "$zipok" = 1 ] || in_binpaths "$p" || continue
     keep "$T/blob" "$c12" "in a file read whole" "$sp" "$kind"
-    hit=$(blob_hits "$T/blob")
+    blob_hits "$T/blob"
     [ "$hit" -eq 0 ] || printf '%s\tbinary content\t%s\t\n' "$c12" "$sp" >> "$T/binhits"
+    [ -z "$b64comp" ] || printf '%s\tbase64 in a file read whole, decoding to a compressed file (%s)\t%s\t\n' "$c12" "$b64comp" "$sp" >> "$T/compressed"
   done
   rm -rf "$T/b"
 done

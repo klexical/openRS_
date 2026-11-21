@@ -187,6 +187,20 @@ repo; put b.dat 'x\000y\n'; commit "binary on main"; g checkout -q -b feature; p
 run 1 "a file that turns from binary to text is read whole (git sees binary on either side)" "FINDING $(c12): binary content b.dat"
 repo; put t.txt "plain\n"; commit "text on main"; g checkout -q -b feature; put t.txt "x\000$ID1\n"; commit "to binary"
 run 1 "a file that turns from text to binary is read whole" "FINDING $(c12): binary content t.txt"
+# base64 in a file read whole and in a ZIP member: decoded as on a scanned line
+B64ID=$(printf 'seen at %s today' "$ID1" | base64 -w0)
+repo; put b.dat 'x\000y\n'; commit "binary on main"; g checkout -q -b feature; put b.dat "now text\nblob: $B64ID\n"; commit "to text"
+run 1 "base64 in a file that turns from binary to text is decoded" "FINDING $(c12): binary content b.dat"
+repo; g checkout -q -b feature; mkzip a.zip doc.txt 'clean\n' notes.txt "data: $B64ID\n"; commit "a ZIP"
+run 1 "base64 in a text ZIP member is decoded" "FINDING $(c12): ZIP member #2 content a.zip"
+repo; g checkout -q -b feature; mkzip a.zip notes.txt "data:\n$(printf 'seen at %s today' "$ID1" | base64 -w 20)\n"; commit "a ZIP"
+run 1 "wrapped base64 in a text ZIP member is decoded" "FINDING $(c12): ZIP member #1 content a.zip"
+GZB64=$(head -c 300 /dev/zero | tr '\000' 'a' | gzip -c | base64 -w0)
+repo; g checkout -q -b feature; mkzip a.zip notes.txt "data: $GZB64\n"; commit "a ZIP"
+run 1 "base64 of a compressed file in a text ZIP member needs the OK" \
+  "FINDING $(c12): base64 in ZIP member #1, decoding to a compressed file (gzip) a.zip (needs a reviewer's OK"
+repo; g checkout -q -b feature; mkzip a.zip notes.txt "data: $(printf 'nothing to see here at all' | base64 -w0)\n"; commit "a ZIP"
+run 0 "clean base64 in a text ZIP member passes"
 u16() { python3 -I -c 'import sys; sys.stdout.buffer.write(sys.argv[2].encode(sys.argv[1]))' "$@"; }
 repo; g checkout -q -b feature; { printf '\xff\xfe'; u16 utf-16-le "notes: $ID1 here"; } > "$T/r/u16le.txt"; g add u16le.txt; commit "UTF-16LE"
 run 1 "a UTF-16LE file fails" "FINDING $(c12): binary content u16le.txt"
