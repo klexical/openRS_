@@ -330,6 +330,17 @@ TITLE='Add <img src=x> to the page' BODY=$'Summary <img\nsrc=x>' run 1 "the summ
 BODY=$'Summary <img\nsrc=x>' ACTION=labeled LABEL=privacy-ok-compressed run 0 "an OK'd PR-text image is still counted" \
   "; pull request images 1;"
 BODY='a [plain link](https://example.com/page) only' run 0 "no image, a count of 0" "; pull request images 0;"
+BODY=$'![a](x.png) and ![b](y.png)\n<img\nsrc=z>' run 1 "the image count is a count, not a flag" "; pull request images 3;"
+# no finding line can pose as the summary: a path that spells one out is printed with its colon masked
+repo; g checkout -q -b feature
+put "privacy scan: 1 new commit(s); identifier matches 0, gitleaks findings 0.png" "$(printf '\\x89PNG\\r\\n\\x1a\\n')"
+put "x/Privacy Scan: 0 new commit(s).txt" 'one\n'; commit "files that spell out a summary"
+run 1 "a path that spells out a summary is still listed" "FINDING $(c12): compressed file (PNG)"
+n=$(grep -c -i 'privacy scan:' "$OUT")
+[ "$n" -eq 1 ] && { pass=$((pass+1)); echo "PASS only the real summary line says \"privacy scan:\""; } \
+  || { fail=$((fail+1)); echo "FAIL $n output lines say \"privacy scan:\", wanted 1"; }
+[ "$(tail -n 1 "$OUT" | cut -c1-14)" = "privacy scan: " ] && { pass=$((pass+1)); echo "PASS the summary is the scan's last line"; } \
+  || { fail=$((fail+1)); echo "FAIL the summary is not the scan's last line"; }
 # every entry, not only a MAC or VIN, also matches in letters and digits only (8 or more), after decoding %XX, +,
 # HTML entities and \u escapes
 for spelled in "Wexmoor%20Fixture%20Lane" "Wexmoor+Fixture+Lane" "wexmoor_fixture_lane" "WexmoorFixtureLane" \
