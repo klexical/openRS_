@@ -1,0 +1,81 @@
+name: Privacy history scan
+
+# The one-time full-history scan: every commit that a branch, a tag or a pull request head reaches, against the
+# identifier list and gitleaks, with .github/scripts/privacy-scan.sh --history. Its log is public and the history it
+# reads is kept, so --history prints counts by kind only: no commit, path or line, and never a match. For the places,
+# a project session runs the same script with --history --places in its own container, with no identifier list (no
+# project session gets it, owner decision Q197), so it places the gitleaks hits only, by commit, rule and line with
+# every path withheld, and reports them only inside the project. If this run's identifier count is not zero, the owner
+# runs --places once with the list. --places refuses to run where GITHUB_ACTIONS is set, so this workflow can never
+# print places.
+#
+# By hand only ("Run workflow"), on main, and only by the owner: the list is the PRIVACY_IDENTIFIERS secret of the
+# environment privacy-scan, whose only deployment branch is main, so a run on any other ref gets no list (and fails in
+# its first step anyway). Nothing of a pull request runs here: there is no checkout; the refs are fetched as git
+# objects only; the script is taken from the run's own commit (main's tip). Expect a red result: every binary file in
+# the history counts as a file for a reviewer.
+#
+# No `uses:` here, so this workflow needs no actions.lock entry and runs no third-party code with the secret.
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  privacy-history:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240              # 1,534 commits took 39 minutes on a review container
+    environment: privacy-scan
+    permissions: {}                  # the fetch is unauthenticated (a public repository)
+    steps:
+      - name: Main only
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          [ "$REF" = refs/heads/main ] || { echo "privacy history scan: runs on main only: fails closed"; exit 1; }
+
+      - name: Every branch, tag and pull request head, as git objects only (no checkout)
+        # everything public that a ref still reaches: refs/heads/*, refs/tags/* and refs/pull/*/head (which stays
+        # fetchable after a PR closes). A commit a force-push dropped is readable by its SHA but no ref reaches it, so
+        # no scan can list it
+        env:
+          REPO: ${{ github.repository }}
+        run: |
+          git init -q "$RUNNER_TEMP/objects"
+          cd "$RUNNER_TEMP/objects"
+          git fetch -q --no-tags "https://github.com/$REPO" \
+            "+refs/heads/*:refs/remotes/origin/*" "+refs/tags/*:refs/tags/*" "+refs/pull/*/head:refs/remotes/pull/*" "$GITHUB_SHA"
+          [ -z "$(git ls-files)" ] || { echo "a working tree exists: nothing may be checked out"; exit 1; }
+          git show "$GITHUB_SHA:.github/scripts/privacy-scan.sh" > "$RUNNER_TEMP/privacy-scan.sh"
+          # the tips, each peeled to its commit and once only, one per line, for the next step, which runs no git
+          # itself: the list is in its environment
+          git for-each-ref --format='%(objectname)' refs/remotes refs/tags > "$RUNNER_TEMP/refs"
+          while read -r o; do git rev-parse -q --verify "$o^{commit}" 2> /dev/null || echo "$o" >> "$RUNNER_TEMP/nocommit"; done \
+            < "$RUNNER_TEMP/refs" | sort -u > "$RUNNER_TEMP/tips"
+          echo "privacy history scan: $(wc -l < "$RUNNER_TEMP/refs") refs, $(wc -l < "$RUNNER_TEMP/tips") distinct commits at their tips, $(cat "$RUNNER_TEMP/nocommit" 2> /dev/null | wc -l) naming no commit (not scanned)"
+          [ -s "$RUNNER_TEMP/tips" ] || { echo "no tip to scan: fails closed"; exit 1; }
+
+      - name: gitleaks, pinned by version and digest
+        env:
+          GL_VERSION: 8.28.0
+          GL_SHA256: a65b5253807a68ac0cafa4414031fd740aeb55f54fb7e55f386acb52e6a840eb
+        run: |
+          mkdir -p "$RUNNER_TEMP/gitleaks"
+          cd "$RUNNER_TEMP/gitleaks"
+          curl -fsSL --retry 3 -o gl.tar.gz "https://github.com/gitleaks/gitleaks/releases/download/v${GL_VERSION}/gitleaks_${GL_VERSION}_linux_x64.tar.gz"
+          echo "$GL_SHA256  gl.tar.gz" | sha256sum -c --quiet
+          tar -xzf gl.tar.gz gitleaks
+          ./gitleaks version
+
+      - name: Every commit a ref reaches, counts only
+        # the only step that holds the list, through env; only builtins run before the script, which unsets the list
+        # before its first command, so no other process gets it. --history prints counts by kind only, never a place:
+        # this log is public, and the history it reads is kept
+        env:
+          PRIVACY_IDENTIFIERS: ${{ secrets.PRIVACY_IDENTIFIERS }}
+          GITLEAKS: ${{ runner.temp }}/gitleaks/gitleaks
+        run: |
+          cd "$RUNNER_TEMP/objects"
+          mapfile -t TIPS < "$RUNNER_TEMP/tips"
+          bash "$RUNNER_TEMP/privacy-scan.sh" --history "${TIPS[@]}"
