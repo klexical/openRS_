@@ -4,10 +4,10 @@
 # passes staging's and main's tips) and the pull request's own text, against the identifier list and gitleaks.
 #
 # Reads from the environment:
-#   PRIVACY_IDENTIFIERS  the identifier list (the privacy-scan environment's secret of that name, Q179): one literal per
+#   PRIVACY_IDENTIFIERS  the identifier list (the privacy-scan environment's secret of that name): one literal per
 #                        line, matched anywhere in a line, ignoring case; blank lines and lines starting with # are
 #                        skipped; every entry 4 characters or more. Missing, empty, or holding a shorter entry: exit 2
-#                        (fails closed). A MAC- or VIN-shaped entry also matches its other spellings (Q4).
+#                        (fails closed). A MAC- or VIN-shaped entry matches with any separator.
 #   GITLEAKS             the path of a gitleaks binary (8.x). Missing or not executable: exit 2 (fails closed).
 #   GITHUB_EVENT_PATH    the run's event file: the pull request's title, description, head branch name and any label
 #                        event are read from it here, never passed through a step's env (the runner prints a step's
@@ -15,18 +15,23 @@
 #
 # Against the list: every line each new commit adds (a merge: only the lines its own resolution adds); every path a new
 # commit touches; each new commit's author and committer names and addresses and its message; the pull request's
-# title, description and branch name. A file git judges binary on either side of a commit (--numstat "-" "-", G1), or
-# whose new content holds a NUL byte, is read whole, as bytes and as UTF-16 in either byte order (G3). A ZIP is
+# title, description and branch name. A file git judges binary on either side of a commit (--numstat "-" "-"), or
+# whose new content holds a NUL byte, is read whole, as bytes and as UTF-16 in either byte order. A ZIP is
 # unpacked and each member read whole and its name scanned; any other compressed file (gzip, PNG, JPEG, PDF, 7z and
 # the like), or a compressed ZIP member, is a finding until a reviewer's OK: the label privacy-ok-compressed being
-# added to the pull request (Q180; that label event's run only, so a later push needs a new OK).
-# gitleaks: the new commits' patches, with gitleaks' default rules only (its config is the scan's own), run on an
-# empty source folder whose .git file points at the repository, so no .gitleaksignore or .gitleaks.toml applies (G2);
-# a new commit that touches either file anywhere is itself a finding, as is an added line carrying gitleaks' inline
-# allow marker. gitleaks reads a merge's diff against its first parent (--diff-merges=first-parent), so a secret added
-# in a merge's own resolution is found; a merge of the base into the branch is read whole, which can re-flag a base
-# commit (none should hold a secret). gitleaks' default path allowlist (lock files, images) stands; the list still
-# reads those files (Q1).
+# added to the pull request (that label event's run only, so a later push needs a new OK). Base64 on any scanned line
+# (or wrapped over several lines) is decoded: a list match inside is a finding; a run that decodes to a compressed
+# file of 100 bytes or more (an embedded image) needs the same OK. A MAC- or VIN-shaped entry is also matched with
+# every separator and %XX escape removed, from the entry and the scanned text alike.
+# gitleaks, default rules only (its config is the scan's own), base64 decoded, its inline allow marker ignored, twice:
+# over the new commits' patches, on an empty source folder whose .git file points at the repository, so no
+# .gitleaksignore or .gitleaks.toml applies; and over the scan's own folder of copies of what the patches do not
+# hold (the commit messages, the pull request's text, ZIP members and every file read whole, archives opened).
+# A new commit that touches either ignore file anywhere is itself a finding, as is an added line carrying the allow
+# marker. gitleaks reads a merge's diff against its first parent (--diff-merges=first-parent), so a secret added in a
+# merge's own resolution is found; a merge of the base into the branch is read whole, which can re-flag a base commit
+# (none should hold a secret). gitleaks' default path allowlist (lock files, images) stands; the list still reads
+# those files.
 # No .gitattributes applies (GIT_ATTR_SOURCE is the empty tree, for git under gitleaks too; git 2.40 or later is
 # required): a -diff, binary or textconv rule cannot hide a file's lines.
 # Paths are read NUL-separated, so a name that git would quote is scanned like any other.
@@ -35,9 +40,9 @@
 # path that itself matches the list is withheld) and a total. Never a matched text, a list entry or a scanned line.
 # Exit 0: nothing found; 1: a finding; 2: usage, or a missing or unusable list or scanner (fails closed).
 set -eEuo pipefail
-# any failing command exits 2, never 1 (a finding): the 0 / 1 / 2 contract holds (N4)
+# any failing command exits 2, never 1 (a finding): the 0 / 1 / 2 contract holds
 trap 'echo "privacy scan: a step failed (line $LINENO): fails closed" >&2; exit 2' ERR
-# the list leaves the environment before any other command runs: no child process ever gets it (N5)
+# the list leaves the environment before any other command runs: no child process ever gets it
 LISTRAW=${PRIVACY_IDENTIFIERS-}; unset PRIVACY_IDENTIFIERS
 export LC_ALL=C.UTF-8
 export GIT_ATTR_SOURCE=4b825dc642cb6eb9a060e54bf8d69288fbee4904   # the empty tree: no .gitattributes applies
@@ -265,7 +270,7 @@ for c in $commits; do
   awk -v c="$c12" '{ printf "%s\ta changed path (#%d of the commit)\t\t\n", c, NR }' "$T/paths" >> "$WHERE"
   cat "$T/paths" >> "$TEXT"
   # the lines the commit adds, with each line's number in the new file; -U0: added lines only, no context; a merge:
-  # only lines added against every parent ("++"), the lines its own resolution adds (N2)
+  # only lines added against every parent ("++"), the lines its own resolution adds
   git -c core.quotePath=false diff-tree -p --cc -U0 --no-color --no-ext-diff --no-renames --no-commit-id --root -r "$c" \
     | awk -v c="$c12" -v text="$TEXT" -v where="$WHERE" -v plus="++++++++++++++++" '
         /^diff / { inhunk = 0; path = ""; next }
@@ -300,7 +305,7 @@ for r in d:
     elif [ -n "$kind" ]; then
       printf '%s\tcompressed file (%s)\t%s\t\n' "$c12" "$kind" "$sp" >> "$T/compressed"
     fi
-    nul=$(head -c 8000 "$T/blob" | LC_ALL=C tr -d -c '\000' | wc -c)   # its own step: a failing stage stops the scan (N3)
+    nul=$(head -c 8000 "$T/blob" | LC_ALL=C tr -d -c '\000' | wc -c)   # its own step: a failing stage stops the scan
     [ "$nul" -gt 0 ] || [ -n "$kind" ] || in_binpaths "$p" || continue
     keep "$T/blob" "$c12" "in a file read whole" "$sp"
     hit=$(blob_hits "$T/blob")
@@ -375,7 +380,7 @@ printf '[extend]\nuseDefault = true\n' > "$T/gitleaks.toml"; : > "$T/gitleaksign
 if [ "$n" -gt 0 ]; then
   rc=0
   # the source is an empty folder whose .git file points at this repository: gitleaks finds no .gitleaksignore or
-  # .gitleaks.toml there (8.28 loads the source's .gitleaksignore whatever --gitleaks-ignore-path says, G2)
+  # .gitleaks.toml there (8.28 loads the source's .gitleaksignore whatever --gitleaks-ignore-path says)
   mkdir "$T/glsrc"; printf 'gitdir: %s\n' "$(git rev-parse --absolute-git-dir)" > "$T/glsrc/.git"
   "$GITLEAKS" git --no-banner --redact --exit-code 0 --log-level error --config "$T/gitleaks.toml" \
     --gitleaks-ignore-path "$T/gitleaksignore" --ignore-gitleaks-allow --max-decode-depth 2 \
