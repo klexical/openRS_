@@ -187,6 +187,11 @@ repo; put b.dat 'x\000y\n'; commit "binary on main"; g checkout -q -b feature; p
 run 1 "a file that turns from binary to text is read whole (git sees binary on either side)" "FINDING $(c12): binary content b.dat"
 repo; put t.txt "plain\n"; commit "text on main"; g checkout -q -b feature; put t.txt "x\000$ID1\n"; commit "to binary"
 run 1 "a file that turns from text to binary is read whole" "FINDING $(c12): binary content t.txt"
+# a file with many NULs (more than a pipe holds) is read whole without a false "a step failed"
+repo; g checkout -q -b feature; { head -c 1000000 /dev/zero; printf 'tail\n'; } > "$T/r/z.bin"; g add z.bin; commit "NULs"
+run 1 "a NUL-heavy file is read whole" "FINDING $(c12): a binary file, which may hold compressed data z.bin"
+grep -q 'a step failed' "$OUT" && { fail=$((fail+1)); echo "FAIL a NUL-heavy file printed a false 'a step failed'"; } \
+  || { pass=$((pass+1)); echo "PASS a NUL-heavy file prints no false 'a step failed'"; }
 # base64 in a file read whole and in a ZIP member: decoded as on a scanned line
 B64ID=$(printf 'seen at %s today' "$ID1" | base64 -w0)
 repo; put b.dat 'x\000y\n'; commit "binary on main"; g checkout -q -b feature; put b.dat "now text\nblob: $B64ID\n"; commit "to text"
@@ -368,6 +373,9 @@ for spelled in "Wexmoor%20Fixture%20Lane" "Wexmoor+Fixture+Lane" "wexmoor_fixtur
   printf 'one\nat %s today\n' "$spelled" > "$T/r/f.txt"; g add f.txt; commit "a place spelled another way"
   run 1 "a place entry matches spelled ${spelled:0:12}…" "FINDING $(c12): added line f.txt:2"
 done
+# the 0x rule does not depend on separators: an entry that holds "0X" before hex matches spelled with a separator inside
+repo; g checkout -q -b feature; printf 'one\nunit AB0-X12CDEF here\n' > "$T/r/f.txt"; g add f.txt; commit "0x and a separator"
+LIST=$(printf '%s\n%s\n' "$ID1" "AB0X12CDEF") run 1 "an entry holding 0X matches with a separator inside it" "FINDING $(c12): added line f.txt:2"
 for spelled in "0x02, 0x5A, 0x1E, 0x7C, 0x3D, 0x9B" "9B:3D:7C:1E:5A:02" "{0x9b,0x3d,0x7c,0x1e,0x5a,0x02}"; do
   repo; g checkout -q -b feature; printf 'one\nconst mac = %s;\n' "$spelled" > "$T/r/f.txt"; g add f.txt; commit "a MAC in code"
   LIST=$(printf '%s\n%s\n' "$ID1" "$MAC") run 1 "a MAC entry matches written as ${spelled:0:10}…" "FINDING $(c12): added line f.txt:2"
@@ -459,6 +467,11 @@ out=$(bash "$SCAN" 2>&1); rc=$?
 if [ "$rc" -eq 2 ]; then pass=$((pass+1)); echo "PASS no arguments is a usage error (exit 2)"; else fail=$((fail+1)); echo "FAIL no arguments: exit $rc"; fi
 (cd "$T/r" && PRIVACY_IDENTIFIERS=$LISTV GITLEAKS=$STUB GITHUB_EVENT_PATH=$T/event.json bash "$SCAN" main "$(sha HEAD)") > "$OUT" 2>&1
 expect 2 "a ref name is not taken for a SHA" $? "every argument a 40-hex SHA"
+# scan_zip runs outside any condition: inside an if, a while or a && / || list, bash ignores set -e and the ERR trap
+# within the function, so a failing step there would not fail closed
+if grep -n -E '(\<if|\<while|\<until|!|&&|\|\|)[[:space:]]*scan_zip[[:space:]]|scan_zip[[:space:]][^#]*(&&|\|\|)' "$SCAN" | grep -v '^[0-9]*:[[:space:]]*#' > /dev/null; then
+  fail=$((fail+1)); echo "FAIL scan_zip is called as a condition"
+else pass=$((pass+1)); echo "PASS scan_zip is called outside any condition, so a failure inside it fails closed"; fi
 # the one-time full-history scan: --history <tip>... reads every commit reachable from the tips, with no event file
 hist() { (cd "$T/r" && unset GITHUB_EVENT_PATH && PRIVACY_IDENTIFIERS=$LISTV GITLEAKS=$STUB bash "$SCAN" --history "$@") > "$OUT" 2>&1; }
 repo; put f.txt "one\n$ID1 two\n"; commit "on main"; m1=$(c12); put g.txt 'clean\n'; commit "clean"
@@ -535,7 +548,8 @@ if [ -n "${GITLEAKS_REAL:-}" ]; then
   repo; g checkout -q -b feature; put f.txt 'one\ntwo\nthree\nfour\n'; commit "work"
   GL=$GITLEAKS_REAL run 0 "the real gitleaks passes a clean commit"
   repo; g checkout -q -b feature; put conf.txt "one\nkey = $PLANTED\n"; commit "a seeded key"
-  printf '%s:conf.txt:aws-access-token:2\n' "$(sha HEAD)" > "$T/r/.gitleaksignore"    # in the working tree, as on a base
+  # in the working tree, as on a base: the fingerprint with its commit and without (gitleaks takes both forms)
+  printf '%s:conf.txt:aws-access-token:2\nconf.txt:aws-access-token:2\n' "$(sha HEAD)" > "$T/r/.gitleaksignore"
   GL=$GITLEAKS_REAL run 1 "the real gitleaks ignores a .gitleaksignore in the working tree" \
     "FINDING $(c12): gitleaks rule aws-access-token conf.txt:2"
   merge_case "one\nkey = $PLANTED\nthree\n"
