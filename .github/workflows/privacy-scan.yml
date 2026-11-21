@@ -1,0 +1,88 @@
+name: Privacy scan
+
+# The privacy scan: each pull request's new commits and its text against the identifier list and gitleaks, printing
+# counts and places only, never a match (.github/scripts/privacy-scan.sh).
+#
+# The list is the PRIVACY_IDENTIFIERS secret of the environment privacy-scan, whose only deployment branch is main
+# (the default branch). GitHub gives a job an environment's secrets only when the run's ref passes that rule, so:
+# - a pull_request run (ref refs/pull/N/merge) never gets the list: a PR's own edited copy of this workflow, of the
+#   script or of any other workflow cannot read it;
+# - a workflow added on any other branch (on: push, workflow_dispatch, a tag) runs under that branch's or tag's ref
+#   and never gets it either; only a workflow file already on main can name the environment and pass.
+# This job runs on pull_request_target. GitHub takes a pull_request_target workflow from the default branch, whatever
+# the PR's base (staging or main), and the run's ref and GITHUB_SHA are main's tip, so the environment admits it and
+# the code that runs is main's, reviewed and merged. Nothing of the pull request runs here: there is no checkout; the
+# PR head is fetched as git objects only (no working tree); the script is taken from GITHUB_SHA; the scan only reads
+# those objects. A fork's pull request fails in the first step, before the list is read, so a fork cannot use the
+# scan to test guesses against the list. The copy of this file on staging never runs (it keeps the twins equal).
+#
+# No `uses:` here, so this workflow needs no actions.lock entry and runs no third-party code with the secret.
+
+on:
+  pull_request_target:               # the one such workflow: main's code only, see above
+    types: [opened, synchronize, reopened, edited, ready_for_review, labeled, unlabeled]   # labeled: a reviewer's OK; unlabeled takes it back
+    branches: [staging, main]
+
+permissions: {}
+
+jobs:
+  privacy-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: privacy-scan
+    permissions:
+      contents: read
+    steps:
+      - name: A fork's pull request fails closed
+        env:
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          [ "$HEAD_REPO" = "$REPO" ] || { echo "privacy scan: a fork's pull request is not scanned against the list: fails closed"; exit 1; }
+
+      - name: The history and the pull request's head, as git objects only (no checkout)
+        env:
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git init -q "$RUNNER_TEMP/objects"
+          cd "$RUNNER_TEMP/objects"
+          git fetch -q --no-tags "https://github.com/$REPO" \
+            "+refs/heads/staging:refs/remotes/origin/staging" "+refs/heads/main:refs/remotes/origin/main" \
+            "+refs/pull/$PR/head:refs/remotes/pr/head" "$GITHUB_SHA"
+          [ "$(git rev-parse refs/remotes/pr/head)" = "$HEAD" ] || { echo "the fetched PR head is not $HEAD"; exit 1; }
+          [ -z "$(git ls-files)" ] || { echo "a working tree exists: nothing of the PR may be checked out"; exit 1; }
+          git show "$GITHUB_SHA:.github/scripts/privacy-scan.sh" > "$RUNNER_TEMP/privacy-scan.sh"
+          git cat-file -e "$BASE^{commit}" 2>/dev/null || git fetch -q --no-tags "https://github.com/$REPO" "$BASE"
+          # the tips the scan excludes, for the next step, which runs no git itself: the list is in its environment
+          printf '%s %s\n' "$(git rev-parse --verify 'refs/remotes/origin/staging^{commit}')" \
+            "$(git rev-parse --verify 'refs/remotes/origin/main^{commit}')" > "$RUNNER_TEMP/tips"
+
+      - name: gitleaks, pinned by version and digest
+        env:
+          GL_VERSION: 8.28.0
+          GL_SHA256: a65b5253807a68ac0cafa4414031fd740aeb55f54fb7e55f386acb52e6a840eb
+        run: |
+          mkdir -p "$RUNNER_TEMP/gitleaks"
+          cd "$RUNNER_TEMP/gitleaks"
+          curl -fsSL --retry 3 -o gl.tar.gz "https://github.com/gitleaks/gitleaks/releases/download/v${GL_VERSION}/gitleaks_${GL_VERSION}_linux_x64.tar.gz"
+          echo "$GL_SHA256  gl.tar.gz" | sha256sum -c --quiet
+          tar -xzf gl.tar.gz gitleaks
+          ./gitleaks version
+
+      - name: The pull request's new commits and text
+        # the only step that holds the list; values reach it through env, never ${{ }} in run. The PR's title,
+        # description, branch name and any label event are read by the script from $GITHUB_EVENT_PATH, never put in
+        # env, which the runner prints in the public log. Only builtins run before the script, which unsets the list
+        # before its first command, so no other process gets it
+        env:
+          PRIVACY_IDENTIFIERS: ${{ secrets.PRIVACY_IDENTIFIERS }}
+          GITLEAKS: ${{ runner.temp }}/gitleaks/gitleaks
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          cd "$RUNNER_TEMP/objects"
+          read -r STAGING MAIN < "$RUNNER_TEMP/tips"
+          bash "$RUNNER_TEMP/privacy-scan.sh" "$BASE" "$HEAD" "$STAGING" "$MAIN"

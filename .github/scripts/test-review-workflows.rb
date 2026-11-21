@@ -1,7 +1,9 @@
 #!/usr/bin/env ruby
 # test-review-workflows.rb [<workflows dir>] — pins the shape of claude-review.yml and commit-identity.yml:
 # pull_request only, never pull_request_target; every job skips a fork's branch; the least permissions; the
-# subscription token, never an API key; the reviewer holds no write tool. Exit 0 when every check passes.
+# subscription token, never an API key; the reviewer holds no write tool. Also privacy-scan.yml, the one
+# pull_request_target workflow: main's code only, no checkout, the list from the environment in one step only.
+# Exit 0 when every check passes.
 require "yaml"
 dir = ARGV[0] || File.join(__dir__, "..", "workflows")
 fails = 0
@@ -136,6 +138,61 @@ probe = "SHAPEPROBE-x_1"
   check.(tok && st&.success? && out == LINES[want] + "\n" && !out.include?("SHAPEPROBE"),
          "the shape step prints exactly \"#{LINES[want]}\" for a token #{val.inspect.sub("SHAPEPROBE", "…")}, and exits 0")
 end
+
+# The privacy scan. Its tests: a pull_request job in commit-identity.yml with no secret. The scan:
+# privacy-scan.yml on pull_request_target, so the workflow and the script come from main (the default branch); it runs nothing of
+# the PR (no `uses:`, no checkout, the head fetched as objects); the list comes from the environment privacy-scan
+# (deployment branch main only) and reaches one step only, through env.
+tj = load_wf.("commit-identity.yml")["jobs"]["privacy-scan-tests"] || {}
+tss = tj["steps"] || []
+tst = tss.find { |s| s["run"].to_s.strip == "bash .github/scripts/test-privacy-scan.sh" }
+check.(tst && tst.dig("env", "GITLEAKS_REAL") == "${{ runner.temp }}/gitleaks/gitleaks",
+       "privacy-scan-tests: the scan's own tests run on pull_request with the real gitleaks")
+check.(!File.read(File.join(dir, "commit-identity.yml")).include?("secrets."), "commit-identity.yml reads no secret at all")
+psw = load_wf.("privacy-scan.yml")
+pon = on_of.(psw)
+check.(pon.is_a?(Hash) && pon.keys == ["pull_request_target"] && pon.dig("pull_request_target", "branches")&.sort == %w[main staging] &&
+       pon.dig("pull_request_target", "types") == %w[opened synchronize reopened edited ready_for_review labeled unlabeled],
+       "privacy-scan.yml: pull_request_target only, PRs to staging and main, the label events included")
+check.(psw["permissions"] == {} && psw["jobs"].keys == ["privacy-scan"], "privacy-scan.yml: no workflow-level permission, one job")
+ps = psw["jobs"]["privacy-scan"]
+pss = ps["steps"] || []
+check.(ps["permissions"] == { "contents" => "read" } && ps["environment"] == "privacy-scan" && !ps.key?("if") &&
+       ps["continue-on-error"].nil? && pss.none? { |s| s.key?("continue-on-error") || s.key?("if") },
+       "privacy-scan: contents read, environment privacy-scan, no condition, a hard check")
+check.(pss.none? { |s| s.key?("uses") } && !File.read(File.join(dir, "privacy-scan.yml")).match?(/^\s*-?\s*uses:/),
+       "privacy-scan: no `uses:` at all (no checkout of the PR, no third-party action with the secret)")
+first = pss.first || {}
+check.(first["run"].to_s.include?('[ "$HEAD_REPO" = "$REPO" ] ||') && first["run"].to_s.include?("exit 1") &&
+       first["env"] == { "HEAD_REPO" => "${{ github.event.pull_request.head.repo.full_name }}", "REPO" => "${{ github.repository }}" },
+       "privacy-scan: the first step fails a fork's PR")
+fetch = pss.find { |s| s["run"].to_s.include?("git fetch") } || {}
+fr = fetch["run"].to_s
+check.(fr.include?('"+refs/pull/$PR/head:refs/remotes/pr/head"') && fr.include?('[ "$(git rev-parse refs/remotes/pr/head)" = "$HEAD" ]') &&
+       fr.include?('git show "$GITHUB_SHA:.github/scripts/privacy-scan.sh" > "$RUNNER_TEMP/privacy-scan.sh"') &&
+       !fr.match?(/git (checkout|switch|worktree|reset)|read-tree/),
+       "privacy-scan: the PR head is fetched as objects and checked, never checked out; the script comes from the run's own commit (main's)")
+PSEC = "${{ secrets.PRIVACY_IDENTIFIERS }}"
+holders = pss.select { |s| s.to_s.include?("secrets.") }
+check.(holders.size == 1 && holders.first.equal?(pss.last) && holders.first["env"]&.dig("PRIVACY_IDENTIFIERS") == PSEC &&
+       File.read(File.join(dir, "privacy-scan.yml")).scan("secrets.").size == 1,
+       "privacy-scan: the list reaches the last step only, through env, and no other secret is read")
+check.(pss.none? { |s| s["run"].to_s.include?("${{") }, "privacy-scan: no ${{ }} in any run (values come through env)")
+lastrun = (pss.last || {})["run"].to_s.lines.map(&:strip).reject(&:empty?)
+check.(lastrun.size == 3 && lastrun[0] == 'cd "$RUNNER_TEMP/objects"' && lastrun[1] == 'read -r STAGING MAIN < "$RUNNER_TEMP/tips"' &&
+       lastrun[2].start_with?('bash "$RUNNER_TEMP/privacy-scan.sh"'),
+       "privacy-scan: the step that holds the list runs builtins and the script only (no git, no fetch)")
+glstep = pss.find { |s| s["run"].to_s.include?("sha256sum -c") }
+check.(glstep && glstep.dig("env", "GL_SHA256").to_s =~ /\A[0-9a-f]{64}\z/ && glstep.dig("env", "GL_VERSION").to_s =~ /\A\d+\.\d+\.\d+\z/ &&
+       glstep["run"].index("sha256sum -c") < glstep["run"].index("tar -xzf"), "privacy-scan: gitleaks is checked against its pinned digest before it is unpacked")
+check.(glstep && tss.find { |s| s["run"].to_s.include?("sha256sum -c") }&.dig("env") == glstep["env"],
+       "privacy-scan: the tests job and the scan pin the same gitleaks")
+last = pss.last || {}
+check.(last["run"].to_s =~ /bash "\$RUNNER_TEMP\/privacy-scan\.sh" "\$BASE" "\$HEAD" "\$STAGING" "\$MAIN"/ &&
+       !last["run"].to_s.include?("bash .github/") && last["env"]&.keys&.sort == %w[BASE GITLEAKS HEAD PRIVACY_IDENTIFIERS],
+       "privacy-scan: runs the run's own commit's script on the new commits; env holds the list, gitleaks and the two SHAs only")
+check.(%w[pull_request.title pull_request.body pull_request.head.ref label.name].none? { |k| ps.to_s.include?(k) },
+       "privacy-scan: the PR's title, body, branch name and labels never pass through env or ${{ }} (the script reads the event file)")
 
 puts "review workflow checks: #{fails.zero? ? "all passed" : "#{fails} failed"}"
 exit(fails.zero? ? 0 : 1)
