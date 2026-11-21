@@ -1,0 +1,68 @@
+name: Privacy history scan
+
+# The one-time full-history scan: every commit on staging and main against the identifier list and gitleaks, with
+# .github/scripts/privacy-scan.sh --history. It prints counts and places only, never a match, like the PR scan.
+#
+# By hand only ("Run workflow"), on main: the list is the PRIVACY_IDENTIFIERS secret of the environment privacy-scan,
+# whose only deployment branch is main, so a run on any other ref gets no list (and fails in its first step anyway).
+# Nothing of a pull request runs here: there is no checkout; staging and main are fetched as git objects only; the
+# script is taken from the run's own commit (main's tip). Expect a red result: every binary file in the history is
+# listed as a place for a reviewer, and the owner reads the list.
+#
+# No `uses:` here, so this workflow needs no actions.lock entry and runs no third-party code with the secret.
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  privacy-history:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    environment: privacy-scan
+    permissions:
+      contents: read
+    steps:
+      - name: Main only
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          [ "$REF" = refs/heads/main ] || { echo "privacy history scan: runs on main only: fails closed"; exit 1; }
+
+      - name: Staging and main, as git objects only (no checkout)
+        env:
+          REPO: ${{ github.repository }}
+        run: |
+          git init -q "$RUNNER_TEMP/objects"
+          cd "$RUNNER_TEMP/objects"
+          git fetch -q --no-tags "https://github.com/$REPO" \
+            "+refs/heads/staging:refs/remotes/origin/staging" "+refs/heads/main:refs/remotes/origin/main" "$GITHUB_SHA"
+          [ -z "$(git ls-files)" ] || { echo "a working tree exists: nothing may be checked out"; exit 1; }
+          git show "$GITHUB_SHA:.github/scripts/privacy-scan.sh" > "$RUNNER_TEMP/privacy-scan.sh"
+          # the tips, for the next step, which runs no git itself: the list is in its environment
+          printf '%s %s\n' "$(git rev-parse --verify 'refs/remotes/origin/staging^{commit}')" \
+            "$(git rev-parse --verify 'refs/remotes/origin/main^{commit}')" > "$RUNNER_TEMP/tips"
+
+      - name: gitleaks, pinned by version and digest
+        env:
+          GL_VERSION: 8.28.0
+          GL_SHA256: a65b5253807a68ac0cafa4414031fd740aeb55f54fb7e55f386acb52e6a840eb
+        run: |
+          mkdir -p "$RUNNER_TEMP/gitleaks"
+          cd "$RUNNER_TEMP/gitleaks"
+          curl -fsSL --retry 3 -o gl.tar.gz "https://github.com/gitleaks/gitleaks/releases/download/v${GL_VERSION}/gitleaks_${GL_VERSION}_linux_x64.tar.gz"
+          echo "$GL_SHA256  gl.tar.gz" | sha256sum -c --quiet
+          tar -xzf gl.tar.gz gitleaks
+          ./gitleaks version
+
+      - name: Every commit on staging and main
+        # the only step that holds the list, through env; only builtins run before the script, which unsets the list
+        # before its first command, so no other process gets it
+        env:
+          PRIVACY_IDENTIFIERS: ${{ secrets.PRIVACY_IDENTIFIERS }}
+          GITLEAKS: ${{ runner.temp }}/gitleaks/gitleaks
+        run: |
+          cd "$RUNNER_TEMP/objects"
+          read -r STAGING MAIN < "$RUNNER_TEMP/tips"
+          bash "$RUNNER_TEMP/privacy-scan.sh" --history "$STAGING" "$MAIN"

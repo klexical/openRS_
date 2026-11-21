@@ -32,6 +32,7 @@ jobs:
     environment: privacy-scan
     permissions:
       contents: read
+      statuses: write                # plan B only: the commit status on the PR head, see the last step
     steps:
       - name: A fork's pull request fails closed
         env:
@@ -73,6 +74,7 @@ jobs:
           ./gitleaks version
 
       - name: The pull request's new commits and text
+        id: scan
         # the only step that holds the list; values reach it through env, never ${{ }} in run. The PR's title,
         # description, branch name and any label event are read by the script from $GITHUB_EVENT_PATH, never put in
         # env, which the runner prints in the public log. Only builtins run before the script, which unsets the list
@@ -86,3 +88,21 @@ jobs:
           cd "$RUNNER_TEMP/objects"
           read -r STAGING MAIN < "$RUNNER_TEMP/tips"
           bash "$RUNNER_TEMP/privacy-scan.sh" "$BASE" "$HEAD" "$STAGING" "$MAIN"
+
+      - name: Plan B, a commit status privacy-scan on the PR head (only while vars.PRIVACY_SCAN_STATUS is on)
+        # If the first live run shows this job's check run attached to main's tip rather than the PR head, a required
+        # check named privacy-scan never sees it. Then the owner sets the repository variable PRIVACY_SCAN_STATUS to
+        # "on", and this step posts the scan's result as the commit status privacy-scan on the PR head, which the
+        # ruleset requires instead. It holds no secret and runs no PR code: it posts success only when the scan step
+        # succeeded, and failure for any other outcome (failed, skipped after a fork's PR, cancelled)
+        if: always() && vars.PRIVACY_SCAN_STATUS == 'on'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          OUTCOME: ${{ steps.scan.outcome }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          state=failure; if [ "$OUTCOME" = success ]; then state=success; fi
+          gh api -X POST "repos/$REPO/statuses/$HEAD" -f state="$state" -f context=privacy-scan \
+            -f target_url="https://github.com/$REPO/actions/runs/$RUN_ID" -f description="privacy scan: $OUTCOME" > /dev/null
