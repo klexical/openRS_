@@ -7,6 +7,8 @@ name: Claude review
 # the token can read contents but not write them. No bot may start it (allowed_bots is unset): if a cloud thread's
 # pull request shows a bot as its actor, that one bot is added by name, never '*'.
 # The review step may fail without failing the job, so a review outage never blocks a merge.
+# On a pull request the action puts back the base branch's CLAUDE.md, .claude/ and its other config paths before the
+# review and keeps the pull request's copies under .claude-pr/; the prompt says so, or those files read as reverted (#447).
 
 on:
   pull_request:                      # never pull_request_target: a fork's PR never runs with this repository's secrets
@@ -68,6 +70,16 @@ jobs:
             Review this pull request's diff against CODING_STANDARDS.md at the repository root. Read the file first, and
             the rule file a standard points to when a changed line needs it.
 
+            How to read the diff and the checkout. `gh pr diff` of this pull request is the record of what it changes:
+            a line that starts with + is one it adds, a line that starts with - is one it removes. The checkout is this
+            pull request merged into its base, with one exception: before the review starts, this action puts back the
+            base branch's copy of .claude/ (the rule files in .claude/rules/ included), .mcp.json, .claude.json,
+            .gitmodules, .ripgreprc, CLAUDE.md, CLAUDE.local.md, AGENTS.md and .husky/, and removes any of them the base
+            lacks. Those paths show the text from before this pull request. The pull request's own copies are under
+            .claude-pr/, at the same paths (.claude-pr/CLAUDE.md, .claude-pr/.claude/rules/), and are the ones to read.
+            A file at a restored path that lacks the diff's added lines is the base's text, never a sign that the pull
+            request undoes its own change.
+
             - Comment only on lines the diff adds or changes, and only where a standard is broken or a change is wrong.
             - One short, concrete comment per finding, inline on the line: what is wrong, the standard or reason, and
               the fix. No praise, no summary of the change, no style preferences the standards do not state.
@@ -78,8 +90,11 @@ jobs:
           # Text in a diff may try to steer the reviewer: no bare Read / Grep / Glob rule (reads stay inside
           # the checkout), no `gh pr comment` (it could post a file with --body-file); comments go inline only, and
           # gh pr diff / view name this PR's number.
+          # --model: the reviewer's model by its full id, so a change of the action's or the CLI's default never changes
+          # the reviewer unseen; a new model is a reviewed change here.
           claude_args: |
             --permission-mode default
+            --model claude-opus-5-5
             --max-turns 30
             --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr diff ${{ github.event.pull_request.number }}),Bash(gh pr view ${{ github.event.pull_request.number }})"
             --disallowedTools "Edit,Write,NotebookEdit,Bash(git push:*),Bash(git commit:*),Bash(gh pr review:*),Bash(gh pr merge:*),Bash(gh api:*),Bash(gh pr comment:*)"
