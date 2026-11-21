@@ -206,6 +206,41 @@ run 1 "base64 of a compressed file in a text ZIP member needs the OK" \
   "FINDING $(c12): base64 in ZIP member #1, decoding to a compressed file (gzip) a.zip (needs a reviewer's OK"
 repo; g checkout -q -b feature; mkzip a.zip notes.txt "data: $(printf 'nothing to see here at all' | base64 -w0)\n"; commit "a ZIP"
 run 0 "clean base64 in a text ZIP member passes"
+# base64 written in UTF-16 or UTF-32 (a NUL between its characters) is decoded in each reading, with the OK or not
+for enc in UTF-16LE UTF-16BE UTF-32LE; do
+  repo; g checkout -q -b feature; printf 'blob: %s\n' "$B64ID" | iconv -t "$enc" > "$T/r/u.txt"; g add u.txt; commit "base64 in $enc"
+  ACTION=labeled LABEL=privacy-ok-compressed run 1 "base64 in a $enc file is decoded, with the OK too" "FINDING $(c12): binary content u.txt"
+done
+U16=$(printf 'blob: %s\n' "$B64ID" | iconv -t UTF-16LE | od -An -v -tx1 | tr -s ' \n' ' ' | sed 's/ \([0-9a-f][0-9a-f]\)/\\x\1/g; s/ //g')
+repo; g checkout -q -b feature; mkzip a.zip u.txt "$U16"; commit "a UTF-16 ZIP member"
+ACTION=labeled LABEL=privacy-ok-compressed run 1 "base64 in a UTF-16 ZIP member is decoded, with the OK too" "FINDING $(c12): ZIP member #1 content a.zip"
+# wrapped base64 whose pieces are split by escaped line ends, bare CRs, comment marks, string pieces or spaces is
+# joined before it is decoded: here the entry crosses the first 57-byte piece of 76-column wrapping
+printf '%s%s and more text after it, to fill a second piece and a third one too.' "$(head -c 49 /dev/zero | tr '\000' x)" "$ID1" \
+  | base64 -w 76 > "$T/w76"
+[ "$(head -n1 "$T/w76" | base64 -d 2>/dev/null | grep -c -F "$ID1")" = 0 ] || echo "SETUP: the entry is not across a piece boundary"
+wrapcase() { # wrapcase <name> <path> <content of line 2 onward>: line 2 must be named as the run's first line
+  repo; g checkout -q -b feature; { printf 'one\n'; printf '%s' "$3"; } > "$T/r/$2"; g add -- "$2"; commit "split base64"
+  run 1 "wrapped base64 split by $1 is joined before it is decoded" "base64 on an added line, holding a list match $2:2"
+}
+wrapcase 'JSON \n escapes on one line' f.json "{\"data\": \"$(paste -sd'|' "$T/w76" | sed 's/|/\\n/g')\\n\"}
+"
+wrapcase 'bare CRs' f.txt "$(paste -sd'\r' "$T/w76")
+"
+wrapcase 'comment marks' f.py "$(sed 's/^/# /' "$T/w76")
+"
+wrapcase 'quoted string pieces' f.js "$(sed '1s/.*/x = ["&",/; 2,$s/.*/  "&",/' "$T/w76")
+]
+"
+wrapcase 'spaces' f.txt "$(paste -sd' ' "$T/w76")
+"
+repo; g checkout -q -b feature; { printf 'one\n'; cat "$T/w76"; } > "$T/r/w.txt"; g add w.txt; commit "plain wrapped base64"
+run 1 "plain wrapped base64 still fails" "base64 on an added line, holding a list match w.txt:2"
+[ "$(grep -c 'holding a list match' "$OUT")" = 1 ] && { pass=$((pass+1)); echo "PASS plain wrapped base64 is counted once, not once per pass"; } \
+  || { fail=$((fail+1)); echo "FAIL plain wrapped base64 is counted $(grep -c 'holding a list match' "$OUT") times"; }
+repo; g checkout -q -b feature; { printf 'x\000y\n{"d": "'; paste -sd'|' "$T/w76" | sed 's/|/\\n/g'; printf '"}\n'; } > "$T/r/e.bin"
+g add e.bin; commit "escaped base64 in a binary file"
+ACTION=labeled LABEL=privacy-ok-compressed run 1 "escaped wrapped base64 in a binary file is joined, with the OK too" "FINDING $(c12): binary content e.bin"
 u16() { python3 -I -c 'import sys; sys.stdout.buffer.write(sys.argv[2].encode(sys.argv[1]))' "$@"; }
 repo; g checkout -q -b feature; { printf '\xff\xfe'; u16 utf-16-le "notes: $ID1 here"; } > "$T/r/u16le.txt"; g add u16le.txt; commit "UTF-16LE"
 run 1 "a UTF-16LE file fails" "FINDING $(c12): binary content u16le.txt"
