@@ -30,9 +30,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: privacy-scan
-    permissions:
-      contents: read
-      statuses: write                # plan B only: the commit status on the PR head, see the last step
+    permissions: {}                  # the fetches are unauthenticated (a public repository); the token can do nothing
     steps:
       - name: A fork's pull request fails closed
         env:
@@ -89,20 +87,31 @@ jobs:
           read -r STAGING MAIN < "$RUNNER_TEMP/tips"
           bash "$RUNNER_TEMP/privacy-scan.sh" "$BASE" "$HEAD" "$STAGING" "$MAIN"
 
-      - name: Plan B, a commit status privacy-scan on the PR head (only while vars.PRIVACY_SCAN_STATUS is on)
-        # If the first live run shows this job's check run attached to main's tip rather than the PR head, a required
-        # check named privacy-scan never sees it. Then the owner sets the repository variable PRIVACY_SCAN_STATUS to
-        # "on", and this step posts the scan's result as the commit status privacy-scan on the PR head, which the
-        # ruleset requires instead. It holds no secret and runs no PR code: it posts success only when the scan step
-        # succeeded, and failure for any other outcome (failed, skipped after a fork's PR, cancelled)
-        if: always() && vars.PRIVACY_SCAN_STATUS == 'on'
+  privacy-scan-status:
+    # Plan B, a job of its own so the job that holds the list and reads the PR's data never holds a token that can
+    # write. If the first live run shows the scan's check run attached to main's tip rather than the PR head, a
+    # required check named privacy-scan never sees it. Then the owner sets the repository variable
+    # PRIVACY_SCAN_STATUS to "on", and this job posts the scan job's result as the commit status privacy-scan on the PR
+    # head, which the ruleset requires instead. The status names the run attempt it reports, so a re-run's status is
+    # judged against its own attempt. No environment, no secret, nothing of the PR runs: it posts success only when
+    # the scan job succeeded, and failure for any other result (failed, cancelled, skipped)
+    needs: privacy-scan
+    if: always() && vars.PRIVACY_SCAN_STATUS == 'on'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      statuses: write
+    steps:
+      - name: The commit status privacy-scan on the PR head, for this run attempt
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           HEAD: ${{ github.event.pull_request.head.sha }}
-          OUTCOME: ${{ steps.scan.outcome }}
+          RESULT: ${{ needs.privacy-scan.result }}
           RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
-          state=failure; if [ "$OUTCOME" = success ]; then state=success; fi
+          state=failure; if [ "$RESULT" = success ]; then state=success; fi
           gh api -X POST "repos/$REPO/statuses/$HEAD" -f state="$state" -f context=privacy-scan \
-            -f target_url="https://github.com/$REPO/actions/runs/$RUN_ID" -f description="privacy scan: $OUTCOME" > /dev/null
+            -f target_url="https://github.com/$REPO/actions/runs/$RUN_ID/attempts/$RUN_ATTEMPT" \
+            -f description="privacy scan: $RESULT, attempt $RUN_ATTEMPT" > /dev/null
