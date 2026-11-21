@@ -10,9 +10,10 @@
 #                        (fails closed). A MAC- or VIN-shaped entry matches with any separator, and a MAC also in
 #                        reversed byte order and as raw bytes in a file read whole.
 #   GITLEAKS             the path of a gitleaks binary (8.x). Missing or not executable: exit 2 (fails closed).
-#   GITHUB_EVENT_PATH    the run's event file: the pull request's title, description, head branch name and any label
-#                        event are read from it here, never passed through a step's env (the runner prints a step's
-#                        env in the public log). Missing or not a pull request event: exit 2 (fails closed).
+#   GITHUB_EVENT_PATH    the run's event file: the pull request's number, title, description, head branch name and
+#                        any label event are read from it here, never passed through a step's env (the runner prints
+#                        a step's env in the public log). Missing, not a pull request event, or without a whole
+#                        number for the pull request: exit 2 (fails closed).
 #
 # Against the list: every line each new commit adds (a merge: only the lines its own resolution adds); every path a new
 # commit touches; each new commit's raw commit object (every header line, the author and committer names, addresses
@@ -53,7 +54,8 @@
 #
 # Prints where, never what: the number of list entries, one line per finding (commit, then file:line or the field; a
 # path that itself matches the list is withheld) and a summary line of counts (identifier matches, gitleaks findings and
-# suppressions, files waiting for the OK and reviewed, images in the PR's text, the total), which a merge step reads.
+# suppressions, files waiting for the OK and reviewed, images in the PR's text, the total) that names the pull request
+# by number, which a merge step reads.
 # Never a matched text, a list entry or a scanned line.
 # Exit 0: nothing found; 1: a finding; 2: usage, or a missing or unusable list or scanner (fails closed).
 set -eEuo pipefail
@@ -76,7 +78,9 @@ for s in "$@"; do
 done
 [ -n "$LISTRAW" ] || die "the identifier list (secret PRIVACY_IDENTIFIERS) is missing or empty: fails closed"
 { [ -n "${GITLEAKS:-}" ] && [ -x "$GITLEAKS" ]; } || die "GITLEAKS does not name an executable gitleaks: fails closed"
-{ [ -n "${GITHUB_EVENT_PATH:-}" ] && jq -e '.pull_request | type == "object"' "$GITHUB_EVENT_PATH" > /dev/null 2>&1; } \
+# the pull request's number, a whole number: the summary names it, so a merge step can find every run of the PR
+{ [ -n "${GITHUB_EVENT_PATH:-}" ] && jq -e '(.pull_request | type == "object") and (.pull_request.number | type == "number")
+    and (.pull_request.number | . == floor and . > 0)' "$GITHUB_EVENT_PATH" > /dev/null 2>&1; } \
   || die "GITHUB_EVENT_PATH does not name a pull request event: fails closed"
 
 umask 077
@@ -594,5 +598,7 @@ glcount=$(wc -l < "$T/glhits")
 # which a merge step reads; the summary is the last line printed
 cat "$T/out.list" "$T/out.bin" "$T/out.allow" "$T/out.gl" "$T/out.comp" "$T/out.reviewed" | sed 's/privacy\([^[:alnum:]]*\)scan:/privacy\1scan[:]/Ig'
 total=$(cat "$T/out.list" "$T/out.bin" "$T/out.allow" "$T/out.gl" "$T/out.comp" | wc -l)
-echo "privacy scan: $n new commit(s); identifier matches $(($(wc -l < "$T/out.list") + $(wc -l < "$T/out.bin"))), gitleaks findings $glcount, gitleaks suppressions $(wc -l < "$T/out.allow"), compressed files $(wc -l < "$T/out.comp") unreviewed and $(wc -l < "$T/out.reviewed") reviewed; pull request images $primg; $total finding(s) in all"
+prnum=$(jq -r '.pull_request.number' "$GITHUB_EVENT_PATH")
+[[ $prnum =~ ^[1-9][0-9]*$ ]] || die "the pull request's number is not a whole number: fails closed"
+echo "privacy scan: $n new commit(s); pull request $prnum; identifier matches $(($(wc -l < "$T/out.list") + $(wc -l < "$T/out.bin"))), gitleaks findings $glcount, gitleaks suppressions $(wc -l < "$T/out.allow"), compressed files $(wc -l < "$T/out.comp") unreviewed and $(wc -l < "$T/out.reviewed") reviewed; pull request images $primg; $total finding(s) in all"
 [ "$total" -eq 0 ] || exit 1

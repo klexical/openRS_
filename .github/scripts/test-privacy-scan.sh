@@ -47,7 +47,8 @@ OUT=$T/out
 scan() { # scan [<base>]: runs the check as the workflow does; base defaults to main's tip, staging's and main's tips excluded
   local base; base=$(sha "${1:-main}")
   jq -n --arg t "${TITLE:-}" --arg b "${BODY:-}" --arg r "${BRANCH:-feature/x}" --arg a "${ACTION:-synchronize}" \
-    --arg l "${LABEL:-}" '{action: $a, pull_request: {title: $t, body: $b, head: {ref: $r}}}
+    --arg l "${LABEL:-}" --arg n "${PRNUM-7}" '{action: $a, pull_request: ({title: $t, body: $b, head: {ref: $r}}
+        + (if $n == "" then {} else {number: (try ($n | tonumber) catch $n)} end))}
       + (if $l == "" then {} else {label: {name: $l}} end)' > "$T/event.json"
   (cd "$T/r" && PRIVACY_IDENTIFIERS=${LIST-$LISTV} GITLEAKS=${GL-$STUB} GITHUB_EVENT_PATH=${EVENT-$T/event.json} \
     bash "$SCAN" "$base" "$(sha HEAD)" "$(sha staging)" "$(sha main)") > "$OUT" 2>&1
@@ -426,6 +427,13 @@ done
 EVENT=""; run 2 "no event file fails closed" "does not name a pull request event"
 echo '{"push": {}}' > "$T/push.json"; EVENT=$T/push.json; run 2 "an event that is not a pull request fails closed" \
   "does not name a pull request event"; unset EVENT
+# the summary names the pull request, so a merge step can find every run of one PR at any head without GitHub's
+# pull_requests field; an event without a whole number there fails closed
+repo; g checkout -q -b feature; commit "work"
+run 0 "the summary names the pull request" "privacy scan: 1 new commit(s); pull request 7; identifier matches 0"
+PRNUM=448 run 0 "the summary names that pull request's number" "; pull request 448; "
+PRNUM="" run 2 "an event without the pull request's number fails closed" "does not name a pull request event"
+PRNUM="7; identifier matches 0" run 2 "a number that is not a whole number fails closed" "does not name a pull request event"
 out=$(bash "$SCAN" 2>&1); rc=$?
 if [ "$rc" -eq 2 ]; then pass=$((pass+1)); echo "PASS no arguments is a usage error (exit 2)"; else fail=$((fail+1)); echo "FAIL no arguments: exit $rc"; fi
 (cd "$T/r" && PRIVACY_IDENTIFIERS=$LISTV GITLEAKS=$STUB GITHUB_EVENT_PATH=$T/event.json bash "$SCAN" main "$(sha HEAD)") > "$OUT" 2>&1
