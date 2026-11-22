@@ -13,8 +13,10 @@ The facts use a fixed vocabulary only, so no text from the screen reaches the ru
   selected=<NAME>|none      the one tab whose node is selected (Compose's `selected` semantics); else, with all five
                             tabs found, the one tab not clickable (Compose exposes a selected tab so); or none
   selectedby=flag|clickable|none  which of the two read it
-  tabflags=<NAME>:<sssss>:<n> ...|none  each tab's selected, checked, checkable, focused and clickable attributes (1 true, 0 false,
-                            - absent) and the number of nodes with its description, for a tab not read as selected
+  tabflags=<NAME>:<sssss>:<s|p>:<n> ...|none  for a tab not read as selected: each tab's selected, checked,
+                            checkable, focused and clickable attributes (1 true, 0 false, - absent), read from the
+                            node itself (s) or its parent (p: the node is Compose's fake child), and the number of
+                            nodes with its description
 A dump that is not XML exits 2 with the parser's error class and position only (never the dump's text).
 """
 import re
@@ -66,6 +68,7 @@ def main(argv):
         print("unreadable dump (ParseError at line %d column %d of %d characters)" % (line, col, len(text)), file=sys.stderr)
         return 2
     nodes = list(root.iter("node"))
+    parent = {c: q for q in root.iter() for c in q}
     ours = sum(1 for n in nodes if n.get("package") == package)
     others = sorted({n.get("package", "") for n in nodes} - {package})
     others = [o if PKG.fullmatch(o) else "<other>" for o in others]
@@ -84,8 +87,14 @@ def main(argv):
         if m:
             seen[m.group(1)] = seen.get(m.group(1), 0) + 1
         if m and m.group(1) not in tabs:
-            flags[m.group(1)] = "".join(FLAG_CODE.get(n.get(a), "?") for a in FLAGS)
-            tabnode[m.group(1)] = n
+            # Compose puts a merging node's content description on a fake first child with the node's own bounds
+            # (SemanticsNode.emitFakeNodes); the tab's state (selected, clickable) is then on that parent
+            q = parent.get(n)
+            own = not (q is not None and q.tag == "node" and q.get("package") == package
+                       and not q.get("content-desc") and q.get("bounds") == n.get("bounds"))
+            state = n if own else q
+            flags[m.group(1)] = "".join(FLAG_CODE.get(state.get(a), "?") for a in FLAGS) + (":s" if own else ":p")
+            tabnode[m.group(1)] = state
             c = centre(n)
             if c:
                 tabs[m.group(1)] = c

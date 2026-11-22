@@ -55,7 +55,9 @@ dump() {
     l=$((i * 216)); r=$((l + 216)); sel=false; clk=true; [ "${TABS[$i]}" = "$tab" ] && { sel=true; clk=false; }
     # FAKE_SELECT_BY=clickable: no tab node says selected (as on the API 36 image); the selected one is not clickable
     [ "${FAKE_SELECT_BY-}" = clickable ] && sel=false
-    echo "<node index=\"$((i + 1))\" text=\"\" package=\"com.openrs.dash.debug\" content-desc=\"${TABS[$i]} tab\" selected=\"$sel\" clickable=\"$clk\" bounds=\"[$l,2252][$r,2348]\" />"
+    # Compose's shape: the tab's node holds its state; its description is on a fake first child with the same bounds
+    echo "<node index=\"$((i + 1))\" text=\"\" package=\"com.openrs.dash.debug\" content-desc=\"\" selected=\"$sel\" clickable=\"$clk\" bounds=\"[$l,2252][$r,2348]\">"
+    echo "<node index=\"0\" text=\"\" package=\"com.openrs.dash.debug\" content-desc=\"${TABS[$i]} tab\" selected=\"false\" clickable=\"false\" bounds=\"[$l,2252][$r,2348]\" /></node>"
   done
   echo "</node></hierarchy></window>"
   if [ -f "$S/whatsnew" ]; then
@@ -197,9 +199,9 @@ run_case "with no tab node marked selected, the only tab not clickable is the se
 
 # ── Failures, each named ──
 run_case "a tab that does not select after its tap fails" 1 "$APK" FAKE_NO_SELECT=THERMAL \
-  && expect "::error::the THERMAL tab is not selected after its tap (selected: PERF; tab flags: DRIVE:0---1:1 PERF:1---0:1 THERMAL:0---1:1 TRIP:0---1:1 GARAGE:0---1:1)"
+  && expect "::error::the THERMAL tab is not selected after its tap (selected: PERF; tab flags: DRIVE:0---1:p:1 PERF:1---0:p:1 THERMAL:0---1:p:1 TRIP:0---1:p:1 GARAGE:0---1:p:1)"
 run_case "a tab that does not select fails when only the clickable flags tell" 1 "$APK" FAKE_SELECT_BY=clickable FAKE_NO_SELECT=TRIP \
-  && expect "::error::the TRIP tab is not selected after its tap (selected: THERMAL; tab flags: DRIVE:0---1:1 PERF:0---1:1 THERMAL:0---0:1 TRIP:0---1:1 GARAGE:0---1:1)"
+  && expect "::error::the TRIP tab is not selected after its tap (selected: THERMAL; tab flags: DRIVE:0---1:p:1 PERF:0---1:p:1 THERMAL:0---0:p:1 TRIP:0---1:p:1 GARAGE:0---1:p:1)"
 run_case "a restarted process fails" 1 "$APK" FAKE_RESTART_AT=3 \
   && expect "::error::com.openrs.dash.debug restarted on PERF: process 4242 at the start, 5151 now"
 run_case "a process gone after the start fails" 1 "$APK" FAKE_GONE_AT=1 \
@@ -276,7 +278,7 @@ whatsnew=none
 tab.PERF=324 2300
 selected=PERF
 selectedby=flag
-tabflags=PERF:1----:1'
+tabflags=PERF:1----:s:1'
 ui_case "ui: a label that only starts with DEMO, and a tab with empty bounds, do not count" \
 '<hierarchy><node package="com.openrs.dash.debug" text="DEMO MODE ON" bounds="[0,0][10,10]"/><node package="com.openrs.dash.debug" content-desc="DRIVE tab" selected="false" bounds="[0,0][0,0]"/></hierarchy>' \
 'windows=2
@@ -286,7 +288,7 @@ demo=0
 whatsnew=none
 selected=none
 selectedby=none
-tabflags=DRIVE:0----:1'
+tabflags=DRIVE:0----:s:1'
 ui_case "ui: two tabs not clickable select none" \
 '<hierarchy><node package="com.openrs.dash.debug" content-desc="DRIVE tab" selected="false" clickable="false" bounds="[0,2252][216,2348]"/><node package="com.openrs.dash.debug" content-desc="PERF tab" selected="false" clickable="false" bounds="[216,2252][432,2348]"/><node package="com.openrs.dash.debug" content-desc="THERMAL tab" selected="false" clickable="true" bounds="[432,2252][648,2348]"/><node package="com.openrs.dash.debug" content-desc="TRIP tab" selected="false" clickable="true" bounds="[648,2252][864,2348]"/><node package="com.openrs.dash.debug" content-desc="GARAGE tab" selected="false" clickable="true" bounds="[864,2252][1080,2348]"/></hierarchy>' \
 'windows=5
@@ -301,7 +303,7 @@ tab.TRIP=756 2300
 tab.GARAGE=972 2300
 selected=none
 selectedby=none
-tabflags=DRIVE:0---0:1 PERF:0---0:1 THERMAL:0---1:1 TRIP:0---1:1 GARAGE:0---1:1'
+tabflags=DRIVE:0---0:s:1 PERF:0---0:s:1 THERMAL:0---1:s:1 TRIP:0---1:s:1 GARAGE:0---1:s:1'
 ui_case "ui: with a tab missing, the one not clickable is not taken as selected" \
 '<hierarchy><node package="com.openrs.dash.debug" content-desc="DRIVE tab" selected="false" clickable="false" bounds="[0,2252][216,2348]"/><node package="com.openrs.dash.debug" content-desc="PERF tab" selected="false" clickable="true" bounds="[216,2252][432,2348]"/><node package="com.openrs.dash.debug" content-desc="THERMAL tab" selected="false" clickable="true" bounds="[432,2252][648,2348]"/><node package="com.openrs.dash.debug" content-desc="TRIP tab" selected="false" clickable="true" bounds="[648,2252][864,2348]"/></hierarchy>' \
 'windows=4
@@ -315,7 +317,7 @@ tab.THERMAL=540 2300
 tab.TRIP=756 2300
 selected=none
 selectedby=none
-tabflags=DRIVE:0---0:1 PERF:0---1:1 THERMAL:0---1:1 TRIP:0---1:1'
+tabflags=DRIVE:0---0:s:1 PERF:0---1:s:1 THERMAL:0---1:s:1 TRIP:0---1:s:1'
 ui_case "ui: a dump of every window: windows counted, another app's GOT IT and tab ignored, a window with no tree read as none" \
 '<?xml version="1.0" ?><displays><display id="0"><window index="0" title="w" type="TYPE_SYSTEM"><hierarchy rotation="0"><node package="com.android.systemui" text="GOT IT" content-desc="PERF tab" selected="true" bounds="[0,0][10,10]"/></hierarchy></window><window index="1" title="w" type="TYPE_APPLICATION"></window></display></displays>' \
 'windows=2
@@ -326,6 +328,18 @@ whatsnew=none
 selected=none
 selectedby=none
 tabflags=none'
+ui_case "ui: a tab's state is read from its node when the description is on Compose's fake child, never from a larger parent" \
+'<hierarchy><node package="com.openrs.dash.debug" content-desc="" selected="true" clickable="false" bounds="[0,2252][216,2348]"><node package="com.openrs.dash.debug" content-desc="DRIVE tab" selected="false" clickable="false" bounds="[0,2252][216,2348]"/></node><node package="com.openrs.dash.debug" content-desc="" selected="true" bounds="[0,0][1080,2400]"><node package="com.openrs.dash.debug" content-desc="PERF tab" selected="false" clickable="true" bounds="[216,2252][432,2348]"/></node></hierarchy>' \
+'windows=2
+ours=4
+others=none
+demo=0
+whatsnew=none
+tab.DRIVE=108 2300
+tab.PERF=324 2300
+selected=DRIVE
+selectedby=flag
+tabflags=DRIVE:1---0:p:1 PERF:0---1:s:1'
 ui_case "ui: an odd package name is withheld" \
 '<hierarchy><node package="not a package" text="x" bounds="[0,0][10,10]"/></hierarchy>' \
 'windows=1
@@ -348,7 +362,7 @@ whatsnew=none
 tab.TRIP=756 2300
 selected=TRIP
 selectedby=flag
-tabflags=TRIP:1----:1'
+tabflags=TRIP:1----:s:1'
 
 # ── The workflow's own claims (.github/workflows/emulator-smoke.yml): only the label starts it, read-only token, no
 #    secret, nothing uploaded, no credentials left in the checkout, the nightly's emulator start, then this smoke ──
