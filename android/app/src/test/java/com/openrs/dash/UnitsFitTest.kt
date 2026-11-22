@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
@@ -48,8 +50,9 @@ import java.time.Duration
  */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
-// Tall enough that the whole UNITS section is on screen (off-screen nodes report no size); the width is what is tested
-@Config(qualifiers = "w360dp-h1800dp-xxhdpi")
+// The section scrolls in Settings, so the test composes it in a vertical scroll too and reads each node's own size (not its
+// on-screen bounds): the height of the window does not matter. A tall window ran the release suite out of heap on CI
+@Config(qualifiers = "w360dp-h720dp-xxhdpi")
 class UnitsFitTest {
 
     private class Shown(val text: String, val lines: Int, val overflow: Boolean, val clickable: Boolean,
@@ -78,7 +81,7 @@ class UnitsFitTest {
             if (text != null || clickable) {
                 val l = layouts.firstOrNull()
                 out += Shown(text ?: "", l?.lineCount ?: 0, l?.hasVisualOverflow ?: false, clickable,
-                    n.boundsInRoot.width / density, n.boundsInRoot.height / density)
+                    n.size.width / density, n.size.height / density)
             }
             n.children.forEach { walk(it) }
         }
@@ -92,7 +95,7 @@ class UnitsFitTest {
     private val settingsBody = (360 * 0.95f - 28).dp
 
     private fun units(fontScale: Float, region: Region): List<Shown> = compose(fontScale) {
-        Box(Modifier.width(settingsBody)) { UnitsSection(region.units!!) {} }
+        Box(Modifier.verticalScroll(rememberScrollState()).width(settingsBody)) { UnitsSection(region.units!!) {} }
     }
 
     private fun unitsProblems(fontScale: Float): List<String> = Region.entries.mapNotNull { it.units }.flatMap { r ->
