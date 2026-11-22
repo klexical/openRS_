@@ -266,9 +266,10 @@ check.(wdi == 1 && wsteps[0]["uses"].to_s.start_with?("actions/checkout@") && ws
        wsteps[0].dig("with", "persist-credentials") == false && !wsteps[0].key?("if"),
        "web-ci: checkout (the whole history, for the merge base; no credentials), then the decision step")
 check.(!wdiff.key?("if") && !wdiff.key?("continue-on-error") && wdiff["working-directory"] == "." && wdiff["shell"] == "bash" &&
-       wdiff["env"] == { "EVENT" => "${{ github.event_name }}", "BASE_SHA" => "${{ github.event.pull_request.base.sha }}",
+       wdiff["env"] == { "EVENT" => "${{ github.event_name }}", "BASE_REF" => "${{ github.event.pull_request.base.ref }}",
+                         "BASE_SHA" => "${{ github.event.pull_request.base.sha }}",
                          "HEAD_SHA" => "${{ github.event.pull_request.head.sha }}" } && !wdiff["run"].to_s.include?("${{"),
-       "web-ci: the decision step always runs, cannot be skipped past, and takes the event's name, base and head through env only")
+       "web-ci: the decision step always runs, cannot be skipped past, and takes the event's name, base branch, base and head through env only")
 check.(wdi && wsteps.length > wdi + 1 && wsteps[(wdi + 1)..].all? { |st| st["if"] == "steps.diff.outputs.run == 'true'" },
        "web-ci: every step after the decision runs only when it says run=true")
 decide = lambda do |event, failing_diff = false, &build|
@@ -282,7 +283,12 @@ decide = lambda do |event, failing_diff = false, &build|
     shas = build.(git, put)
     shas = {} unless shas.is_a?(Hash)
     sha = ->(r) { o, st = Open3.capture2e("git", "-C", d, "rev-parse", r); st.success? ? o.strip : "" }
-    shas = { "BASE_SHA" => sha.("HEAD^1"), "HEAD_SHA" => sha.("HEAD^2") }.merge(shas)
+    shas = { "BASE_REF" => "base", "BASE_SHA" => sha.("HEAD^1"), "HEAD_SHA" => sha.("HEAD^2") }.merge(shas)
+    # checkout's whole-history fetch copies every branch to refs/remotes/origin/; a build may name one to leave out
+    drop = shas.delete("DROP_BRANCH")
+    git.("for-each-ref", "--format=%(refname:short)", "refs/heads").split.each do |b|
+      git.("update-ref", "refs/remotes/origin/#{b}", "refs/heads/#{b}") unless b == drop
+    end
     out = File.join(d, "out")
     File.write(out, "")
     env = { "EVENT" => event, "GITHUB_OUTPUT" => out }.merge(shas)
@@ -297,17 +303,19 @@ decide = lambda do |event, failing_diff = false, &build|
     [st.success?, File.read(out), o]
   end
 end
-pr = lambda do |base_change = nil, &head|
+pr = lambda do |base_change = nil, lagging_event_base = false, &head|
   lambda do |git, put|
     git.("checkout", "-q", "-b", "head")
     head.(git, put)
     git.("add", "-A"); git.("commit", "-q", "-m", "head")
     git.("checkout", "-q", "base")
+    event_base = git.("rev-parse", "HEAD").strip
     if base_change
       put.(base_change, "moved on"); git.("add", "-A"); git.("commit", "-q", "-m", "base moves on")
     end
     git.("merge", "-q", "--no-ff", "-m", "test merge", "head")
-    nil
+    # the event can name the base commit from before the base moved on, while the merge commit is on the new tip (#473)
+    lagging_event_base ? { "BASE_SHA" => event_base } : nil
   end
 end
 { "a change under web/" => [pr.() { |_, put| put.("web/a.txt", "y") }, "run=true"],
@@ -320,7 +328,11 @@ end
   "a new file under web/ with a non-ASCII name (git quotes it)" => [pr.() { |_, put| put.("web/caf\u00e9.txt") }, "run=true"],
   "a non-ASCII file outside web/" => [pr.() { |_, put| put.("docs/caf\u00e9.txt") }, "run=false"],
   "an Android-only change while the base moved on under web/" =>
-    [pr.("web/c.txt") { |_, put| put.("android/b.txt", "y") }, "run=false"] }.each do |what, (build, want)|
+    [pr.("web/c.txt") { |_, put| put.("android/b.txt", "y") }, "run=false"],
+  "a web/ change while the base moved on and the event names the base's older commit" =>
+    [pr.("android/c.txt", true) { |_, put| put.("web/a.txt", "y") }, "run=true"],
+  "an Android-only change, the event naming the base's older commit" =>
+    [pr.("web/c.txt", true) { |_, put| put.("android/b.txt", "y") }, "run=false"] }.each do |what, (build, want)|
   ok, out, = decide.("pull_request", &build)
   check.(ok && out.lines.map(&:strip) == [want], "web-ci decision: #{what} => #{want}")
 end
@@ -334,9 +346,24 @@ ok, out, = decide.("pull_request") do |git, put|
   git.("checkout", "-q", "-b", "newbase", root); put.("docs/n.txt"); git.("add", "-A"); git.("commit", "-qm", "new base")
   newbase = git.("rev-parse", "HEAD").strip
   git.("checkout", "-q", "base"); git.("merge", "-q", "--no-ff", "-m", "stale test merge", "head")
-  { "BASE_SHA" => newbase, "HEAD_SHA" => head }
+  { "BASE_REF" => "newbase", "BASE_SHA" => newbase, "HEAD_SHA" => head }
 end
 check.(!ok && !out.include?("run="), "web-ci decision: a retarget whose merge commit is on the old base, changing web/ against the new base => the step fails (it would build the wrong tree)")
+# a retarget onto a base the old base already contains (staging holding all of main): the merge commit is past the event's
+# base commit but not on the new base branch, so it would still build the old base's tree
+ok, out, = decide.("pull_request") do |git, put|
+  git.("branch", "newbase")
+  put.("android/b.txt", "old base"); git.("commit", "-qam", "old base moves on")
+  git.("checkout", "-q", "-b", "head"); put.("web/a.txt", "y"); git.("commit", "-qam", "head")
+  head = git.("rev-parse", "HEAD").strip
+  git.("checkout", "-q", "base"); git.("merge", "-q", "--no-ff", "-m", "stale test merge", "head")
+  { "BASE_REF" => "newbase", "BASE_SHA" => git.("rev-parse", "newbase").strip, "HEAD_SHA" => head }
+end
+check.(!ok && !out.include?("run="), "web-ci decision: a retarget onto a base the old base contains, changing web/ => the step fails (the merge commit is not on the new base branch)")
+ok, out, = decide.("pull_request", &pr.() { |_, put| put.("web/a.txt", "y") }.then { |b| ->(g, p) { b.(g, p); { "DROP_BRANCH" => "base" } } })
+check.(!ok && !out.include?("run="), "web-ci decision: a web/ change but the checkout has no copy of the base branch => the step fails")
+ok, out, = decide.("pull_request", &pr.() { |_, put| put.("web/a.txt", "y") }.then { |b| ->(g, p) { b.(g, p); { "BASE_REF" => "" } } })
+check.(!ok && !out.include?("run="), "web-ci decision: the event names no base branch => the step fails, nothing decided")
 # the same stale merge commit when the pull request changes no web/ against the new base: nothing is built, so it skips
 ok, out, = decide.("pull_request") do |git, put|
   root = git.("rev-parse", "HEAD").strip
@@ -346,7 +373,7 @@ ok, out, = decide.("pull_request") do |git, put|
   git.("checkout", "-q", "-b", "newbase", root); put.("docs/n.txt"); git.("add", "-A"); git.("commit", "-qm", "new base")
   newbase = git.("rev-parse", "HEAD").strip
   git.("checkout", "-q", "base"); git.("merge", "-q", "--no-ff", "-m", "stale test merge", "head")
-  { "BASE_SHA" => newbase, "HEAD_SHA" => head }
+  { "BASE_REF" => "newbase", "BASE_SHA" => newbase, "HEAD_SHA" => head }
 end
 check.(ok && out.lines.map(&:strip) == ["run=false"], "web-ci decision: a stale merge commit, no web/ change against the new base => run=false")
 ok, out, = decide.("pull_request", &pr.() { |_, put| put.("web/a.txt", "y") }.then { |b| ->(g, p) { b.(g, p); { "BASE_SHA" => "" } } })
