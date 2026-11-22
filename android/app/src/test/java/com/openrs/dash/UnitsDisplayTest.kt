@@ -289,6 +289,18 @@ class UnitsDisplayTest {
                 text.subList(from + 1, from + 16),
             )
 
+            // Region is worked out from the eleven units, never from the phone's country (owner)
+            val saved = java.util.Locale.getDefault()
+            try {
+                for (tag in listOf("en-US", "de-DE", "en-CA")) {
+                    java.util.Locale.setDefault(java.util.Locale.forLanguageTag(tag))
+                    assertEquals("on a $tag phone", "UK",
+                        JSONObject(DiagnosticReportBuilder.buildDetailJson("t")).getJSONObject("settings").getString("unitRegion"))
+                }
+            } finally {
+                java.util.Locale.setDefault(saved)
+            }
+
             // A hand-changed unit reads Custom
             DiagnosticLogger.sessionStart("test", 0, prefs = uk.copy(torqueUnit = UnitIds.LBFT))
             assertEquals("CUSTOM",
