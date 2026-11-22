@@ -182,6 +182,9 @@ run 1 "UTF-16 after the first 8000 bytes, with a ZIP appended, is read whole" "F
 repo; g checkout -q -b feature; { head -c 9000 /dev/zero | tr '\0' 'a'; printf '\n\x02\x5a\x1e\x7c\x3d\x9b\n'; } > "$T/pre"; pzip mac.dat "$T/pre"
 commit "text, then a MAC's raw bytes, then a ZIP"
 LIST=$(printf '%s\n%s\n' "$ID1" "$MAC") run 1 "a MAC's raw bytes, with a ZIP appended, are read whole" "FINDING $(c12): binary content mac.dat"
+repo; g checkout -q -b feature; { printf '\x00\x01\x02\x03'; head -c 60 /dev/urandom; } > "$T/pre"; pzip raw.dat "$T/pre"; commit "a binary of no named kind, then a ZIP"
+run 1 "a binary of no named kind with a ZIP appended still needs the OK" \
+  "FINDING $(c12): a binary file, which may hold compressed data raw.dat (needs a reviewer's OK"
 repo; g checkout -q -b feature; printf 'inner %s\n' "$ID1" | gzip -c > "$T/inner.gz"
 python3 -I -c 'import sys,zipfile; zipfile.ZipFile(sys.argv[1],"w").write(sys.argv[2],"inner.gz")' "$T/r/b.zip" "$T/inner.gz"
 g add b.zip; commit "a ZIP holding a gzip"
@@ -629,6 +632,11 @@ tr=$(g write-tree); g reset -q
 hist "$(sha main)" "$tr"
 expect 1 "a Git LFS pointer in a tree a tag names waits for a reviewer" $? \
   "privacy history scan: files for a reviewer (binary, compressed, ZIP members, embedded images) 1"
+repo; put f.txt 'clean\n'; commit "clean"; { printf '\x00\x01\x02\x03'; head -c 60 /dev/urandom; } > "$T/pre"; pzip raw.dat "$T/pre"
+tr=$(g write-tree); g reset -q
+hist "$(sha main)" "$tr"
+expect 1 "a binary of no named kind with a ZIP appended, in a tree a tag names, waits for a reviewer" $? \
+  "privacy history scan: files for a reviewer (binary, compressed, ZIP members, embedded images) 1"
 # a backslash in a tagged tree's path is the path's own: a backslash-t cannot shift where the path is checked, and a
 # backslash-n cannot break the scanned lines' places
 repo; put f.txt 'clean\n'; commit "clean"; bl=$(printf 'seen %s here\n' "$ID1" | g hash-object -w --stdin)
@@ -649,6 +657,8 @@ printf 'refs/remotes/origin/main\n' > "$T/names"; hist --names "$T/names" "$(sha
 expect 0 "clean ref names pass" $? "privacy history scan: ref names 1, 0 matching the list"
 printf 'refs/remotes/origin/main\nrefs/tags/%s\n' "$(printf '%s' "$ID1" | base64 -w0)" > "$T/names"; hist --names "$T/names" "$(sha main)"
 expect 1 "a ref name holding the list's entry in base64 counts as matching" $? "privacy history scan: ref names 2, 1 matching the list"
+printf 'refs/tags/x-%s-%s\n' "$ID1" "$(printf '%s' "$ID1" | base64 -w0)" > "$T/names"; hist --names "$T/names" "$(sha main)"
+expect 1 "a ref name that matches twice counts once" $? "privacy history scan: ref names 1, 1 matching the list"
 hist --names "$T/no-such-file" "$(sha main)"; expect 2 "--names needs a readable file" $? "--names needs a readable file"
 (cd "$T/r" && PRIVACY_IDENTIFIERS=$LISTV GITLEAKS=$STUB GITHUB_EVENT_PATH=$T/event.json bash "$SCAN" --names "$T/names" "$(sha main)" "$(sha HEAD)") > "$OUT" 2>&1
 expect 2 "--names is for --history only" $? "--names is for --history only"
