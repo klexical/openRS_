@@ -34,8 +34,8 @@ steps = job["steps"] || []
 check.(job["permissions"] == {} && job["environment"] == "project-review" && !job.key?("if") &&
        steps.none? { |s| s.key?("if") || s.key?("continue-on-error") || s.key?("uses") } && !text.match?(/^\s*-?\s*uses:/),
        "the job: no token permission, environment project-review, no condition, no `uses:` (no checkout)")
-check.(wf.dig("concurrency", "cancel-in-progress") == false && wf.dig("concurrency", "group").to_s.include?("${{ inputs.pr }}"),
-       "one run at a time per pull request; a running one is never cancelled (a waiting one can be replaced: the reviewer reads back)")
+check.(wf.dig("concurrency", "cancel-in-progress") == false && wf.dig("concurrency", "group") == "project-review-${{ inputs.sha }}",
+       "one run at a time per head (the status belongs to the commit); a running one is never cancelled (a waiting one can be replaced: the reviewer waits for its run, then reads back)")
 check.(steps.length == 3 && steps[0]["env"] == { "REF" => "${{ github.ref }}" } &&
        steps[0]["run"].to_s.strip == '[ "$REF" = refs/heads/main ] || { echo "::error::project-review runs on main only: fails closed"; exit 1; }',
        "the first step fails any ref but main")
@@ -48,7 +48,10 @@ lrun = last["run"].to_s
 check.(lrun.include?("curl -fsS --proto '=https' -X") && !lrun.match?(/curl[^\n]*(\s-L\b|--location)/) && lrun.include?("umask 077") &&
        lrun.index("unset APP_KEY").to_i > lrun.index('printf \'%s\\n\' "$APP_KEY" > "$key"').to_i && lrun.scan("$APP_KEY").size == 1,
        "curl: https only, no redirects followed; the key file under umask 077; the key leaves the environment once written")
-check.(text.include?("reads the head's statuses back after its dispatch"), "the header tells the reviewer to read its status back after a dispatch")
+check.(text.include?("waits for its own run") && text.include?("to complete, and only then reads the head's statuses back") &&
+       text.include?("that is the answer, final for that head; do not dispatch again"),
+       "the header tells the reviewer to wait for its run, then read back, and to stop on a refusal")
+check.(text.include?("a mismatch counts as no status"), "the header says a status that names another pull request or base counts as none")
 check.(text.scan("${{ inputs.").size == text.scan(/^\s+(PR|SHA|VERDICT|REPORT): \$\{\{ inputs\.\w+ \}\}$/).size + 3,
        "inputs appear only in env, the run's name and the concurrency group")
 
@@ -159,7 +162,13 @@ check.(ok && posts.(calls).size == 1 && JSON.parse(posts.(calls).first[3])["stat
 BOT = { "login" => "openrs-project-review[bot]" }
 mine = { "context" => "project-review", "state" => "failure", "creator" => BOT,
          "description" => "Review found a REAL-GAP: review-report-473-opus.md #{WHERE}" }
-cleared = { "context" => "project-review", "state" => "success", "creator" => BOT, "description" => "Review clear (REAL-GAP withdrawn): x" }
+cleared = { "context" => "project-review", "state" => "success", "creator" => BOT,
+            "description" => "Review clear (REAL-GAP withdrawn): review-report-473-opus.md #{WHERE}" }
+# two reviewers' REAL-GAPs on one head (the model split puts two reviewers on many pull requests), newest first
+gap = ->(r) { mine.merge("description" => "Review found a REAL-GAP: #{r} #{WHERE}") }
+part = ->(r) { mine.merge("description" => "Review REAL-GAP withdrawn: #{r} #{WHERE}") }
+A = "review-a-fable.md"
+B = "review-b-opus.md"
 other = { "context" => "Build & Test", "state" => "success", "creator" => { "login" => "github-actions[bot]" } }
 ok, _, calls = run_step.(post, GOOD, { "statuses" => [mine] })
 check.(!ok && posts.(calls).empty?, "clear on a head with this app's REAL-GAP: refused, nothing posted")
@@ -178,6 +187,38 @@ ok, _, calls = run_step.(post, GOOD, { "statuses" => [cleared, mine] })
 check.(ok && posts.(calls).size == 1, "clear after a withdrawn REAL-GAP (the app's newest status is the withdrawal): posted")
 ok, _, calls = run_step.(post, GOOD.merge("VERDICT" => "withdrawn-gap"), { "statuses" => [cleared, mine] })
 check.(!ok && posts.(calls).empty?, "withdrawn-gap after the REAL-GAP was withdrawn: refused (nothing stands)")
+posted = ->(calls) { posts.(calls).first ? JSON.parse(posts.(calls).first[3]).values_at("state", "description") : [] }
+ok, _, calls = run_step.(post, GOOD.merge("VERDICT" => "withdrawn-gap", "REPORT" => B), { "statuses" => [gap.(B), gap.(A)] })
+check.(ok && posted.(calls) == ["failure", "Review REAL-GAP withdrawn: #{B} #{WHERE}"],
+       "two REAL-GAPs (A, then B), B withdrawn: a failure that records the withdrawal (A still stands)")
+ok, _, calls = run_step.(post, GOOD.merge("VERDICT" => "withdrawn-gap", "REPORT" => A), { "statuses" => [gap.(B), gap.(A)] })
+check.(ok && posted.(calls) == ["failure", "Review REAL-GAP withdrawn: #{A} #{WHERE}"],
+       "two REAL-GAPs (A, then B), A withdrawn: the same, whichever was posted first (B still stands)")
+ok, _, calls = run_step.(post, GOOD.merge("REPORT" => "review-c.md"), { "statuses" => [part.(B), gap.(B), gap.(A)] })
+check.(!ok && posts.(calls).empty?, "two REAL-GAPs, B withdrawn, then a third report's clear: refused (A stands)")
+ok, _, calls = run_step.(post, GOOD.merge("VERDICT" => "withdrawn-gap", "REPORT" => A), { "statuses" => [part.(B), gap.(B), gap.(A)] })
+check.(ok && posted.(calls) == ["success", "Review clear (REAL-GAP withdrawn): #{A} #{WHERE}"],
+       "two REAL-GAPs, B withdrawn, then A withdrawn: success (none is left)")
+ok, _, calls = run_step.(post, GOOD.merge("VERDICT" => "withdrawn-gap", "REPORT" => B), { "statuses" => [part.(B), gap.(B), gap.(A)] })
+check.(!ok && posts.(calls).empty?, "a report withdrawn twice: refused (its REAL-GAP no longer stands)")
+both_gone = [cleared.merge("description" => "Review clear (REAL-GAP withdrawn): #{A} #{WHERE}"), part.(B), gap.(B), gap.(A)]
+ok, _, calls = run_step.(post, GOOD.merge("REPORT" => "review-c.md"), { "statuses" => both_gone })
+check.(ok && posts.(calls).size == 1, "both REAL-GAPs withdrawn, then a clear: posted")
+ok, _, calls = run_step.(post, GOOD.merge("REPORT" => "review-c.md"), { "statuses" => [gap.(A), cleared.merge("description" => "Review clear (REAL-GAP withdrawn): #{A} #{WHERE}"), gap.(A)] })
+check.(!ok && posts.(calls).empty?, "a REAL-GAP posted again after its withdrawal stands again: a clear is refused")
+ok, _, calls = run_step.(post, GOOD.merge("REPORT" => "review-c.md"), { "statuses" => [mine.merge("state" => "success", "description" => "Review clear: #{B} #{WHERE}"), gap.(A)] })
+check.(!ok && posts.(calls).empty?, "a REAL-GAP under a newer clear of another report's still stands: a clear is refused")
+ok, _, calls = run_step.(post, GOOD.merge("REPORT" => "review-c.md"), { "statuses" => [other] * 99 + [gap.(A)], "statuses-p2" => [] })
+check.(!ok && posts.(calls).empty?, "a REAL-GAP among 99 other statuses on a short first page: refused")
+ok, _, calls = run_step.(post, GOOD.merge("REPORT" => "review-c.md"), { "statuses" => [gap.(A)] * 100, "statuses-p2" => [gap.(A), cleared.merge("state" => "success", "description" => "Review clear (REAL-GAP withdrawn): #{A} #{WHERE}")] })
+check.(!ok && posts.(calls).empty?, "pages read oldest last: a REAL-GAP newer than its withdrawal (on page 1) stands")
+{ "a description the run cannot read" => mine.merge("description" => "something else"),
+  "a REAL-GAP posted as success" => mine.merge("state" => "success"),
+  "a clear posted as failure" => mine.merge("description" => "Review clear: #{A} #{WHERE}"),
+  "a pending status of the app's" => mine.merge("state" => "pending") }.each do |what, odd|
+  ok, _, calls = run_step.(post, GOOD.merge("REPORT" => "review-c.md"), { "statuses" => [odd] })
+  check.(!ok && posts.(calls).empty?, "#{what}: fails closed, nothing posted")
+end
 ok, _, calls = run_step.(post, GOOD, { "statuses" => [other] * 100, "statuses-p2" => [mine] })
 check.(!ok && posts.(calls).empty?, "a REAL-GAP on the second page of statuses still stands")
 ok, _, calls = run_step.(post, GOOD, { "statuses" => [other] * 100, **(2..10).to_h { |i| ["statuses-p#{i}", [other] * 100] } })
