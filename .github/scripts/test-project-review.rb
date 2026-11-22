@@ -35,7 +35,7 @@ check.(job["permissions"] == {} && job["environment"] == "project-review" && !jo
        steps.none? { |s| s.key?("if") || s.key?("continue-on-error") || s.key?("uses") } && !text.match?(/^\s*-?\s*uses:/),
        "the job: no token permission, environment project-review, no condition, no `uses:` (no checkout)")
 check.(wf.dig("concurrency", "cancel-in-progress") == false && wf.dig("concurrency", "group").to_s.include?("${{ inputs.pr }}"),
-       "one run at a time per pull request, never cancelled")
+       "one run at a time per pull request; a running one is never cancelled (a waiting one can be replaced: the reviewer reads back)")
 check.(steps.length == 3 && steps[0]["env"] == { "REF" => "${{ github.ref }}" } &&
        steps[0]["run"].to_s.strip == '[ "$REF" = refs/heads/main ] || { echo "::error::project-review runs on main only: fails closed"; exit 1; }',
        "the first step fails any ref but main")
@@ -44,6 +44,11 @@ check.(steps.select { |s| s.to_s.include?("secrets.") || s.to_s.include?("vars."
        last.dig("env", "APP_KEY") == "${{ secrets.PROJECT_REVIEW_APP_KEY }}" && last.dig("env", "APP_ID") == "${{ vars.PROJECT_REVIEW_APP_ID }}",
        "the app's key and id reach the last step only")
 check.(!steps.empty? && steps.none? { |s| s["run"].to_s.include?("${{") }, "no ${{ }} in any run (values come through env)")
+lrun = last["run"].to_s
+check.(lrun.include?("curl -fsS --proto '=https' -X") && !lrun.match?(/curl[^\n]*(\s-L\b|--location)/) && lrun.include?("umask 077") &&
+       lrun.index("unset APP_KEY").to_i > lrun.index('printf \'%s\\n\' "$APP_KEY" > "$key"').to_i && lrun.scan("$APP_KEY").size == 1,
+       "curl: https only, no redirects followed; the key file under umask 077; the key leaves the environment once written")
+check.(text.include?("reads the head's statuses back after its dispatch"), "the header tells the reviewer to read its status back after a dispatch")
 check.(text.scan("${{ inputs.").size == text.scan(/^\s+(PR|SHA|VERDICT|REPORT): \$\{\{ inputs\.\w+ \}\}$/).size + 3,
        "inputs appear only in env, the run's name and the concurrency group")
 
@@ -69,7 +74,9 @@ FAKE_CURL = <<~'SH'
     "GET repos/klexical/openRS_/installation") name=installation ;;
     "POST app/installations/77/access_tokens") name=token ;;
     "GET repos/klexical/openRS_/pulls/"*) name=pr ;;
-    "GET repos/klexical/openRS_/commits/"*"/statuses?per_page=100") name=statuses ;;
+    "GET repos/klexical/openRS_/commits/"*"/statuses?per_page=100&page=1") name=statuses ;;
+    "GET repos/klexical/openRS_/commits/"*"/statuses?per_page=100&page="*) name=statuses-p${path##*page=}
+      [ -f "$FAKE/$name.json" ] || { echo '[]'; exit 0; } ;;
     "POST repos/klexical/openRS_/statuses/"*) name=posted ;;
     *) name=unknown ;;
   esac
@@ -79,7 +86,10 @@ SH
 SHA = "0123456789abcdef0123456789abcdef01234567"
 TOKEN = "ghs_installation_token_for_the_test"
 KEY = OpenSSL::PKey::RSA.new(2048)
-GOOD = { "PR" => "473", "SHA" => SHA, "VERDICT" => "clear", "REPORT" => "review-report-473-opus.md" }
+GOOD = { "PR" => "473", "SHA" => SHA, "VERDICT" => "clear", "REPORT" => "review-report-473-opus.md", "GITHUB_RUN_ATTEMPT" => "1",
+         "GITHUB_RUN_ID" => "4242", "GITHUB_SERVER_URL" => "https://github.com" }
+RUN_URL = "https://github.com/klexical/openRS_/actions/runs/4242/attempts/1"
+WHERE = "(PR 473 to main)"
 
 run_step = lambda do |step, env, answers = {}|
   Dir.mktmpdir do |d|
@@ -87,7 +97,8 @@ run_step = lambda do |step, env, answers = {}|
     [bin, fake, tmp].each { |p| Dir.mkdir(p) }
     File.write(File.join(bin, "curl"), FAKE_CURL); File.chmod(0o755, File.join(bin, "curl"))
     { "app" => { "slug" => "openrs-project-review" }, "installation" => { "id" => 77 }, "token" => { "token" => TOKEN },
-      "pr" => { "state" => "open", "base" => { "ref" => "main" }, "head" => { "sha" => SHA } }, "statuses" => [],
+      "pr" => { "state" => "open", "base" => { "ref" => "main" }, "head" => { "sha" => SHA, "repo" => { "full_name" => "klexical/openRS_" } } },
+      "statuses" => [],
       "posted" => {} }.merge(answers).each { |k, v| File.write(File.join(fake, "#{k}.json"), JSON.generate(v)) unless v.nil? }
     base = { "PATH" => "#{bin}:#{ENV["PATH"]}", "FAKE" => fake, "RUNNER_TEMP" => tmp, "REPO" => "klexical/openRS_",
              "API" => "https://api.example.invalid", "APP_ID" => "12345", "APP_KEY" => KEY.to_pem }
@@ -109,7 +120,8 @@ check.(ok, "inputs: a number, a full SHA, a verdict and a report name pass")
   "an upper-case SHA" => { "SHA" => SHA.upcase }, "a short SHA" => { "SHA" => SHA[0, 39] },
   "a report with a space" => { "REPORT" => "my report.md" }, "a report with a slash" => { "REPORT" => "../x.md" },
   "an upper-case report" => { "REPORT" => "Report.md" }, "a report of 61 characters" => { "REPORT" => "a" * 61 },
-  "another verdict" => { "VERDICT" => "approve" } }.each do |what, bad|
+  "another verdict" => { "VERDICT" => "approve" }, "a re-run (attempt 2)" => { "GITHUB_RUN_ATTEMPT" => "2" },
+  "no run attempt" => { "GITHUB_RUN_ATTEMPT" => "" } }.each do |what, bad|
   ok, = run_step.(steps[1] || {}, GOOD.merge(bad))
   check.(!ok, "inputs: #{what} fails")
 end
@@ -119,8 +131,9 @@ ok, out, calls, left = run_step.(post, GOOD)
 p1 = posts.(calls)
 body = p1.first ? JSON.parse(p1.first[3]) : {}
 check.(ok && p1.size == 1 && p1.first[1] == "repos/klexical/openRS_/statuses/#{SHA}" &&
-       body == { "state" => "success", "context" => "project-review", "description" => "Review clear: review-report-473-opus.md" },
-       "clear at the reviewed head: success, context project-review, the report's name")
+       body == { "state" => "success", "context" => "project-review", "description" => "Review clear: review-report-473-opus.md #{WHERE}",
+                 "target_url" => RUN_URL },
+       "clear at the reviewed head: success, context project-review, the report's name, the pull request and base, the run's attempt")
 jwt_calls = calls.select { |c| ["GET app", "GET repos/klexical/openRS_/installation", "POST app/installations/77/access_tokens"].include?("#{c[0]} #{c[1]}") }
 jwt = jwt_calls.first&.at(2).to_s
 h, pl, sg = jwt.split(".")
@@ -141,22 +154,38 @@ check.(out.lines.count { |l| l.start_with?("::add-mask::") } == 2, "both the JWT
 
 ok, _, calls = run_step.(post, GOOD.merge("VERDICT" => "real-gap"))
 check.(ok && posts.(calls).size == 1 && JSON.parse(posts.(calls).first[3])["state"] == "failure" &&
-       JSON.parse(posts.(calls).first[3])["description"] == "Review found a REAL-GAP: review-report-473-opus.md",
+       JSON.parse(posts.(calls).first[3])["description"] == "Review found a REAL-GAP: review-report-473-opus.md #{WHERE}",
        "real-gap: failure, with the report's name")
-mine = { "context" => "project-review", "state" => "failure", "creator" => { "login" => "openrs-project-review[bot]" } }
+BOT = { "login" => "openrs-project-review[bot]" }
+mine = { "context" => "project-review", "state" => "failure", "creator" => BOT,
+         "description" => "Review found a REAL-GAP: review-report-473-opus.md #{WHERE}" }
+cleared = { "context" => "project-review", "state" => "success", "creator" => BOT, "description" => "Review clear (REAL-GAP withdrawn): x" }
+other = { "context" => "Build & Test", "state" => "success", "creator" => { "login" => "github-actions[bot]" } }
 ok, _, calls = run_step.(post, GOOD, { "statuses" => [mine] })
 check.(!ok && posts.(calls).empty?, "clear on a head with this app's REAL-GAP: refused, nothing posted")
 ok, _, calls = run_step.(post, GOOD, { "statuses" => [mine.merge("creator" => { "login" => "github-actions[bot]" })] })
 check.(ok && posts.(calls).size == 1, "a failure posted by another source does not count as this app's REAL-GAP")
 ok, _, calls = run_step.(post, GOOD.merge("VERDICT" => "withdrawn-gap"), { "statuses" => [mine] })
 check.(ok && posts.(calls).size == 1 && JSON.parse(posts.(calls).first[3]) ==
-       { "state" => "success", "context" => "project-review", "description" => "Review clear (REAL-GAP withdrawn): review-report-473-opus.md" },
+       { "state" => "success", "context" => "project-review", "description" => "Review clear (REAL-GAP withdrawn): review-report-473-opus.md #{WHERE}",
+         "target_url" => RUN_URL },
        "withdrawn-gap on a head with this app's REAL-GAP: success, saying so")
 ok, _, calls = run_step.(post, GOOD.merge("VERDICT" => "withdrawn-gap"))
 check.(!ok && posts.(calls).empty?, "withdrawn-gap with no REAL-GAP to withdraw: refused")
-pr = ->(state, base, head) { { "pr" => { "state" => state, "base" => { "ref" => base }, "head" => { "sha" => head } } } }
+ok, _, calls = run_step.(post, GOOD.merge("VERDICT" => "withdrawn-gap", "REPORT" => "review-report-473-fable.md"), { "statuses" => [mine] })
+check.(!ok && posts.(calls).empty?, "withdrawn-gap naming another report than the standing REAL-GAP's: refused")
+ok, _, calls = run_step.(post, GOOD, { "statuses" => [cleared, mine] })
+check.(ok && posts.(calls).size == 1, "clear after a withdrawn REAL-GAP (the app's newest status is the withdrawal): posted")
+ok, _, calls = run_step.(post, GOOD.merge("VERDICT" => "withdrawn-gap"), { "statuses" => [cleared, mine] })
+check.(!ok && posts.(calls).empty?, "withdrawn-gap after the REAL-GAP was withdrawn: refused (nothing stands)")
+ok, _, calls = run_step.(post, GOOD, { "statuses" => [other] * 100, "statuses-p2" => [mine] })
+check.(!ok && posts.(calls).empty?, "a REAL-GAP on the second page of statuses still stands")
+ok, _, calls = run_step.(post, GOOD, { "statuses" => [other] * 100, **(2..10).to_h { |i| ["statuses-p#{i}", [other] * 100] } })
+check.(!ok && posts.(calls).empty?, "more statuses than ten pages: fails closed")
+pr = ->(state, base, head, from = "klexical/openRS_") { { "pr" => { "state" => state, "base" => { "ref" => base }, "head" => { "sha" => head, "repo" => { "full_name" => from } } } } }
 { "the head has moved on" => pr.("open", "main", SHA.reverse), "the pull request is closed" => pr.("closed", "main", SHA),
   "the base is another branch" => pr.("open", "feature/x", SHA), "the pull request cannot be read" => { "pr" => nil },
+  "the head is a fork's" => pr.("open", "main", SHA, "someone/openRS_"),
   "the app is not installed" => { "installation" => nil }, "the app gets no token" => { "token" => nil },
   "the statuses cannot be read" => { "statuses" => nil }, "the status cannot be posted" => { "posted" => nil } }.each do |what, answers|
   ok, _, calls = run_step.(post, GOOD, answers)
@@ -166,6 +195,11 @@ ok, _, calls = run_step.(post, GOOD, pr.("open", "staging", SHA))
 check.(ok && posts.(calls).size == 1, "a pull request to staging is posted")
 ok, _, calls = run_step.(post, GOOD, pr.("open", "scratch/project-review-proof", SHA))
 check.(ok && posts.(calls).size == 1, "a pull request to the owner's proof base is posted")
+long = GOOD.merge("PR" => "999999", "REPORT" => "r" * 60, "VERDICT" => "withdrawn-gap")
+ok, _, calls = run_step.(post, long, pr.("open", "scratch/project-review-proof", SHA).merge(
+  "statuses" => [mine.merge("description" => "Review found a REAL-GAP: #{"r" * 60} (PR 999999 to scratch/project-review-proof)")]))
+d = posts.(calls).first ? JSON.parse(posts.(calls).first[3])["description"] : ""
+check.(ok && d.length <= 140 && d.end_with?("(PR 999999 to scratch/project-review-proof)"), "the longest description fits GitHub's 140 characters (#{d.length})")
 ok, _, calls = run_step.(post, GOOD.merge("APP_ID" => ""))
 check.(!ok && calls.empty?, "no app id: fails before any call")
 ok, _, calls = run_step.(post, GOOD.merge("APP_KEY" => ""))
