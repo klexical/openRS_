@@ -657,15 +657,14 @@ if [ "$HISTORY" = 1 ]; then
   done
   # each ref's name (a branch, a tag, a pull request head), as a line of its own, by number only: an annotated tag's
   # name is also in its tag object, read above
-  # Each name is also checked on its own, so the count is of names: a base64 run joined across two names, or a name
-  # that matches twice, counts no extra. A CR at a line's end and a blank line are not names
+  # A CR at a line's end and a blank line are not names. The names that match are counted below, from the scanned
+  # lines' own matches
   nnames=0; nmatch=0
   if [ -n "$NAMES" ]; then
     keep "$NAMES" "refs" "in the ref names" ""     # for gitleaks too, as the pull request's branch name is
     while IFS= read -r nm || [ -n "$nm" ]; do
       nm=${nm%$'\r'}; [ -n "$nm" ] || continue
       nnames=$((nnames+1)); add "refs" "ref name #$nnames" "" "$nm"
-      printf '%s\n' "$nm" > "$T/name"; blob_hits "$T/name"; nmatch=$((nmatch + hit))
     done < "$NAMES"
   fi
 fi
@@ -732,6 +731,12 @@ awk -F'\t' -v OFS='\t' -v bin="$T/binhits" -v comp="$T/compressed" '
       if (ks[i] == "hit") print $1, "base64 on " on ", holding a list match", $3, $4 >> bin
       else { sub(/^compressed /, "", ks[i]); print $1, "base64 on " on ", decoding to a compressed file (" ks[i] ")", $3, $4 >> comp } } }' \
   "$T/b64" "$T/where.safe"
+# the ref names that match, each once: a name whose line matches the list, as it is or in any spelling, or on which
+# a base64 run holding a match starts (a run joined across two names is placed at its first). No helper starts per name
+if [ "$HISTORY" = 1 ] && [ "$nnames" -gt 0 ]; then
+  nmatch=$(awk -F'\t' 'FILENAME == ARGV[1] { h[$1] = 1; next } FILENAME == ARGV[2] { if ($2 == "hit") h[$1] = 1; next }
+    (FNR in h) && $1 == "refs" && $2 ~ /^ref name #/ { n++ } END { print n + 0 }' "$T/hitlines" "$T/b64" "$WHERE")
+fi
 awk 'FILENAME == ARGV[1] { h[$1] = 1; next } FNR in h' "$T/hitlines" "$T/where.safe" | fmt > "$T/out.list"
 awk -F'\t' 'FILENAME == ARGV[1] { h[$1] = 1; next } (FNR in h) && $2 == "added line"' "$T/allowlines" "$T/where.safe" \
   | awk -F'\t' -v OFS='\t' '{ $2 = "added line with a gitleaks allow marker"; print }' | fmt > "$T/out.allow"
