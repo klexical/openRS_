@@ -376,6 +376,7 @@ internal fun fuelUsedCompare(aL: Double, bL: Double, prefs: UserPrefs): FuelComp
 /** The difference in the fuel unit; none when it rounds to zero at the unit's decimals. */
 private fun formatFuelDelta(deltaL: Double, prefs: UserPrefs): String {
     val shown = prefs.fuelVolume(abs(deltaL))
-    if (shown.value.all { it == '0' || it == '.' || it == ',' }) return ""
+    // by each digit's value, so a locale with its own digits reads its zero too
+    if (shown.value.none { Character.isDigit(it) && Character.digit(it, 10) != 0 }) return ""
     return (if (deltaL > 0) "+" else "-") + shown.text
 }

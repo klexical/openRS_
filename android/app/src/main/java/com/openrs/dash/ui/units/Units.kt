@@ -184,10 +184,14 @@ object UnitFactors {
     const val STOICH_AFR = 14.7
 }
 
-/** [v] to [decimals] places in the phone's locale; a value that rounds to zero never prints as "-0". */
+/**
+ * [v] to [decimals] places in the phone's locale; a value that rounds to zero never prints as "-0". The zero test is on
+ * the number (half-up, as the formatter rounds), never the text, so a locale with its own digits or minus sign keeps
+ * every real sign.
+ */
 private fun f(decimals: Int, v: Double): String {
-    val s = "%.${decimals}f".format(v)
-    return if (s.startsWith("-") && s.none { it in '1'..'9' }) s.substring(1) else s
+    val zero = v.isFinite() && java.math.BigDecimal.valueOf(v).setScale(decimals, java.math.RoundingMode.HALF_UP).signum() == 0
+    return "%.${decimals}f".format(if (zero) 0.0 else v)
 }
 
 // ── Speed & distance (stored km/h, km) ────────────────────────────────────────────────────────────────────────────

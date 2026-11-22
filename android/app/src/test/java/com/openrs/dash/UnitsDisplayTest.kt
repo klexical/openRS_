@@ -35,6 +35,7 @@ import com.openrs.dash.ui.trip.wheelSpeedCells
 import com.openrs.dash.ui.units.Region
 import com.openrs.dash.ui.units.UnitIds
 import com.openrs.dash.ui.units.altitudeM
+import com.openrs.dash.ui.units.boostGauge
 import com.openrs.dash.ui.units.temp
 import com.openrs.dash.ui.units.tempDeltaText
 import com.openrs.dash.ui.units.withUnits
@@ -210,6 +211,24 @@ class UnitsDisplayTest {
         assertEquals("0 m", eu.altitudeM(-0.3).text)          // TRIP ALT just below sea level
         assertEquals("0 ft", us.altitudeM(-0.1).text)
         assertEquals("-1 m", eu.altitudeM(-0.6).text)
+    }
+
+    @Test fun `in a locale with its own digits, negatives keep their sign and zero is never -0`() {
+        val saved = java.util.Locale.getDefault()
+        try {
+            for (tag in listOf("mr", "ar", "fa", "bn")) {
+                java.util.Locale.setDefault(java.util.Locale.forLanguageTag(tag))
+                val minus5 = "%.0f".format(-5.0)                 // this locale's own "-5"
+                assertEquals(tag, minus5 + "°C", eu.temp(-5.0))
+                assertEquals(tag, "%.2f".format(-0.35) + " bar", eu.boostGauge(-35.0).text)   // vacuum stays vacuum
+                assertEquals(tag, "%.0f".format(0.0) + " m", eu.altitudeM(-0.3).text)
+                assertEquals(tag, "", com.openrs.dash.ui.trip.fuelUsedCompare(1.20, 1.23, eu).delta)
+            }
+        } finally {
+            java.util.Locale.setDefault(saved)
+        }
+        // f() tests zero half-up, as the formatter rounds: a half stays a signed value
+        assertEquals("%.1f".format(-0.05), "-" + "%.1f".format(0.1))
     }
 
     @Test fun `a fuel difference that rounds to zero shows no text, else a signed difference`() {
