@@ -28,9 +28,12 @@ name: project-review
 # What a run does: a re-run of an old run never posts (dispatch again instead). In its last step it checks that the
 # pull request is open, comes from this repository, has staging or main as its base (or the owner's proof base, below),
 # and that its head is still the reviewed commit; then it posts success for `clear` and failure for `real-gap`. Every
-# verdict carries a reviewer tag, the first 12 hex characters of the sha256 of the review thread's own id, so two
-# reviewers never share a key even when their report names match (nothing stops a thread from naming another's tag:
-# every thread is the owner's account, so this is a rule the reviewers keep, as the review record shows). Which
+# verdict carries a reviewer tag: 12 random hex characters that a review thread makes once, writes at the top of its
+# report file in the project's files, and reuses for every dispatch, so two reviewers never share a key even when their
+# report names match, and the tag links to nothing outside the review record. Nothing stops a thread from naming
+# another's tag (every thread is the owner's account), so this is a rule the reviewers keep, as the review record
+# shows. A mistaken REAL-GAP whose review thread has ended is withdrawn by a new review thread the coordinator starts:
+# it reads the tag from the old report file, withdraws under that tag, and says so in its own report. Which
 # REAL-GAPs stand comes from the app's whole history of `project-review` statuses on the head, oldest first, per
 # reviewer and report: a REAL-GAP adds its key, a withdrawal of that key removes it. While any stands, a `clear` is
 # refused (a second reviewer's clear cannot overwrite it; a fix goes forward to a new head). `withdrawn-gap` withdraws
@@ -64,7 +67,7 @@ on:
         type: choice
         options: [ clear, real-gap, withdrawn-gap ]
       reviewer:
-        description: "The reviewer tag: the first 12 hex characters of the sha256 of the review thread's id"
+        description: "The reviewer tag: 12 random hex characters, made once and written at the top of the review report"
         required: true
         type: string
       report:
@@ -160,7 +163,7 @@ jobs:
           [ "$head" = "$SHA" ] || fail "the head of pull request $PR has moved on from the reviewed commit: review the new head"
 
           # Every project-review status the app put on the head (GitHub lists them newest first, 100 a page), then the
-          # REAL-GAPs that still stand, per report, read oldest first. A page read while statuses are being added can
+          # REAL-GAPs that still stand, per reviewer and report, read oldest first. A page read while statuses are being added can
           # repeat entries, never skip one, and a repeated stretch of adds and removals leaves the same set.
           : > "$seen"
           page=0
@@ -196,7 +199,7 @@ jobs:
               if [ "$standing" = "$key" ]; then
                 st=success; text="Review clear (REAL-GAP withdrawn): $key $where"
               else
-                st=failure; text="Review REAL-GAP withdrawn: $key $where"     # another report's REAL-GAP still stands
+                st=failure; text="Review REAL-GAP withdrawn: $key $where"     # another REAL-GAP still stands
               fi ;;
           esac
           run_url="$GITHUB_SERVER_URL/$REPO/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT"
