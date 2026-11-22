@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   convertSpeed, speedUnit, fmtSpeed,
   convertDistance, distanceUnit, fmtDistance,
-  convertTemp, tempUnit, fmtTemp,
+  convertTemp, tempUnit, fmtTemp, fmtTempVs,
   convertBoost, fmtBoost,
   convertTirePress, fmtTirePress,
   convertFuelEconomy, fuelEconomyUnit, fmtFuelEconomy,
@@ -158,5 +158,20 @@ describe('fuel economy', () => {
   it('fmtFuelEconomy formats with 1 decimal', () => {
     expect(fmtFuelEconomy(8.5, 'metric')).toBe('8.5 L/100km')
     expect(fmtFuelEconomy(8.5, 'imperial')).toBe('27.7 MPG')
+  })
+})
+
+describe('fmtTempVs: a reading beside its limits never prints on the wrong side (#315, the app\'s UserPrefs.tVs)', () => {
+  it('just below a limit that would round up to it: keeps the tenth', () => {
+    expect(fmtTempVs(89.8, [90], 'metric')).toBe('89.8°C')
+    expect(fmtTempVs(113.9, [114], 'imperial')).toBe('237°F')            // 237.02 °F < 237.2 °F: whole stays below
+  })
+  it('at or above a limit that would round down below it: keeps the tenth', () => {
+    expect(fmtTempVs(114, [114], 'imperial')).toBe('237.2°F')
+    expect(fmtTempVs(104.5, [104.5], 'metric')).toBe('105°C')            // rounds up: still at or above
+  })
+  it('well clear of every limit: whole', () => {
+    expect(fmtTempVs(131, [110, 120, 114], 'metric')).toBe('131°C')
+    expect(fmtTempVs(-99, [90], 'metric')).toBe('—')
   })
 })
