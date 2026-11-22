@@ -8,7 +8,8 @@ name: Privacy history scan
 # rule and line with every path withheld, and reports them only inside the project. If this run's identifier count is
 # not zero, the owner runs --places once with the list. --places refuses to run where GITHUB_ACTIONS is set, so this
 # workflow can never print places. The tips go to the script unpeeled, so an annotated tag's own object (its message
-# and tagger) is scanned too, and any tree or blob a tag names.
+# and tagger) is scanned too, and any tree or blob a tag names. Every ref's name goes to the script as well, which
+# counts the names that match the list and never prints one.
 #
 # By hand only ("Run workflow"), on main, and only by the owner: the list is the PRIVACY_IDENTIFIERS secret of the
 # environment privacy-scan, whose only deployment branch is main, so a run on any other ref gets no list (and fails in
@@ -54,6 +55,8 @@ jobs:
           # or blob a tag names, so a tag's own message is scanned too
           git for-each-ref --format='%(objectname)' refs/remotes refs/tags > "$RUNNER_TEMP/refs"
           sort -u "$RUNNER_TEMP/refs" > "$RUNNER_TEMP/tips"
+          # and every ref's name (a branch, a tag, a pull request head), which the script scans as lines and counts
+          git for-each-ref --format='%(refname)' refs/remotes refs/tags > "$RUNNER_TEMP/names"
           echo "privacy history scan: $(wc -l < "$RUNNER_TEMP/refs") refs, $(wc -l < "$RUNNER_TEMP/tips") distinct objects at their tips"
           [ -s "$RUNNER_TEMP/tips" ] || { echo "no tip to scan: fails closed"; exit 1; }
 
@@ -69,7 +72,7 @@ jobs:
           tar -xzf gl.tar.gz gitleaks
           ./gitleaks version
 
-      - name: Every commit a ref reaches, counts only
+      - name: Every commit, tag object and ref name the refs reach, counts only
         # the only step that holds the list, through env; only builtins run before the script, which unsets the list
         # before its first command, so no other process gets it. --history prints counts by kind only, never a place:
         # this log is public, and the history it reads is kept
@@ -79,4 +82,4 @@ jobs:
         run: |
           cd "$RUNNER_TEMP/objects"
           mapfile -t TIPS < "$RUNNER_TEMP/tips"
-          bash "$RUNNER_TEMP/privacy-scan.sh" --history "${TIPS[@]}"
+          bash "$RUNNER_TEMP/privacy-scan.sh" --history --names "$RUNNER_TEMP/names" "${TIPS[@]}"

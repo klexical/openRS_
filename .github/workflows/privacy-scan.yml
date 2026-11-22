@@ -97,8 +97,9 @@ jobs:
     # environment, no secret, nothing of the PR runs: it posts success only when the scan job succeeded, and failure
     # for any other result (failed, cancelled, skipped). Its context is not the check's own name: GitHub warns that a
     # name shared by a check run and a status, or by two workflows, gives ambiguous results. One at a time per pull
-    # request, so two runs' posts never interleave (a newer waiting post replaces an older waiting one; the merge step
-    # judges every status that is posted)
+    # request. That does not order the posts by event: each job waits for its own scan to end, and a newer waiting job
+    # cancels an older waiting one, so the newest event's post can be the one dropped. The merge step judges every
+    # status that is posted, and re-runs the newest event's whole run when its status is stale or was never posted
     needs: privacy-scan
     if: always() && vars.PRIVACY_SCAN_STATUS == 'on'
     concurrency:
