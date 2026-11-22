@@ -580,9 +580,10 @@ for c in $commits; do
     if [ "$kind" = zip ] || [ "$zipok" = 1 ]; then scan_zip "$c12" "$sp" "$T/blob"; fi
     if [ -n "$kind" ] && [ "$kind" != zip ]; then
       printf '%s\tcompressed file (%s)\t%s\t\n' "$c12" "$kind" "$sp" >> "$T/compressed"
-    elif [ "$binary" = 1 ] && [ "$zipread" = 0 ] && [ "$kind" != zip ]; then
+    elif [ "$binary" = 1 ] && [ "$kind" != zip ]; then
       # a binary file the scan cannot open: compressed data needs no known header (zlib, raw deflate, lzma, data
-      # after a prefix), so any binary file waits for the OK
+      # after a prefix), so any binary file waits for the OK, a ZIP found after a prefix included: its members are
+      # read, but the bytes before it are not
       printf '%s\ta binary file, which may hold compressed data\t%s\t\n' "$c12" "$sp" >> "$T/compressed"
     fi
     [ "$binary" = 1 ] || [ -n "$kind" ] || [ "$zipok" = 1 ] || in_binpaths "$p" || continue
@@ -629,7 +630,7 @@ if [ "$HISTORY" = 1 ]; then
       if [ "$kind" = zip ] || [ "$zipok" = 1 ]; then scan_zip "$o12" "$sp" "$T/blob"; fi
       if [ -n "$kind" ] && [ "$kind" != zip ]; then
         printf '%s\tcompressed file (%s)\t%s\t\n' "$o12" "$kind" "$sp" >> "$T/compressed"
-      elif [ "$binary" = 1 ] && [ "$zipread" = 0 ] && [ "$kind" != zip ]; then
+      elif [ "$binary" = 1 ] && [ "$kind" != zip ]; then
         printf '%s\ta binary file, which may hold compressed data\t%s\t\n' "$o12" "$sp" >> "$T/compressed"
       fi
       keep "$T/blob" "$o12" "in an object a tag names" "$sp" "$kind"
@@ -782,7 +783,9 @@ if [ "$HISTORY" = 1 ]; then
     | awk -F'\t' '{ print "privacy history scan: gitleaks rule " $1 ", " $2 " finding(s)" }'
   echo "privacy history scan: tag objects $ntag, trees and blobs a tag names $nother"
   if [ "$NOLIST" = 1 ]; then echo "privacy history scan: ref names $nnames, matches not checked (no list)"
-  else echo "privacy history scan: ref names $nnames, $(cat "$T/out.list" "$T/out.bin" | { grep -c -E '^FINDING refs: ' || true; }) matching the list"; fi
+  else   # names, not findings: a name that matches twice (as it is and in base64) counts once
+    nmatch=$(cat "$T/out.list" "$T/out.bin" | { grep -E '^FINDING refs: ' || true; } | { grep -o -E 'ref name #[0-9]+' || true; } | sort -u | wc -l)
+    echo "privacy history scan: ref names $nnames, $nmatch matching the list"; fi
   echo "privacy history scan: files for a reviewer (binary, compressed, ZIP members, embedded images) $(wc -l < "$T/out.comp")"
 fi
 if [ "$NOLIST" = 1 ]; then
