@@ -175,8 +175,18 @@ paths:
   (`assembleRelease` fails at `packageRelease` without a keystore; everything is resolved before that). Read the diff:
   a hash that changed for a version that did not is a tampered or re-published artifact, never accepted by
   regenerating. `aapt2` is per platform and a Linux run lists only `-linux.jar`; the `-osx.jar` entry is added by hand
-  from Google Maven's `.sha256` file for each new AGP version. Sources and javadoc jars are trusted (an IDE fetches them;
+  from Google Maven's `.sha256` file for each new AGP version. Cloud threads' Gradle reads a Maven Central mirror before
+  `google()` (an init script in `GRADLE_USER_HOME`); CI reads `google()` first. Where the two publish different bytes
+  under one coordinate (AGP's `transform-api`, #482), the entry carries Google's hash with Central's as `also-trust`;
+  regenerating in a cloud thread records Central's alone and turns CI red. Sources and javadoc jars are trusted (an IDE fetches them;
   the build never does). Robolectric's android-all jars are downloaded by Robolectric itself, outside this file.
+- **Dependabot (talk-list item 5, owner decision)** — `.github/dependabot.yml` (on main, #481) is held until after stable
+  2.2.7: no Gradle or Actions proposal reaches staging while the outing build is tested. A Dependabot pull request is a
+  proposal: its commits fail the commit-identity check, so a thread re-commits each update as the owner. The owner's
+  rules for that: each Actions update regenerates `actions.lock` (keep Dependabot's own entries; when its PR does not
+  change the lockfile, the round waits for the owner's Mac, where `gh actions-lock --no-narrow` runs); each Gradle update
+  regenerates `verification-metadata.xml` in the same commit (above); a Gradle wrapper update changes
+  `gradle-wrapper.jar`, a ZIP, so it waits for the privacy scan's OK label and the owner's words naming the PR.
 
 ## Releases: RCs, nightlies, stable and the release checklist
 
