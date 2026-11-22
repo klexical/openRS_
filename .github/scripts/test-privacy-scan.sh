@@ -207,6 +207,12 @@ for how in plain zlib png pk comment; do
 done
 repo; g checkout -q -b feature; zfix z.zip plain; commit "a ZIP"
 ACTION=labeled LABEL=privacy-ok-compressed run 0 "a ZIP-format file passes with the OK" "; ok label needed yes; "
+# a text file (no NUL, valid UTF-8, no magic at the start) that Python still opens as a ZIP: an end record of plain
+# characters, its comment length "!!" followed by that many bytes, reaches the zipok-only branch
+zotext() { python3 -I -c 'import sys; open(sys.argv[1], "wb").write(b"clean text\n" + b"PK\x05\x06" + b"AAAABBBBCCCCDDDD!!" + b"x" * 0x2121)' "$1"; }
+repo; g checkout -q -b feature; zotext "$T/r/zo.txt"; g add zo.txt; commit "a text file Python opens as a ZIP"
+run 1 "a text file that Python opens as a ZIP waits for the OK" \
+  "FINDING $(c12): a ZIP file, whose bytes outside its members may hold compressed data zo.txt" "; ok label needed yes; "
 repo; g checkout -q -b feature; printf 'inner %s\n' "$ID1" | gzip -c > "$T/inner.gz"
 python3 -I -c 'import sys,zipfile; zipfile.ZipFile(sys.argv[1],"w").write(sys.argv[2],"inner.gz")' "$T/r/b.zip" "$T/inner.gz"
 g add b.zip; commit "a ZIP holding a gzip"
@@ -662,6 +668,10 @@ expect 1 "a binary of no named kind with a ZIP appended, in a tree a tag names, 
 repo; put f.txt 'clean\n'; commit "clean"; zfix z.zip zlib; tr=$(g write-tree); g reset -q; hist "$(sha main)" "$tr"
 expect 1 "a ZIP-format file in a tree a tag names waits for a reviewer" $? \
   "privacy history scan: files for a reviewer (binary, compressed, ZIP members, embedded images) 1"
+repo; put f.txt 'clean\n'; commit "clean"; zotext "$T/r/zo.txt"; g add zo.txt; tr=$(g write-tree); g reset -q; rm -f "$T/r/zo.txt"
+hist "$(sha main)" "$tr"
+expect 1 "a text file that Python opens as a ZIP, in a tree a tag names, waits for a reviewer" $? \
+  "privacy history scan: files for a reviewer (binary, compressed, ZIP members, embedded images) 1"
 # a backslash in a tagged tree's path is the path's own: a backslash-t cannot shift where the path is checked, and a
 # backslash-n cannot break the scanned lines' places
 repo; put f.txt 'clean\n'; commit "clean"; bl=$(printf 'seen %s here\n' "$ID1" | g hash-object -w --stdin)
@@ -687,6 +697,9 @@ expect 1 "a ref name that matches twice counts once" $? "privacy history scan: r
 printf 'refs/remotes/origin/main\r\n\r\nrefs/tags/%s\r\nrefs/tags/x-%s\r\n\n' "$(printf '%s' "$ID1" | base64 -w0)" "$ID1" > "$T/names"
 hist --names "$T/names" "$(sha main)"
 expect 1 "ref names with CRLF and blank lines: each real name counted once" $? "privacy history scan: ref names 3, 2 matching the list"
+b=$(printf 'id %s' "$ID1" | base64 -w0); printf '%s\n%s\n' "${b:0:16}" "${b:16}" > "$T/names"; hist --names "$T/names" "$(sha main)"
+expect 1 "base64 of the list's entry split across two ref names counts one matching name" $? \
+  "privacy history scan: ref names 2, 1 matching the list"
 hist --names "$T/no-such-file" "$(sha main)"; expect 2 "--names needs a readable file" $? "--names needs a readable file"
 (cd "$T/r" && PRIVACY_IDENTIFIERS=$LISTV GITLEAKS=$STUB GITHUB_EVENT_PATH=$T/event.json bash "$SCAN" --names "$T/names" "$(sha main)" "$(sha HEAD)") > "$OUT" 2>&1
 expect 2 "--names is for --history only" $? "--names is for --history only"
