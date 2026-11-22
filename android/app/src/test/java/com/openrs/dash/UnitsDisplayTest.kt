@@ -289,7 +289,7 @@ class UnitsDisplayTest {
                 text.subList(from + 1, from + 16),
             )
 
-            // Region is worked out from the eleven units, never from the phone's country (owner)
+            // The export's Region is UserPrefs.region, a match against the saved units: a phone locale must not change it
             val saved = java.util.Locale.getDefault()
             try {
                 for (tag in listOf("en-US", "de-DE", "en-CA")) {
