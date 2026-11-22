@@ -218,7 +218,7 @@ for t in $TABS; do
   tap "on the $t tab" "$xy"
   pause "on $t" "$STEP_S"
   ui "on $t"
-  [ "$(fact selected)" = "$t" ] || fail "the $t tab is not selected after its tap (selected: $(fact selected); tab flags: $(fact tabflags))"
+  [ "$(fact selected)" = "$t" ] || fail "the $t tab is not selected after its tap (selected: $(fact selected); tab flags: $(fact tabflags); tab tree: $(fact tabtree))"
   need_demo "on $t"
   alive "on $t"; log_check "on $t"
   case "$(fact selectedby)" in clickable) by="the only tab not clickable" ;; *) by="its selected flag" ;; esac

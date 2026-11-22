@@ -13,6 +13,8 @@ The facts use a fixed vocabulary only, so no text from the screen reaches the ru
   selected=<NAME>|none      the one tab whose node is selected (Compose's `selected` semantics); else, with all five
                             tabs found, the one tab not clickable (Compose exposes a selected tab so); or none
   selectedby=flag|clickable|none  which of the two read it
+  tabtree=<NAME>:<node>><parent>><grandparent> ...|none  for a tab not read as selected: each of the three as
+                            <flags>/<index>/<children>/<has description 0|1>/<bounds against the tab's node>
   tabflags=<NAME>:<sssss>:<s|p>:<n> ...|none  for a tab not read as selected: each tab's selected, checked,
                             checkable, focused and clickable attributes (1 true, 0 false, - absent), read from the
                             node itself (s) or its parent (p: the node is Compose's fake child), and the number of
@@ -41,6 +43,37 @@ def centre(node):
     if r <= l or b <= t:
         return None
     return "%d %d" % ((l + r) // 2, (t + b) // 2)
+
+
+def box(node):
+    m = BOUNDS.fullmatch(node.get("bounds", ""))
+    return tuple(int(v) for v in m.groups()) if m else None
+
+
+def relation(outer, inner):
+    """same / in (inner inside outer) / other, by bounds"""
+    o, i = box(outer), box(inner)
+    if o is None or i is None:
+        return "none"
+    if o == i:
+        return "same"
+    return "in" if o[0] <= i[0] and o[1] <= i[1] and i[2] <= o[2] and i[3] <= o[3] else "other"
+
+
+def ancestry(node, parent, package):
+    """For a tab not read as selected: the node and its two nearest ancestors, each as <flags>/<index>/<children>/
+    <description 0|1>/<bounds against the node>, fixed vocabulary only"""
+    out, cur = [], node
+    for _ in range(3):
+        if cur is None or cur.tag != "node":
+            break
+        kids = sum(1 for c in cur if c.tag == "node")
+        mine = "" if cur.get("package") == package else "x"
+        out.append("%s%s/%s/%d/%d/%s" % (mine, "".join(FLAG_CODE.get(cur.get(a), "?") for a in FLAGS),
+                                        cur.get("index") if (cur.get("index") or "").isdigit() else "-", kids,
+                                        1 if cur.get("content-desc") else 0, relation(cur, node)))
+        cur = parent.get(cur)
+    return ">".join(out)
 
 
 def main(argv):
@@ -76,7 +109,7 @@ def main(argv):
                for n in nodes)
     whatsnew = "none"
     tabs = {}
-    seen, flags, tabnode = {}, {}, {}
+    seen, flags, tabnode, tree = {}, {}, {}, {}
     for n in nodes:
         if n.get("package") != package:
             continue   # the tabs and What's New are the app's own nodes
@@ -89,10 +122,15 @@ def main(argv):
         if m and m.group(1) not in tabs:
             # Compose puts a merging node's content description on a fake first child with the node's own bounds
             # (SemanticsNode.emitFakeNodes); the tab's state (selected, clickable) is then on that parent
+            # (it is added as child 0, and its bounds can differ from the parent's touch bounds). A node that is itself
+            # selected or clickable is the tab's own; else the parent is taken when the node is its first child and the
+            # parent, of the app, has no description and holds the node's bounds
             q = parent.get(n)
-            own = not (q is not None and q.tag == "node" and q.get("package") == package
-                       and not q.get("content-desc") and q.get("bounds") == n.get("bounds"))
+            own = "true" in (n.get("selected"), n.get("clickable")) or not (
+                q is not None and q.tag == "node" and q.get("package") == package and n.get("index") == "0"
+                and not q.get("content-desc") and relation(q, n) in ("same", "in"))
             state = n if own else q
+            tree[m.group(1)] = ancestry(n, parent, package)
             flags[m.group(1)] = "".join(FLAG_CODE.get(state.get(a), "?") for a in FLAGS) + (":s" if own else ":p")
             tabnode[m.group(1)] = state
             c = centre(n)
@@ -121,6 +159,7 @@ def main(argv):
     # For a tab that is not read as selected: each tab's selected / checked / checkable / focused / clickable attributes (1 true,
     # 0 false, - absent) and how many nodes carry its description
     print("tabflags=%s" % (" ".join("%s:%s:%d" % (t, flags[t], seen[t]) for t in TABS if t in flags) or "none"))
+    print("tabtree=%s" % (" ".join("%s:%s" % (t, tree[t]) for t in TABS if t in tree) or "none"))
     return 0
 
 
