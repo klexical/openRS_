@@ -543,7 +543,7 @@ for ga in true ""; do
 done
 (cd "$T/r" && unset GITHUB_ACTIONS && PRIVACY_IDENTIFIERS=$LISTV GITLEAKS=$STUB bash "$SCAN" --places "$(sha main)" "$(sha HEAD)") > "$OUT" 2>&1
 expect 2 "--places is for --history only" $? "--places is for --history only"
-# --places with no list (owner decision Q197: no project session gets the list): gitleaks places only
+# --places with no list (the list stays with the owner: no project session is ever given it): gitleaks places only
 repo; put f.txt "one\n$ID1 two\n"; printf 'packed' | gzip -c > "$T/r/p.gz"; g add p.gz; commit "on main"
 (cd "$T/r" && unset GITHUB_EVENT_PATH GITHUB_ACTIONS PRIVACY_IDENTIFIERS && GITLEAKS=$STUB bash "$SCAN" --history --places "$(sha main)") > "$OUT" 2>&1
 expect 1 "--places with no list runs, the identifier matches not checked" $? "identifier list: none" \
@@ -553,6 +553,24 @@ grep -q -e FINDING -e f.txt -e p.gz "$OUT" && { fail=$((fail+1)); echo "FAIL --p
 (cd "$T/r" && unset GITHUB_EVENT_PATH GITHUB_ACTIONS PRIVACY_IDENTIFIERS && GITLEAKS=$STUB bash "$SCAN" --history "$(sha main)") > "$OUT" 2>&1
 expect 2 "the history scan with no list still fails closed without --places" $? "is missing or empty: fails closed"
 hist main; expect 2 "the history scan takes SHAs only" $? "every argument a 40-hex SHA"
+# tag objects: an annotated tag's own text (tagger, message) is read, and a tag that names a tree or a blob has that
+# object read too, which no commit reaches
+repo; put f.txt 'clean\n'; commit "clean"; GIT_COMMITTER_NAME=o GIT_COMMITTER_EMAIL=$OWNER g tag -a -m "cut by $ID1" t1; t1=$(g rev-parse t1)
+hist "$t1"
+expect 1 "the history scan reads an annotated tag's message" $? "privacy history scan: identifier matches 1 on scanned lines" \
+  "privacy history scan: tag objects 1, trees and blobs a tag names 0" "privacy scan: 2 new commit(s); history of 1 tip(s);"
+(cd "$T/r" && unset GITHUB_EVENT_PATH GITHUB_ACTIONS && PRIVACY_IDENTIFIERS=$LISTV GITLEAKS=$STUB bash "$SCAN" --history --places "$t1") > "$OUT" 2>&1
+expect 1 "--places names the tag object's line" $? "FINDING ${t1:0:12}: tag object line 6"
+repo; put f.txt 'clean\n'; commit "clean"; bl=$(printf 'seen %s here\n' "$ID1" | g hash-object -w --stdin)
+hist "$(sha main)" "$bl"
+expect 1 "the history scan reads a blob a tag names" $? "privacy history scan: identifier matches 1 on scanned lines" \
+  "privacy history scan: tag objects 0, trees and blobs a tag names 1"
+repo; put f.txt 'clean\n'; commit "clean"; put d/b.dat "x\000y $ID1\n"; printf 'packed' | gzip -c > "$T/r/d/p.gz"; g add d/p.gz
+tr=$(g write-tree); g reset -q
+hist "$(sha main)" "$tr"
+expect 1 "the history scan reads every blob of a tree a tag names" $? \
+  "privacy history scan: identifier matches 0 on scanned lines and 1 in files read whole or decoded" \
+  "privacy history scan: files for a reviewer (binary, compressed, ZIP members, embedded images) 2"
 
 # ── gitleaks, stubbed: what it is given, and what of its report is printed ──────────────────────────────────────────
 PLANTED=stub-planted-value-9f3e

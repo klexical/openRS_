@@ -3,13 +3,15 @@
 # check-commit-identity.sh picks them: reachable from head, not from base nor from any other sha given; the workflow
 # passes staging's and main's tips) and the pull request's own text, against the identifier list and gitleaks.
 # privacy-scan.sh --history <tip sha>... — the one-time full-history scan: every commit reachable from the tips, with
-# no pull request text and no event file (privacy-history.yml, run by hand on main). It prints counts by kind only,
-# never a commit, path or line: that run's log is public and the history it reads is kept.
+# no pull request text and no event file (privacy-history.yml, run by hand on main). A tip may be any object: each is
+# peeled here, so an annotated tag's own object (message and tagger) is scanned, and so is any tree or blob a tag
+# names. It prints counts by kind only, never a commit, path or line: that run's log is public and the history it
+# reads is kept.
 # privacy-scan.sh --history --places <tip sha>... — the same, also printing where each hit is, for a project session's
 # own run whose output stays in the project; it refuses to run when GITHUB_ACTIONS is set, so no workflow prints places.
-# With no list (no project session gets it, owner decision Q197) it places the gitleaks hits only, by commit, rule and
-# line with every path withheld, and does not check identifiers; with the list (the owner's own run) it places every
-# hit.
+# With no list (the list stays with the owner: no project session is ever given it) it places the gitleaks hits only,
+# by commit, rule and line with every path withheld, and does not check identifiers; with the list (the owner's own
+# run) it places every hit.
 #
 # Reads from the environment:
 #   PRIVACY_IDENTIFIERS  the identifier list (the privacy-scan environment's secret of that name): one literal per
@@ -39,9 +41,14 @@
 # pull request's title or description are each a finding until a reviewer's OK: the label privacy-ok-compressed being
 # added to the pull request (that label event's run only, so a later push needs a new OK).
 # Base64 on any scanned line, a run of 8 characters or more (or wrapped over several lines, the last one short), is
-# decoded, padded rather than cut, and decoded again if it is base64 itself; gzip, zlib, bzip2, xz and lzma found in it
-# by their checksummed formats are decompressed. A list match in any of these is a finding; a run that decodes to a
-# compressed file of 100 bytes or more (an embedded image) needs the same OK. Not covered: raw deflate inside base64,
+# decoded, padded rather than cut, and decoded again if it is base64 itself; gzip, zlib, bzip2, xz and lzma found in
+# it by their checksummed formats are decompressed. Wrapped base64 whose pieces share their lines with other text is
+# joined too (quoted strings, comment lines, escaped line ends, one element per line): each token's longest base64 run
+# is a piece, and pieces of 16 characters or more are joined, the last of any length. The joining ends after a piece
+# shorter than 16 or ending in = (a short word between pieces is such a piece), and at a token holding no base64
+# that is not comment marks, quotes or joiners of up to 4 characters (a colon, a longer marker); a token's other,
+# shorter runs are not pieces. A list match in any of these is a finding; a run that decodes to a compressed file of
+# 100 bytes or more (an embedded image) needs the same OK. Not covered: raw deflate inside base64,
 # base32, ascii85, uuencode, rot13, quoted-printable, hex dumps, homoglyphs, an identifier split across lines, a
 # shorter entry spelled another way, what an OK'd binary holds inside (SQLite, PDF and the like), and a check name the
 # workflow-file OK misses (built by an expression, a YAML escape or an escaped line break, or a check run made through
@@ -91,7 +98,9 @@ set -- $gv "$@"; [ "$1" -gt 2 ] || { [ "$1" -eq 2 ] && [ "$2" -ge 40 ]; } || die
 shift 2
 for s in "$@"; do
   [[ $s =~ ^[0-9a-f]{40}$ ]] || die "every argument a 40-hex SHA"
-  git cat-file -e "$s^{commit}" 2>/dev/null || die "${s:0:12} is not a commit here (fetch the history first)"
+  if [ "$HISTORY" = 1 ]; then   # --history: any object a ref names (a commit, a tag object, a tree or a blob)
+    git cat-file -e "$s" 2>/dev/null || die "${s:0:12} is not an object here (fetch the refs first)"
+  else git cat-file -e "$s^{commit}" 2>/dev/null || die "${s:0:12} is not a commit here (fetch the history first)"; fi
 done
 # --places may run with no list: then no identifier is checked and only gitleaks hits are placed. A random stand-in
 # entry, which matches nothing, keeps every other step as it is
@@ -367,9 +376,20 @@ elif cmd == "b64":        # b64 <list> <bare list> <text>: "<line>\thit" or "<li
 PY
 python3 -I "$H" expand "$LIST" "$T/listbare"
 
-if [ "$HISTORY" = 1 ]; then tips="$*"; RANGE=("$@")
+if [ "$HISTORY" = 1 ]; then
+  # each tip peeled by hand: a tag object (and a tag of a tag) is listed to be read itself; the commit it ends at
+  # joins the range; a tree or a blob it ends at is listed to be read whole
+  tips="$*"; RANGE=(); : > "$T/tagobjs"; : > "$T/otherobjs"
+  for s in "$@"; do
+    o=$s
+    while [ "$(git cat-file -t "$o")" = tag ]; do
+      echo "$o" >> "$T/tagobjs"; o=$(git cat-file tag "$o" | sed -n '1s/^object \([0-9a-f]\{40\}\)$/\1/p')
+      [ -n "$o" ] || die "a tag object names no object: fails closed"
+    done
+    if [ "$(git cat-file -t "$o")" = commit ]; then RANGE+=("$o"); else echo "$o" >> "$T/otherobjs"; fi
+  done
 else base=$1; head=$2; shift 2; RANGE=("$head" --not "$base" "$@"); fi
-commits=$(git rev-list "${RANGE[@]}")
+commits=""; [ "${#RANGE[@]}" -eq 0 ] || commits=$(git rev-list "${RANGE[@]}")
 
 # Every scanned line goes to TEXT; the same line number of WHERE says where it came from (commit, what, path, line),
 # tab-separated. Matching runs once over TEXT; only WHERE lines are ever printed.
@@ -564,6 +584,42 @@ for c in $commits; do
   done
   rm -rf "$T/b"
 done
+# --history: each annotated tag object's own text (its tagger, message and any signature), and every blob of a tree
+# or blob a tag names, which no commit reaches: a text blob's lines are scanned, every such blob is read whole, and a
+# compressed or binary one waits for a reviewer like a file in a commit (a ZIP is not unpacked here: it waits too)
+ntag=0; nother=0
+if [ "$HISTORY" = 1 ]; then
+  for t in $(sort -u "$T/tagobjs"); do
+    ntag=$((ntag+1)); t12=${t:0:12}
+    git cat-file tag "$t" > "$T/obj"; keep "$T/obj" "$t12" "in the tag object" ""
+    awk -v c="$t12" '{ printf "%s\ttag object line %d\t\t\n", c, NR }' "$T/obj" >> "$WHERE"; cat "$T/obj" >> "$TEXT"
+    [ -z "$(tail -c1 "$T/obj")" ] || echo >> "$TEXT"
+    classify "$T/obj"
+    if [ "$binary" = 1 ]; then
+      blob_hits "$T/obj"; [ "$hit" -eq 0 ] || printf '%s\ttag object (read whole)\t\t\n' "$t12" >> "$T/binhits"
+    fi
+  done
+  for o in $(sort -u "$T/otherobjs"); do
+    nother=$((nother+1)); o12=${o:0:12}
+    if [ "$(git cat-file -t "$o")" = blob ]; then printf '100644 blob %s\t\0' "$o"
+    else git ls-tree -r -z "$o"; fi > "$T/tree.z"
+    while IFS= read -r -d '' e; do
+      meta=${e%%$'\t'*}; p=${e#*$'\t'}; sp=${p//[$'\t\n']/ }; read -r _ otype osha <<< "$meta"
+      [ "$otype" = blob ] || continue
+      [ -z "$p" ] || add "$o12" "a path in a tree a tag names" "" "$sp"
+      git cat-file blob "$osha" > "$T/blob"; classify "$T/blob"
+      if [ "$binary" = 0 ] && [ -z "$kind" ]; then
+        awk -v c="$o12" -v p="$sp" '{ printf "%s\tline of an object a tag names\t%s\t%d\n", c, p, NR }' "$T/blob" >> "$WHERE"
+        cat "$T/blob" >> "$TEXT"; [ -z "$(tail -c1 "$T/blob")" ] || echo >> "$TEXT"
+      elif [ -n "$kind" ]; then printf '%s\tcompressed file (%s)\t%s\t\n' "$o12" "$kind" "$sp" >> "$T/compressed"
+      else printf '%s\ta binary file, which may hold compressed data\t%s\t\n' "$o12" "$sp" >> "$T/compressed"; fi
+      keep "$T/blob" "$o12" "in an object a tag names" "$sp" "$kind"
+      blob_hits "$T/blob"
+      [ "$hit" -eq 0 ] || printf '%s\tbinary content\t%s\t\n' "$o12" "$sp" >> "$T/binhits"
+      [ -z "$b64comp" ] || printf '%s\tbase64 in a file read whole, decoding to a compressed file (%s)\t%s\t\n' "$o12" "$b64comp" "$sp" >> "$T/compressed"
+    done < "$T/tree.z"
+  done
+fi
 add "" "pull request title" "" "$(jq -r '.pull_request.title // ""' "$GITHUB_EVENT_PATH" | tr '\n' ' ')"
 add "" "pull request branch name" "" "$(jq -r '.pull_request.head.ref // ""' "$GITHUB_EVENT_PATH" | tr '\n' ' ')"
 jq -r '.pull_request.body // ""' "$GITHUB_EVENT_PATH" | tr -d '\r' > "$T/body"; keep "$T/body" "" "in the pull request description" ""
@@ -689,6 +745,7 @@ if [ "$HISTORY" = 1 ]; then
   echo "privacy history scan: gitleaks suppression markers or ignore-file changes $(wc -l < "$T/out.allow")"
   cut -f2 "$T/glhits" | awk '{ n[$3]++ } END { for (r in n) print r "\t" n[r] }' | sort \
     | awk -F'\t' '{ print "privacy history scan: gitleaks rule " $1 ", " $2 " finding(s)" }'
+  echo "privacy history scan: tag objects $ntag, trees and blobs a tag names $nother"
   echo "privacy history scan: files for a reviewer (binary, compressed, ZIP members, embedded images) $(wc -l < "$T/out.comp")"
 fi
 if [ "$NOLIST" = 1 ]; then
