@@ -89,20 +89,28 @@ jobs:
 
   privacy-scan-status:
     # Plan B, a job of its own so the job that holds the list and reads the PR's data never holds a token that can
-    # write. If the first live run shows the scan's check run attached to main's tip rather than the PR head, a
-    # required check named privacy-scan never sees it. Then the owner sets the repository variable
-    # PRIVACY_SCAN_STATUS to "on", and this job posts the scan job's result as the commit status privacy-scan on the PR
-    # head, which the ruleset requires instead. The status names the run attempt it reports, so a re-run's status is
-    # judged against its own attempt. No environment, no secret, nothing of the PR runs: it posts success only when
-    # the scan job succeeded, and failure for any other result (failed, cancelled, skipped)
+    # write. It is for the case where the scan's check run attaches to main's tip rather than the PR head, so that a
+    # required check named privacy-scan never sees it; the first live runs found it on the PR head, so it stays off.
+    # If that ever changes, the owner sets the repository variable PRIVACY_SCAN_STATUS to "on", and this job posts
+    # the scan job's result as the commit status privacy-scan/result on the PR head, which the ruleset then requires.
+    # The status names the run attempt it reports, so a re-run's status is judged against its own attempt. No
+    # environment, no secret, nothing of the PR runs: it posts success only when the scan job succeeded, and failure
+    # for any other result (failed, cancelled, skipped). Its context is not the check's own name: GitHub warns that a
+    # name shared by a check run and a status, or by two workflows, gives ambiguous results. One at a time per pull
+    # request. That does not order the posts by event: each job waits for its own scan to end, and a newer waiting job
+    # cancels an older waiting one, so the newest event's post can be the one dropped. The merge step judges every
+    # status that is posted, and re-runs the newest event's whole run when its status is stale or was never posted
     needs: privacy-scan
     if: always() && vars.PRIVACY_SCAN_STATUS == 'on'
+    concurrency:
+      group: privacy-scan-status-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       statuses: write
     steps:
-      - name: The commit status privacy-scan on the PR head, for this run attempt
+      - name: The commit status privacy-scan/result on the PR head, for this run attempt
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
@@ -112,6 +120,6 @@ jobs:
           RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
           state=failure; if [ "$RESULT" = success ]; then state=success; fi
-          gh api -X POST "repos/$REPO/statuses/$HEAD" -f state="$state" -f context=privacy-scan \
+          gh api -X POST "repos/$REPO/statuses/$HEAD" -f state="$state" -f context=privacy-scan/result \
             -f target_url="https://github.com/$REPO/actions/runs/$RUN_ID/attempts/$RUN_ATTEMPT" \
             -f description="privacy scan: $RESULT, attempt $RUN_ATTEMPT" > /dev/null
