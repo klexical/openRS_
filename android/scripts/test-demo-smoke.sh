@@ -32,7 +32,8 @@ printf 'a\n' > "$WORK/two/a.apk"; printf 'b\n' > "$WORK/two/b.apk"
 #    label; FAKE_DEMO_LABEL=<text> replaces it; FAKE_BAD_HASH=1 answers another SHA-256; FAKE_HANG=<kind> never answers
 #    that call kind (install, start, logcat-d, dump); FAKE_FAIL=<kind> makes that call print raw text and fail (logcat-d,
 #    dump); FAKE_BAD_LINE=<line> is the line FAKE_FATAL_AT adds instead of the fatal exception; FAKE_FOREIGN_AT=<n> puts
-#    another app on top from the n-th resumed-activity read; FAKE_WHATSNEW_STICKY=1 keeps the dialog after GOT IT. ──
+#    another app on top from the n-th resumed-activity read; FAKE_WHATSNEW_STICKY=1 keeps the dialog after GOT IT;
+#    FAKE_SELECT_BY=clickable marks no tab selected, only the selected one not clickable. ──
 cat > "$WORK/bin/adb" <<'STUB'
 #!/usr/bin/env bash
 S="$FAKE_DIR/state"
@@ -48,8 +49,10 @@ dump() {
   echo "<node index=\"1\" text=\"\" package=\"com.openrs.dash.debug\" content-desc=\"\" selected=\"false\" bounds=\"[0,0][1080,2400]\">"
   [ -n "${FAKE_NO_DEMO-}" ] || echo "<node index=\"0\" text=\"$demo\" package=\"com.openrs.dash.debug\" content-desc=\"\" selected=\"false\" bounds=\"[800,70][960,170]\" />"
   for i in 0 1 2 3 4; do
-    l=$((i * 216)); r=$((l + 216)); sel=false; [ "${TABS[$i]}" = "$tab" ] && sel=true
-    echo "<node index=\"$((i + 1))\" text=\"\" package=\"com.openrs.dash.debug\" content-desc=\"${TABS[$i]} tab\" selected=\"$sel\" bounds=\"[$l,2252][$r,2348]\" />"
+    l=$((i * 216)); r=$((l + 216)); sel=false; clk=true; [ "${TABS[$i]}" = "$tab" ] && { sel=true; clk=false; }
+    # FAKE_SELECT_BY=clickable: no tab node says selected (as on the API 36 image); the selected one is not clickable
+    [ "${FAKE_SELECT_BY-}" = clickable ] && sel=false
+    echo "<node index=\"$((i + 1))\" text=\"\" package=\"com.openrs.dash.debug\" content-desc=\"${TABS[$i]} tab\" selected=\"$sel\" clickable=\"$clk\" bounds=\"[$l,2252][$r,2348]\" />"
   done
   echo "</node>"
   if [ -f "$S/whatsnew" ]; then
@@ -148,7 +151,7 @@ first_of() { grep -n -F -- "$1" "$WORK/calls" | head -n 1 | cut -d: -f1 || true;
 if run_case "a clean run passes: every tab, scenario and trip preview, one process, clean logs" 0 "$WORK/apk"; then
   why=""
   has "Emulator smoke OK: 5 tabs, 6 demo scenarios, 8 trip previews; process 4242 throughout" || why+="no OK line; "
-  for t in DRIVE PERF THERMAL TRIP GARAGE; do has "Tab $t: selected, DEMO shown, process 4242, log clean" || why+="no $t line; "; done
+  for t in DRIVE PERF THERMAL TRIP GARAGE; do has "Tab $t: selected (its selected flag), DEMO shown, process 4242, log clean" || why+="no $t line; "; done
   [ "$(first_of 'shell pm disable-user')" = 1 ] || why+="the Play Store is not disabled first; "
   for w in "shell input keyevent KEYCODE_WAKEUP" "shell svc power stayon true" "shell wm dismiss-keyguard"; do
     n=$(first_of "$w"); s0=$(first_of "shell am start -S -W")
@@ -185,10 +188,14 @@ run_case "the DEMO label with a link state (DEMO · RCN) counts" 0 "$APK" "FAKE_
 run_case "two dumps with no idle state, then a readable one" 0 "$APK" FAKE_IDLE_FAILS=2 \
   && expect "Emulator smoke OK" "UI read after the cold start, try 1 of 3: uiautomator said 'ERROR: could not get idle state.'; 0 bytes; unreadable dump (no XML in 0 characters); screen Awake, focus com.openrs.dash.debug/com.openrs.dash.ui.MainActivity"
 run_case "a control character in a node's text does not stop the reader" 0 "$APK" FAKE_CTRL_CHAR=1 && expect "Emulator smoke OK"
+run_case "with no tab node marked selected, the only tab not clickable is the selected one" 0 "$APK" FAKE_SELECT_BY=clickable \
+  && expect "Emulator smoke OK" "Tab GARAGE: selected (the only tab not clickable), DEMO shown, process 4242, log clean"
 
 # ── Failures, each named ──
 run_case "a tab that does not select after its tap fails" 1 "$APK" FAKE_NO_SELECT=THERMAL \
-  && expect "::error::the THERMAL tab is not selected after its tap (selected: PERF; tab flags: DRIVE:0---:1 PERF:1---:1 THERMAL:0---:1 TRIP:0---:1 GARAGE:0---:1)"
+  && expect "::error::the THERMAL tab is not selected after its tap (selected: PERF; tab flags: DRIVE:0---1:1 PERF:1---0:1 THERMAL:0---1:1 TRIP:0---1:1 GARAGE:0---1:1)"
+run_case "a tab that does not select fails when only the clickable flags tell" 1 "$APK" FAKE_SELECT_BY=clickable FAKE_NO_SELECT=TRIP \
+  && expect "::error::the TRIP tab is not selected after its tap (selected: THERMAL; tab flags: DRIVE:0---1:1 PERF:0---1:1 THERMAL:0---0:1 TRIP:0---1:1 GARAGE:0---1:1)"
 run_case "a restarted process fails" 1 "$APK" FAKE_RESTART_AT=3 \
   && expect "::error::com.openrs.dash.debug restarted on PERF: process 4242 at the start, 5151 now"
 run_case "a process gone after the start fails" 1 "$APK" FAKE_GONE_AT=1 \
@@ -264,7 +271,8 @@ demo=0
 whatsnew=none
 tab.PERF=324 2300
 selected=PERF
-tabflags=PERF:1---:1'
+selectedby=flag
+tabflags=PERF:1----:1'
 ui_case "ui: a label that only starts with DEMO, and a tab with empty bounds, do not count" \
 '<hierarchy><node package="com.openrs.dash.debug" text="DEMO MODE ON" bounds="[0,0][10,10]"/><node package="com.openrs.dash.debug" content-desc="DRIVE tab" selected="false" bounds="[0,0][0,0]"/></hierarchy>' \
 'windows=2
@@ -273,7 +281,37 @@ others=none
 demo=0
 whatsnew=none
 selected=none
-tabflags=DRIVE:0---:1'
+selectedby=none
+tabflags=DRIVE:0----:1'
+ui_case "ui: two tabs not clickable select none" \
+'<hierarchy><node package="com.openrs.dash.debug" content-desc="DRIVE tab" selected="false" clickable="false" bounds="[0,2252][216,2348]"/><node package="com.openrs.dash.debug" content-desc="PERF tab" selected="false" clickable="false" bounds="[216,2252][432,2348]"/><node package="com.openrs.dash.debug" content-desc="THERMAL tab" selected="false" clickable="true" bounds="[432,2252][648,2348]"/><node package="com.openrs.dash.debug" content-desc="TRIP tab" selected="false" clickable="true" bounds="[648,2252][864,2348]"/><node package="com.openrs.dash.debug" content-desc="GARAGE tab" selected="false" clickable="true" bounds="[864,2252][1080,2348]"/></hierarchy>' \
+'windows=5
+ours=5
+others=none
+demo=0
+whatsnew=none
+tab.DRIVE=108 2300
+tab.PERF=324 2300
+tab.THERMAL=540 2300
+tab.TRIP=756 2300
+tab.GARAGE=972 2300
+selected=none
+selectedby=none
+tabflags=DRIVE:0---0:1 PERF:0---0:1 THERMAL:0---1:1 TRIP:0---1:1 GARAGE:0---1:1'
+ui_case "ui: with a tab missing, the one not clickable is not taken as selected" \
+'<hierarchy><node package="com.openrs.dash.debug" content-desc="DRIVE tab" selected="false" clickable="false" bounds="[0,2252][216,2348]"/><node package="com.openrs.dash.debug" content-desc="PERF tab" selected="false" clickable="true" bounds="[216,2252][432,2348]"/><node package="com.openrs.dash.debug" content-desc="THERMAL tab" selected="false" clickable="true" bounds="[432,2252][648,2348]"/><node package="com.openrs.dash.debug" content-desc="TRIP tab" selected="false" clickable="true" bounds="[648,2252][864,2348]"/></hierarchy>' \
+'windows=4
+ours=4
+others=none
+demo=0
+whatsnew=none
+tab.DRIVE=108 2300
+tab.PERF=324 2300
+tab.THERMAL=540 2300
+tab.TRIP=756 2300
+selected=none
+selectedby=none
+tabflags=DRIVE:0---0:1 PERF:0---1:1 THERMAL:0---1:1 TRIP:0---1:1'
 ui_case "ui: an odd package name is withheld" \
 '<hierarchy><node package="not a package" text="x" bounds="[0,0][10,10]"/></hierarchy>' \
 'windows=1
@@ -282,6 +320,7 @@ others=<other>
 demo=0
 whatsnew=none
 selected=none
+selectedby=none
 tabflags=none'
 ui_case "ui: a dump that is not XML says so, with no text of it" 'ERROR: could not get idle state.' 'unreadable dump (no XML in 32 characters)'
 ui_case "ui: a broken dump gives the parser's position only" '<hierarchy><node text="SECRET-TEXT" </hierarchy>' 'unreadable dump (ParseError at line 1 column 36 of 48 characters)'
@@ -294,7 +333,8 @@ demo=0
 whatsnew=none
 tab.TRIP=756 2300
 selected=TRIP
-tabflags=TRIP:1---:1'
+selectedby=flag
+tabflags=TRIP:1----:1'
 
 # ── The workflow's own claims (.github/workflows/emulator-smoke.yml): only the label starts it, read-only token, no
 #    secret, nothing uploaded, no credentials left in the checkout, the nightly's emulator start, then this smoke ──

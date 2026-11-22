@@ -10,8 +10,10 @@ The facts use a fixed vocabulary only, so no text from the screen reaches the ru
                             "DEMO · <link>"
   whatsnew=<x> <y>|none     the centre of the What's New dialog's GOT IT button, when it is shown
   tab.<NAME>=<x> <y>        the centre of each bottom-nav tab found (content-desc "<NAME> tab" or "<NAME> tab, alert")
-  selected=<NAME>|none      the tab whose node is selected (Compose's `selected` semantics), or none
-  tabflags=<NAME>:<ssss>:<n> ...|none  each tab's selected, checked, checkable and focused attributes (1 true, 0 false,
+  selected=<NAME>|none      the one tab whose node is selected (Compose's `selected` semantics); else, with all five
+                            tabs found, the one tab not clickable (Compose exposes a selected tab so); or none
+  selectedby=flag|clickable|none  which of the two read it
+  tabflags=<NAME>:<sssss>:<n> ...|none  each tab's selected, checked, checkable, focused and clickable attributes (1 true, 0 false,
                             - absent) and the number of nodes with its description, for a tab not read as selected
 A dump that is not XML exits 2 with the parser's error class and position only (never the dump's text).
 """
@@ -20,7 +22,7 @@ import sys
 import xml.etree.ElementTree as ET
 
 TABS = ("DRIVE", "PERF", "THERMAL", "TRIP", "GARAGE")
-FLAGS = ("selected", "checked", "checkable", "focused")
+FLAGS = ("selected", "checked", "checkable", "focused", "clickable")
 FLAG_CODE = {"true": "1", "false": "0", None: "-"}
 TAB_DESC = re.compile(r"(%s) tab(, alert)?" % "|".join(TABS))
 DEMO = re.compile("DEMO( \u00b7 [A-Z]{2,8})?")   # the pill: "DEMO", or "DEMO \u00b7 RCN" during LOSS
@@ -71,8 +73,7 @@ def main(argv):
                for n in nodes)
     whatsnew = "none"
     tabs = {}
-    selected = "none"
-    seen, flags = {}, {}
+    seen, flags, tabnode = {}, {}, {}
     for n in nodes:
         if whatsnew == "none" and n.get("text") == "GOT IT":
             # The button's own node when Compose merges the label into it; else the label's (inside the button)
@@ -82,11 +83,10 @@ def main(argv):
             seen[m.group(1)] = seen.get(m.group(1), 0) + 1
         if m and m.group(1) not in tabs:
             flags[m.group(1)] = "".join(FLAG_CODE.get(n.get(a), "?") for a in FLAGS)
+            tabnode[m.group(1)] = n
             c = centre(n)
             if c:
                 tabs[m.group(1)] = c
-            if n.get("selected") == "true":
-                selected = m.group(1)
     print("windows=%d" % sum(1 for _ in root))
     print("ours=%d" % ours)
     print("others=%s" % (",".join(sorted(set(others))) or "none"))
@@ -95,8 +95,19 @@ def main(argv):
     for t in TABS:
         if t in tabs:
             print("tab.%s=%s" % (t, tabs[t]))
+    # The selected tab: the one tab whose node is selected; else, with all five tabs found, the one tab that is not
+    # clickable (Compose exposes a selected Role.Tab as not clickable, AndroidComposeViewAccessibilityDelegateCompat)
+    selected, selectedby = "none", "none"
+    by_flag = [t for t in TABS if t in tabnode and tabnode[t].get("selected") == "true"]
+    not_clickable = [t for t in TABS if t in tabnode and tabnode[t].get("clickable") == "false"]
+    if len(by_flag) == 1:
+        selected, selectedby = by_flag[0], "flag"
+    elif not by_flag and len(tabnode) == len(TABS) and len(not_clickable) == 1 and all(
+            tabnode[t].get("clickable") == "true" for t in TABS if t != not_clickable[0]):
+        selected, selectedby = not_clickable[0], "clickable"
     print("selected=%s" % selected)
-    # For a tab that is not read as selected: each tab's selected / checked / checkable / focused attributes (1 true,
+    print("selectedby=%s" % selectedby)
+    # For a tab that is not read as selected: each tab's selected / checked / checkable / focused / clickable attributes (1 true,
     # 0 false, - absent) and how many nodes carry its description
     print("tabflags=%s" % (" ".join("%s:%s:%d" % (t, flags[t], seen[t]) for t in TABS if t in flags) or "none"))
     return 0

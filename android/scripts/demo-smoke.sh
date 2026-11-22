@@ -9,7 +9,8 @@
 #   3. Demo is paused (`--es demo at:2.5`) for the UI reads: `uiautomator dump` needs an idle screen, and live demo values
 #      change many times a second. A What's New dialog is closed by its GOT IT button.
 #   4. Each bottom-nav tab (DRIVE, PERF, THERMAL, TRIP, GARAGE) is tapped at the centre the UI dump gives for its node
-#      ("<NAME> tab"), and the next dump must show that tab selected and the header's DEMO label.
+#      ("<NAME> tab"), and the next dump must show that tab selected (its selected flag, else the only tab not clickable: Compose exposes a
+#      selected tab so) and the header's DEMO label.
 #   5. On DRIVE, each demo scenario runs live for a while (idle, driving, warning, loss, cooldown, launch); on TRIP, each
 #      sample state (`--es trippreview` history … export), then off.
 #   6. After every step: the app's process is the one started (not gone, not restarted), and the log since the cold start
@@ -215,7 +216,8 @@ for t in $TABS; do
   [ "$(fact selected)" = "$t" ] || fail "the $t tab is not selected after its tap (selected: $(fact selected); tab flags: $(fact tabflags))"
   need_demo "on $t"
   alive "on $t"; log_check "on $t"
-  echo "Tab $t: selected, DEMO shown, process $PID1, log clean"
+  case "$(fact selectedby)" in clickable) by="the only tab not clickable" ;; *) by="its selected flag" ;; esac
+  echo "Tab $t: selected ($by), DEMO shown, process $PID1, log clean"
 done
 cp "$WORK/facts" "$WORK/tab-facts"
 
