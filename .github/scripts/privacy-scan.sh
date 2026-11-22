@@ -440,9 +440,10 @@ keep() {
 }
 # scan_zip <c12> <path> <file>: each member's name and content against the list (by number, never by name); a member
 # that is itself compressed is listed for a reviewer's OK; an encrypted, oversized or unreadable one is a finding. Sets
-# zipread: 1 once its members are read, 0 for a ZIP that cannot be read (a finding of its own)
+# zipread: 1 once its members are read, 0 for a ZIP that cannot be read (a finding of its own). kind, binary and
+# zipok are its own: each member is classified, and the caller still judges the file by the file's own class
 scan_zip() {
-  local c12=$1 sp=$2 z=$3 d=$T/zip idx status name
+  local c12=$1 sp=$2 z=$3 d=$T/zip idx status name kind binary zipok
   rm -rf "$d"; mkdir "$d"
   if ! python3 -I - "$z" "$d" > "$d/index" 2> /dev/null <<'PY'
 import sys, zipfile
@@ -621,20 +622,18 @@ if [ "$HISTORY" = 1 ]; then
       [ -z "$p" ] || add "$o12" "a path in a tree a tag names (#$k)" "" "$sp"
       [ "$otype" = blob ] || continue
       git cat-file blob "$osha" > "$T/blob"; classify "$T/blob"
-      # the blob's own class, kept: scan_zip classifies each member and leaves the last member's in kind, binary, zipok
-      bkind=$kind; bbinary=$binary; bzipok=$zipok
       if [ "$(head -c 40 "$T/blob" | tr -d '\000' 2> /dev/null)" = "version https://git-lfs.github.com/spec/" ]; then
         printf '%s\ta Git LFS pointer (its file is not in these git objects)\t%s\t\n' "$o12" "$sp" >> "$T/compressed"
       fi
       zipread=0
-      if [ "$bkind" = zip ] || [ "$bzipok" = 1 ]; then scan_zip "$o12" "$sp" "$T/blob"; fi
-      if [ -n "$bkind" ] && [ "$bkind" != zip ]; then
-        printf '%s\tcompressed file (%s)\t%s\t\n' "$o12" "$bkind" "$sp" >> "$T/compressed"
-      elif [ "$bbinary" = 1 ] && [ "$zipread" = 0 ] && [ "$bkind" != zip ]; then
+      if [ "$kind" = zip ] || [ "$zipok" = 1 ]; then scan_zip "$o12" "$sp" "$T/blob"; fi
+      if [ -n "$kind" ] && [ "$kind" != zip ]; then
+        printf '%s\tcompressed file (%s)\t%s\t\n' "$o12" "$kind" "$sp" >> "$T/compressed"
+      elif [ "$binary" = 1 ] && [ "$zipread" = 0 ] && [ "$kind" != zip ]; then
         printf '%s\ta binary file, which may hold compressed data\t%s\t\n' "$o12" "$sp" >> "$T/compressed"
       fi
-      keep "$T/blob" "$o12" "in an object a tag names" "$sp" "$bkind"
-      if [ "$bbinary" = 0 ] && [ -z "$bkind" ] && [ "$bzipok" = 0 ]; then
+      keep "$T/blob" "$o12" "in an object a tag names" "$sp" "$kind"
+      if [ "$binary" = 0 ] && [ -z "$kind" ] && [ "$zipok" = 0 ]; then
         # a text file: its lines, once (as a commit's added lines are), not read whole as well. The path reaches awk
         # through the environment: -v would expand a backslash in it
         P="$sp" awk -v c="$o12" '{ printf "%s\tline of an object a tag names\t%s\t%d\n", c, ENVIRON["P"], NR }' "$T/blob" >> "$WHERE"
@@ -650,6 +649,7 @@ if [ "$HISTORY" = 1 ]; then
   # name is also in its tag object, read above
   nnames=0
   if [ -n "$NAMES" ]; then
+    keep "$NAMES" "refs" "in the ref names" ""     # for gitleaks too, as the pull request's branch name is
     while IFS= read -r nm || [ -n "$nm" ]; do
       nnames=$((nnames+1)); add "refs" "ref name #$nnames" "" "$nm"
     done < "$NAMES"
@@ -782,7 +782,7 @@ if [ "$HISTORY" = 1 ]; then
     | awk -F'\t' '{ print "privacy history scan: gitleaks rule " $1 ", " $2 " finding(s)" }'
   echo "privacy history scan: tag objects $ntag, trees and blobs a tag names $nother"
   if [ "$NOLIST" = 1 ]; then echo "privacy history scan: ref names $nnames, matches not checked (no list)"
-  else echo "privacy history scan: ref names $nnames, $(grep -c -F 'FINDING refs: ref name #' "$T/out.list" || true) matching the list"; fi
+  else echo "privacy history scan: ref names $nnames, $(cat "$T/out.list" "$T/out.bin" | { grep -c -E '^FINDING refs: ' || true; }) matching the list"; fi
   echo "privacy history scan: files for a reviewer (binary, compressed, ZIP members, embedded images) $(wc -l < "$T/out.comp")"
 fi
 if [ "$NOLIST" = 1 ]; then
