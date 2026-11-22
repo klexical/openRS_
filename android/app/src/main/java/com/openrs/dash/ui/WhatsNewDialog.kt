@@ -57,7 +57,7 @@ private val versionHighlights: Map<String, List<String>> = mapOf(
     "2.2.7" to listOf(
         RC_8_NOTE,
         BUILD_38_NOTE,
-        "Units by region: Settings → UNITS starts with Region (Europe & international, UK, US, Canada, Australia & NZ or Custom), and each unit can be set on its own: speed, temperature, boost, tyres, engine pressures, air pressure, altitude, fuel, economy, torque and mixture (AFR or λ). Every screen, the HUD and the Custom Dashboard follow them; drives and exports keep their units.",
+        "Units by region: Settings → UNITS starts with Region (EU, UK, US, CA, AU / NZ or Custom), and each unit can be set on its own: speed, temperature, boost, tyres, engine pressures, air pressure, altitude, fuel, economy, torque and mixture (AFR or λ). Every screen, the HUD and the Custom Dashboard follow them; drives and exports keep their units.",
         "Changed: economy now starts from your phone's region, so on a US phone MPG reads US gallons. It used UK gallons, which read about 20 % higher.",
         "Fixed: readings that ignored your unit settings now follow them, including HP FUEL, LP FUEL, BARO and DENS ALT.",
         "New units start from your phone's region: check Settings → UNITS.",

@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
@@ -28,6 +30,9 @@ import com.openrs.dash.ui.UNIT_ROWS
 import com.openrs.dash.ui.UnitsSection
 import com.openrs.dash.ui.UserPrefs
 import com.openrs.dash.ui.baroText
+import com.openrs.dash.ui.Accent
+import com.openrs.dash.ui.Bg
+import com.openrs.dash.ui.Surf
 import com.openrs.dash.ui.units.Region
 import com.openrs.dash.ui.units.UnitIds
 import com.openrs.dash.ui.units.withUnits
@@ -65,7 +70,11 @@ class UnitsFitTest {
         val controller = Robolectric.buildActivity(ComponentActivity::class.java).setup()
         controller.get().setContent {
             val base = LocalDensity.current
-            CompositionLocalProvider(LocalDensity provides Density(base.density, fontScale)) { content() }
+            // The app's MaterialTheme, as MainActivity sets it: Settings' text inherits its letter spacing (Material's body
+            // style), which is wider than plain text. Without it, "Air pressure" fitted here and wrapped on the emulator
+            CompositionLocalProvider(LocalDensity provides Density(base.density, fontScale)) {
+                MaterialTheme(colorScheme = darkColorScheme(background = Bg, surface = Surf, primary = Accent)) { content() }
+            }
         }
         repeat(4) { shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(16)) }
         val density = controller.get().resources.displayMetrics.density

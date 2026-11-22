@@ -128,6 +128,19 @@ class UnitsRegionTest {
         }
     }
 
+    @Test fun `an upgrade whose four equal the phone region's own reads that region, on every region's phone`() {
+        val phones = mapOf(Locale.UK to Region.UK, Locale.US to Region.US, Locale.CANADA to Region.CANADA,
+            Locale("en", "AU") to Region.AUS_NZ, Locale("en", "NZ") to Region.AUS_NZ, Locale.GERMANY to Region.EUROPE,
+            Locale("en", "IE") to Region.EUROPE)
+        for ((locale, region) in phones) {
+            prefs.edit(commit = true) { clear() }
+            val u = region.units!!
+            val p = existing(u.speed, u.temp, u.boost, u.tyre, locale)
+            assertEquals("$locale", region, p.region)
+            assertEquals("$locale", u, p.unitSet)
+        }
+    }
+
     @Test fun `where the four match the phone's region, Region reads it, else Custom`() {
         assertEquals(Region.UK, existing("MPH", "C", "PSI", "PSI", Locale.UK).region)
         prefs.edit(commit = true) { clear() }

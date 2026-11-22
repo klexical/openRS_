@@ -51,8 +51,10 @@ data class UnitSet(
     val mixture: String,
 )
 
-/** Settings → UNITS → Region. A preset sets all eleven units; [CUSTOM] is any set that equals no preset. */
-/** The unit presets; [label] is the short name on the Region picker (owner, #464). */
+/**
+ * Settings → UNITS → Region: the unit presets. A preset sets all eleven units; [CUSTOM] is any set that equals no preset.
+ * [label] is the short name on the Region picker (owner, #464).
+ */
 enum class Region(val label: String) {
     EUROPE("EU"),          // Europe & international
     UK("UK"),
