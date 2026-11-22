@@ -1,6 +1,7 @@
-# Dependabot version updates (talk-list item 5). Merged only after stable 2.2.7 (the owner's hold: no Gradle or Actions
-# proposal reaches staging while the outing build is tested). GitHub reads this file from the default branch (main)
-# only; the target-branch of each entry says where its pull requests go: android/ and the workflows to staging (code goes
+# Dependabot version updates (talk-list item 5). Owner's decision: the staging proposals (Gradle, Actions) stay
+# untouched until after stable 2.2.7, while the outing build is tested; Sapphire's (npm, main) go ahead as normal PRs.
+# GitHub reads this file from the default branch (main) only; the target-branch of each entry says where its pull
+# requests go: android/ and the workflows to staging (code goes
 # feature -> staging -> main, CLAUDE.md "Branch / Release Workflow"), web/ and main's own workflows to main.
 #
 # A Dependabot pull request is a proposal, never merged as it stands: its commits are authored by dependabot[bot], so
