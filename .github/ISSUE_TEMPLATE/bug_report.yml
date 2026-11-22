@@ -1,0 +1,130 @@
+name: Bug report
+description: Report a bug or unexpected behaviour in the openRS_ app
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Everything on this page, attachments included, is public and stays public.
+        A security weakness does not belong here: use the private security report linked on the previous page.
+
+  - type: input
+    id: version
+    attributes:
+      label: openRS_ version and build
+      description: Settings shows it.
+      placeholder: "e.g. 2.2.7-nightly.20261120 · Build 2611200"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: channel
+    attributes:
+      label: Where the app came from
+      options:
+        - Stable
+        - Nightly
+        - Release candidate
+        - Built myself
+    validations:
+      required: true
+
+  - type: input
+    id: android
+    attributes:
+      label: Android release and API level
+      description: Settings → About phone → Android version. The phone's model is not needed; add it under "What happened" only if you think it matters.
+      placeholder: "e.g. Android 15 (API 35)"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: adapter
+    attributes:
+      label: Adapter
+      options:
+        - MeatPi USB (C3)
+        - MeatPi Pro (S3)
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: adapter_fw
+    attributes:
+      label: Adapter firmware
+      description: Stock or openRS_, and its version.
+      placeholder: "e.g. openRS_ PRO v1.2"
+
+  - type: dropdown
+    id: connection
+    attributes:
+      label: Connection
+      options:
+        - Wi-Fi
+        - Bluetooth
+    validations:
+      required: true
+
+  - type: dropdown
+    id: seen_on
+    attributes:
+      label: Seen while
+      options:
+        - Driving
+        - Car parked
+        - Adapter on a bench
+        - Emulator
+
+  - type: dropdown
+    id: how_often
+    attributes:
+      label: How often
+      options:
+        - Every time
+        - Sometimes
+        - Once
+
+  - type: textarea
+    id: what_happened
+    attributes:
+      label: What happened
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected instead
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Connect to the adapter over …
+        2. Open …
+        3. See …
+
+  - type: textarea
+    id: export
+    attributes:
+      label: Diagnostic export
+      description: |
+        A diagnostic export helps most: GARAGE → DIAG → export (the DIAG tab in v2.2.6), then drag the ZIP here.
+        A diagnostic export holds the car's raw CAN traffic and the app's logs; v2.2.7 builds mask the VIN, v2.2.6 does not.
+        A drive export holds your route (GPS positions and times). Leave out anything you do not want public.
+
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Before you submit
+      options:
+        - label: I know that anything attached here is public and stays public.
+          required: true
+        - label: I left out my drive route unless the problem is about it.
+          required: true
+        - label: This is not a security weakness (those go to the private security report).
+          required: true
