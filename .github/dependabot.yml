@@ -1,5 +1,6 @@
-# Dependabot version updates (talk-list item 5). GitHub reads this file from the default branch (main) only; the
-# target-branch of each entry says where its pull requests go: android/ and the workflows to staging (code goes
+# Dependabot version updates (talk-list item 5). Merged only after stable 2.2.7 (the owner's hold: no Gradle or Actions
+# proposal reaches staging while the outing build is tested). GitHub reads this file from the default branch (main)
+# only; the target-branch of each entry says where its pull requests go: android/ and the workflows to staging (code goes
 # feature -> staging -> main, CLAUDE.md "Branch / Release Workflow"), web/ and main's own workflows to main.
 #
 # A Dependabot pull request is a proposal, never merged as it stands: its commits are authored by dependabot[bot], so
@@ -9,6 +10,8 @@
 #     android/gradle/verification-metadata.xml (.claude/rules/build-release.md, "Dependency verification"); Dependabot
 #     does not update it, so its own pull request fails the build. An Android Gradle plugin bump also rereads the lint
 #     pin in android/gradle.properties (build-release.md, "Lint version is pinned above AGP").
+#     A wrapper update changes gradle-wrapper.jar, a ZIP, so its pull request waits for the privacy scan's OK label
+#     (privacy-ok-compressed) and the owner's words naming it.
 #   - Actions: first check that Dependabot's pull request changes .github/workflows/actions.lock; if it does not, the
 #     round waits for the owner's Mac, where `gh actions-lock --no-narrow` can run. Keep Dependabot's actions.lock
 #     entries (it regenerates them; never edit by hand), and update the pins in
