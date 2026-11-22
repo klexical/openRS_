@@ -60,6 +60,10 @@ dump() {
 case "$*" in
   "shell pm disable-user"*)   : ;;
   "shell wm "*)               : ;;
+  "shell input keyevent "*)   : ;;
+  "shell svc power "*)        : ;;
+  "shell dumpsys power | grep"*) echo "mWakefulness=Awake" ;;
+  "shell dumpsys window | grep"*) printf '  mCurrentFocus=Window{4f2a1b u0 com.openrs.dash.debug/com.openrs.dash.ui.MainActivity}\r\n' ;;
   "install -r -g "*)          hang install; echo "Performing Streamed Install"; echo "Success" ;;
   "shell pm path com.openrs.dash.debug") echo "package:/data/app/~~fake/com.openrs.dash.debug-1/base.apk" ;;
   "shell sha256sum "*)        if [ -n "${FAKE_BAD_HASH-}" ]; then h=0000000000000000000000000000000000000000000000000000000000000000
@@ -146,6 +150,10 @@ if run_case "a clean run passes: every tab, scenario and trip preview, one proce
   has "Emulator smoke OK: 5 tabs, 6 demo scenarios, 8 trip previews; process 4242 throughout" || why+="no OK line; "
   for t in DRIVE PERF THERMAL TRIP GARAGE; do has "Tab $t: selected, DEMO shown, process 4242, log clean" || why+="no $t line; "; done
   [ "$(first_of 'shell pm disable-user')" = 1 ] || why+="the Play Store is not disabled first; "
+  for w in "shell input keyevent KEYCODE_WAKEUP" "shell svc power stayon true" "shell wm dismiss-keyguard"; do
+    n=$(first_of "$w"); s0=$(first_of "shell am start -S -W")
+    [ -n "$n" ] && [ "$n" -lt "$s0" ] || why+="'$w' not sent before the cold start; "
+  done
   c=$(line_of "logcat -c"); s=$(first_of "shell am start -S -W"); i=$(first_of "install -r -g")
   [ -n "$c" ] && [ -n "$s" ] && [ -n "$i" ] && [ "$i" -lt "$c" ] && [ "$c" -lt "$s" ] || why+="install ($i), log clear ($c), cold start ($s) out of order; "
   grep -q -F -- "--es demo driving" "$WORK/calls" || why+="the cold start does not enter demo; "
@@ -175,7 +183,7 @@ fi
 
 run_case "the DEMO label with a link state (DEMO · RCN) counts" 0 "$APK" "FAKE_DEMO_LABEL=DEMO · RCN" && pass
 run_case "two dumps with no idle state, then a readable one" 0 "$APK" FAKE_IDLE_FAILS=2 \
-  && expect "Emulator smoke OK" "UI read after the cold start, try 1 of 3: uiautomator said 'ERROR: could not get idle state.'; 0 bytes; unreadable dump (no XML in 0 characters)"
+  && expect "Emulator smoke OK" "UI read after the cold start, try 1 of 3: uiautomator said 'ERROR: could not get idle state.'; 0 bytes; unreadable dump (no XML in 0 characters); screen Awake, focus com.openrs.dash.debug/com.openrs.dash.ui.MainActivity"
 run_case "a control character in a node's text does not stop the reader" 0 "$APK" FAKE_CTRL_CHAR=1 && expect "Emulator smoke OK"
 
 # ── Failures, each named ──

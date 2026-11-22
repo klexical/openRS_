@@ -142,11 +142,21 @@ ui() {
     bytes=$(wc -c < "$WORK/dump.xml" | tr -d ' ')
     st=0; python3 -I "$DIR/demo-smoke-ui.py" "$WORK/dump.xml" "$PKG" > "$WORK/facts" 2> "$WORK/ui-err" || st=$?
     if [ "$st" -eq 0 ] && [ "$(fact ours)" != 0 ]; then return 0; fi
-    echo "UI read $1, try $i of $DUMP_TRIES: uiautomator said '${msg:-nothing}'; $bytes bytes; $(tr -d '\n' < "$WORK/ui-err" | cut -c1-200)"
+    echo "UI read $1, try $i of $DUMP_TRIES: uiautomator said '${msg:-nothing}'; $bytes bytes; $(tr -d '\n' < "$WORK/ui-err" | cut -c1-200); $(screen)"
     [ "$i" -eq "$DUMP_TRIES" ] || pause "before UI read $((i + 1))" "$STEP_S"
   done
   if [ "$st" -ne 0 ]; then fail "$1: no readable UI dump in $DUMP_TRIES tries (uiautomator said '${msg:-nothing}'; $(tr -d '\n' < "$WORK/ui-err" | cut -c1-200))"; fi
   fail "$1: the UI dump holds no node of $PKG in $DUMP_TRIES tries (other packages: $(fact others))"
+}
+# screen: the screen's state and the focused window's name, letters and dots only ("Awake", "NotificationShade" for the
+# keyguard), for a UI read that fails
+screen() {
+  local w f
+  call "reading the screen state" shell "dumpsys power | grep -m 1 -o 'mWakefulness=[A-Za-z]*' || true"
+  w=$(sed -n 's/^mWakefulness=//p' <<<"$OUT" | tr -cd 'A-Za-z' | cut -c1-20)
+  call "reading the focused window" shell "dumpsys window | grep -m 1 'mCurrentFocus=' || true"
+  f=$(sed -n 's/.*mCurrentFocus=Window{[^ ]* [^ ]* \([^}]*\)}.*/\1/p' <<<"$OUT" | tr -cd 'A-Za-z0-9_./' | cut -c1-120)
+  echo "screen ${w:-unknown}, focus ${f:-none}"
 }
 tap() {   # tap <where> "<x> <y>"
   local x=${2% *} y=${2#* }
@@ -161,6 +171,10 @@ timeout "$ADB_LIMIT_S" adb shell pm disable-user --user 0 com.android.vending >/
   || echo "Play Store not disabled (not on this image, or adb failed)"
 call "setting the screen size" shell wm size 1080x2400
 call "setting the screen density" shell wm density 420
+# A UI read finds no window ("null root node") while the screen sleeps or the keyguard is up: wake it, keep it on, unlock
+call "waking the screen" shell input keyevent KEYCODE_WAKEUP
+call "keeping the screen on" shell svc power stayon true
+call "dismissing the keyguard" shell wm dismiss-keyguard
 call "installing the APK" install -r -g "$APK"; echo "$OUT" | tail -n 1
 call "finding the installed APK" shell pm path "$PKG"
 DEVICE_APK=$(sed -n 's/^package://p' <<<"$OUT" | head -n 1 || true)
