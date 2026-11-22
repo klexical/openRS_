@@ -42,7 +42,7 @@ paths:
     `scripts/test-release-apk.sh` checks the build step; `scripts/test-release-workflows.rb` checks the workflows' shape
     (each tag job's exact condition and permissions, the recipe's one output, the digest check before attest and attach,
     no expression in any `run` line); CI's build job runs both, and the identity and verify-release tests.
-  - **The nightly (#363):** `.github/workflows/nightly.yml` is scheduled for 08:17 UTC and runs from main's copy only
+  - **The nightly (#363):** `.github/workflows/nightly.yml` is scheduled for 05:50 UTC and runs from main's copy only
     (schedule and "Run workflow" exist only on the default branch), so every script and Gradle step runs in a checkout of staging's tip, the SHA the gate records,
     never the run's own commit or ref. Jobs: `mode` (the publish output from the file's `PUBLISH`, with no checkout and
     no repository code), `gate` (`scripts/nightly-gate.sh`: build only when `android/` changed since
@@ -178,7 +178,7 @@ RC label, SHA-256, `gh attestation verify`. Never force-move a tag or delete an 
 
 No further RC is cut after rc.8: builds after it are nightlies, published by the nightly pipeline (#363).
 
-**Nightlies (#363).** `.github/workflows/nightly.yml` is scheduled for 08:17 UTC and can be run by hand ("Run
+**Nightlies (#363).** `.github/workflows/nightly.yml` is scheduled for 05:50 UTC and can be run by hand ("Run
 workflow"), but GitHub runs it only from the copy on main: it builds staging's tip through the shared
 recipe `release-apk.yml`. Its gate
 builds only when files under `android/` changed since the newest published nightly (rc.8 for the first) and today's UTC
