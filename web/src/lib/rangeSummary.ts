@@ -13,10 +13,10 @@ import { pointsInRange, type TimeRange } from './selection'
  */
 export const WHOLE_DRIVE_ONLY = 'Fuel, aggression, thermal progression and tyre pressures are for the whole drive.'
 /**
- * Trip's own line under a narrowed range, in place of thermal progression (#416 ticket 2). Trip's tyre-pressure
- * charts follow the range, so the Dashboard's line, which names tyre pressures, would be wrong there.
+ * Trip's own line under a narrowed range, in place of thermal progression and the thermal record (#416 ticket 2, #315).
+ * Trip's tyre-pressure charts follow the range, so the Dashboard's line, which names tyre pressures, would be wrong there.
  */
-export const TRIP_WHOLE_DRIVE_ONLY = 'Thermal progression is for the whole drive.'
+export const TRIP_WHOLE_DRIVE_ONLY = 'Thermal progression and the thermal record are for the whole drive.'
 
 export interface RangeSummary {
   /** The range's own length. */
