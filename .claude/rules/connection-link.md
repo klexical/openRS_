@@ -197,3 +197,8 @@ paths:
 - **Teardown comes from the reader (#218)** — `SlcanConnection` swallows write errors, so teardown must come from the
   reader: a transport that has to end the link after a write (BLE closes it on an unacknowledged write) closes its read
   side, the reader sees EOF and `SlcanConnection` reconnects. A transport that only throws from `write` ends nothing
+- **No adapter reply text reaches a log (#370)** — the adapter's `/check_status` reply carries its Wi-Fi and MQTT passwords
+  in plain text, and Android's `org.json` repeats its whole input in a parse error's message. `WicanApi` logs a failure
+  through `logFailure` only: the HTTP status code's three digits or the exception's class name, never the exception, its
+  message or the status line's reason text (`CheckStatusLogRedactionTest`). Any new request to the adapter's web pages
+  follows the same rule: no body, no throwable, no `e.message` in `Log`, an event or an export
