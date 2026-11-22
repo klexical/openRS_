@@ -207,6 +207,22 @@ for how in plain zlib png pk comment; do
 done
 repo; g checkout -q -b feature; zfix z.zip plain; commit "a ZIP"
 ACTION=labeled LABEL=privacy-ok-compressed run 0 "a ZIP-format file passes with the OK" "; ok label needed yes; "
+# a text file (no NUL, valid UTF-8, no magic at the start) that Python takes as a ZIP but cannot open reaches the
+# zipok-only branch. Python 3.14 also wants a central directory header where the end record places it, so the
+# directory's size has no zero byte (0x01010101, about 16 MB of spaces) and the comment length is 0x0101. The scan
+# exits 1 without the branch too ("a ZIP that cannot be read"): the ZIP file finding and "ok label needed yes" are
+# what pin the branch
+zotext() { python3 -I - "$1" <<'PY'
+import sys
+n = 0x01010101
+cd = b"PK\x01\x02" + b"C" * 42
+eocd = b"PK\x05\x06" + b"AAAABBBB" + n.to_bytes(4, "little") + b"DDDD" + b"\x01\x01"
+open(sys.argv[1], "wb").write(b"clean text\n" + cd + b" " * (n - len(cd)) + eocd + b" " * 0x0101)
+PY
+}
+repo; g checkout -q -b feature; zotext "$T/r/zo.txt"; g add zo.txt; commit "a text file Python takes as a ZIP"
+run 1 "a text file that Python takes as a ZIP but cannot open waits for the OK" \
+  "FINDING $(c12): a ZIP file, whose bytes outside its members may hold compressed data zo.txt" "; ok label needed yes; "
 repo; g checkout -q -b feature; printf 'inner %s\n' "$ID1" | gzip -c > "$T/inner.gz"
 python3 -I -c 'import sys,zipfile; zipfile.ZipFile(sys.argv[1],"w").write(sys.argv[2],"inner.gz")' "$T/r/b.zip" "$T/inner.gz"
 g add b.zip; commit "a ZIP holding a gzip"
@@ -662,6 +678,10 @@ expect 1 "a binary of no named kind with a ZIP appended, in a tree a tag names, 
 repo; put f.txt 'clean\n'; commit "clean"; zfix z.zip zlib; tr=$(g write-tree); g reset -q; hist "$(sha main)" "$tr"
 expect 1 "a ZIP-format file in a tree a tag names waits for a reviewer" $? \
   "privacy history scan: files for a reviewer (binary, compressed, ZIP members, embedded images) 1"
+repo; put f.txt 'clean\n'; commit "clean"; zotext "$T/r/zo.txt"; g add zo.txt; tr=$(g write-tree); g reset -q; rm -f "$T/r/zo.txt"
+hist "$(sha main)" "$tr"
+expect 1 "a text file that Python takes as a ZIP but cannot open, in a tree a tag names, waits for a reviewer" $? \
+  "privacy history scan: files for a reviewer (binary, compressed, ZIP members, embedded images) 1"
 # a backslash in a tagged tree's path is the path's own: a backslash-t cannot shift where the path is checked, and a
 # backslash-n cannot break the scanned lines' places
 repo; put f.txt 'clean\n'; commit "clean"; bl=$(printf 'seen %s here\n' "$ID1" | g hash-object -w --stdin)
@@ -687,6 +707,34 @@ expect 1 "a ref name that matches twice counts once" $? "privacy history scan: r
 printf 'refs/remotes/origin/main\r\n\r\nrefs/tags/%s\r\nrefs/tags/x-%s\r\n\n' "$(printf '%s' "$ID1" | base64 -w0)" "$ID1" > "$T/names"
 hist --names "$T/names" "$(sha main)"
 expect 1 "ref names with CRLF and blank lines: each real name counted once" $? "privacy history scan: ref names 3, 2 matching the list"
+b=$(printf 'id %s' "$ID1" | base64 -w0); printf '%s\n%s\n' "${b:0:16}" "${b:16}" > "$T/names"; hist --names "$T/names" "$(sha main)"
+expect 1 "base64 of the list's entry split across two ref names counts one matching name" $? \
+  "privacy history scan: ref names 2, 1 matching the list"
+# the reviewers' cases: each name is judged on its own first, so the count is never below one check per name, and a
+# run joined across names counts only when no name it spans matched alone (b: unpadded base64 of the entry; bp: padded)
+b=$(printf 'ids %s' "$ID1" | base64 -w0); bp=$(printf 'id %s' "$ID1" | base64 -w0)
+printf 'refs/tags/%s\nrefs/tags/%s\n' "$b" "$b" > "$T/names"; hist --names "$T/names" "$(sha main)"
+expect 1 "two adjacent names, each holding base64 of the entry, both count" $? "privacy history scan: ref names 2, 2 matching the list"
+printf 'refs/remotes/origin/a-long-clean-branch-name\nrefs/tags/%s\nrefs/tags/%s\n' "$b" "$b" > "$T/names"; hist --names "$T/names" "$(sha main)"
+expect 1 "a clean long name, then two base64 names: both base64 names count" $? "privacy history scan: ref names 3, 2 matching the list"
+repo; put f.txt 'clean\nsrc/main/java/com/example/Mains\n'   # a root commit whose file ends in a path-like line
+rootc=$(GIT_AUTHOR_NAME=o GIT_AUTHOR_EMAIL=$OWNER GIT_COMMITTER_NAME=o GIT_COMMITTER_EMAIL=$OWNER g commit-tree "$(g write-tree)" -m clean)
+printf 'refs/tags/%s\nrefs/remotes/origin/main\n' "$b" > "$T/names"; hist --names "$T/names" "$rootc"
+expect 1 "a base64 name after a root commit's path-like last line still counts" $? "privacy history scan: ref names 2, 1 matching the list"
+repo; put f.txt 'clean\n'; commit "clean"; put g.txt 'clean\nQUJDREVGR0hJSktMTU5PUFFSU1RV\n'; tr=$(g write-tree); g reset -q
+printf 'refs/tags/%s\n' "$b" > "$T/names"; hist --names "$T/names" "$(sha main)" "$tr"
+expect 1 "a base64 name after a tagged file's base64 last line still counts" $? "privacy history scan: ref names 1, 1 matching the list"
+printf 'refs/tags/android-v2.2.6\nrefs/tags/%s\n' "$bp" > "$T/names"; hist --names "$T/names" "$(sha main)"
+expect 1 "a dotted name, then a padded base64 name: one counts" $? "privacy history scan: ref names 2, 1 matching the list"
+printf 'refs/tags/android-v2.2.6\nrefs/tags/%s\nrefs/tags/fw-usb-v1.6.1\nrefs/tags/%s\n' "$bp" "$bp" > "$T/names"
+hist --names "$T/names" "$(sha main)"
+expect 1 "dotted, base64, dotted, base64: two count" $? "privacy history scan: ref names 4, 2 matching the list"
+printf 'refs/remotes/origin/main\nrefs/tags/x-\x02\x5a\x1e\x7c\x3d\x9b\n' > "$T/names"
+LISTV=$(printf '%s\n%s\n' "$ID1" "$MAC") hist --names "$T/names" "$(sha main)"
+expect 0 "a name holding a MAC entry's six raw bytes counts" $? "privacy history scan: ref names 2, 1 matching the list"
+printf 'refs/remotes/origin/main\nrefs/heads/kro\xc3\x9fen\n' > "$T/names"
+LISTV=$(printf '%s\nKrossen\n' "$ID1") hist --names "$T/names" "$(sha main)"
+expect 0 "a name matching only by case folding (a sharp s) counts" $? "privacy history scan: ref names 2, 1 matching the list"
 hist --names "$T/no-such-file" "$(sha main)"; expect 2 "--names needs a readable file" $? "--names needs a readable file"
 (cd "$T/r" && PRIVACY_IDENTIFIERS=$LISTV GITLEAKS=$STUB GITHUB_EVENT_PATH=$T/event.json bash "$SCAN" --names "$T/names" "$(sha main)" "$(sha HEAD)") > "$OUT" 2>&1
 expect 2 "--names is for --history only" $? "--names is for --history only"
