@@ -178,9 +178,10 @@ paths:
     different bytes under some coordinates (AGP's `transform-api`), so a run with the mirror records Central's hash and
     turns CI red. Run with a fresh `GRADLE_USER_HOME` that has no `init.d/` (copy `wrapper/` in to skip the download).
     Central rate-limits cloud containers (HTTP 429), so such a run can come back short: compare its entries with a
-    mirror run's, never take it alone. Where the two differ, the entry carries Google's hash with Central's as
-    `<also-trust>` so cloud threads still build.
-  - **Read the diff before committing.** Regenerating over an existing file never changes a hash: a mismatch is added as
+    mirror run's, do not take it alone. Where the two differ, `<also-trust>` is allowed only after fetching both
+    copies and matching each against its own repository's `.sha1` (Google Maven's for Google's copy, Central's for
+    Central's): then the entry carries Google's hash with Central's as `<also-trust>`, so cloud threads still build.
+  - **Read the diff before committing.** Regenerating over an existing file does not change a hash: a mismatch is added as
     a new `<also-trust>` line and the build goes green. A new `<also-trust>` line, or a hash that changed for a version
     that did not, is a tampered or re-published artifact until shown otherwise: stop and ask. Gradle keeps entries for
     versions no longer used: delete the old version's components by hand.
