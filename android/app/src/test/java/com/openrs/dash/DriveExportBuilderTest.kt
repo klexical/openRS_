@@ -275,6 +275,20 @@ class DriveExportBuilderTest {
         assertTrue(gpx.contains("<openrs:boostPsi>15.50</openrs:boostPsi>"))
     }
 
+    /**
+     * #390: the extension namespace is this repository's URL. A namespace-aware reader finds the openrs: elements only
+     * under the namespace the file declares, so the test resolves them as such a reader does, not by prefix.
+     */
+    @Test fun `gpx extension elements are in the project's namespace`() {
+        val gpx = DriveExportBuilder.buildGpx(testDrive(), listOf(testPoint(rpm = 4500)), "ts")
+        val doc = javax.xml.parsers.DocumentBuilderFactory.newInstance().apply { isNamespaceAware = true }
+            .newDocumentBuilder().parse(org.xml.sax.InputSource(java.io.StringReader(gpx)))
+        val ns = "https://github.com/klexical/openRS_"
+        assertEquals(ns, doc.documentElement.lookupNamespaceURI("openrs"))
+        assertEquals("4500", doc.getElementsByTagNameNS(ns, "rpm").item(0)?.textContent)
+        assertEquals(1, doc.getElementsByTagNameNS(ns, "oilPtuMapping").length)
+    }
+
     @Test fun `gpx splits segments on pause gaps`() {
         val points = listOf(
             testPoint(timestamp = 1000L),
