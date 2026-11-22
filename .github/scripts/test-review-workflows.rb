@@ -151,6 +151,7 @@ check.(File.read(File.join(dir, "claude-review.yml")).downcase.scan("secrets.cla
        "the token appears twice only: the shape step's env and the review's input")
 require "open3"
 require "tmpdir"
+require "fileutils"
 LINES = { ok: "review token: ok", empty: "review token: empty", ws: "review token: has whitespace or a line break",
           ascii: "review token: has a character outside printable ASCII" }
 probe = "SHAPEPROBE-x_1"
@@ -241,6 +242,180 @@ check.(last["run"].to_s =~ /bash "\$RUNNER_TEMP\/privacy-scan\.sh" "\$BASE" "\$H
        "privacy-scan: runs the run's own commit's script on the new commits; env holds the list, gitleaks and the two SHAs only")
 check.(%w[pull_request.title pull_request.body pull_request.head.ref label.name].none? { |k| ps.to_s.include?(k) },
        "privacy-scan: the PR's title, body, branch name and labels never pass through env or ${{ }} (the script reads the event file)")
+
+# Sapphire's web-ci.yml runs on every pull request, so main's ruleset can require its check "Sapphire": a workflow left
+# out by on.paths never reports and would hold every other pull request (Q99). Its first step decides from git whether
+# the pull request changes web/ or the workflow; the later steps run only then. The decision step's own text is run here
+# against real merge commits.
+require "open3"
+require "tmpdir"
+web = load_wf.("web-ci.yml")
+won = on_of.(web)
+check.(won.is_a?(Hash) && won.keys.sort == %w[pull_request workflow_dispatch] &&
+       won["pull_request"].keys.sort == %w[branches types] && won.dig("pull_request", "branches").sort == %w[main staging],
+       "web-ci: every pull request to main and staging (no paths filter), and by hand")
+check.(won.dig("pull_request", "types") == %w[opened synchronize reopened edited],
+       "web-ci: opened, synchronize, reopened and edited (a pull request retargeted onto another base is decided again)")
+wjob = web["jobs"]["web"] || {}
+check.(web["jobs"].keys == ["web"] && wjob["name"] == "Sapphire" && !wjob.key?("if") && !wjob.key?("continue-on-error"),
+       "web-ci: one job, named Sapphire (the required check's name), with no condition")
+wsteps = wjob["steps"] || []
+wdi = wsteps.index { |st| st["id"] == "diff" }
+wdiff = wdi ? wsteps[wdi] : {}
+check.(wdi == 1 && wsteps[0]["uses"].to_s.start_with?("actions/checkout@") && wsteps[0].dig("with", "fetch-depth") == 0 &&
+       wsteps[0].dig("with", "persist-credentials") == false && !wsteps[0].key?("if"),
+       "web-ci: checkout (the whole history, for the merge base; no credentials), then the decision step")
+check.(!wdiff.key?("if") && !wdiff.key?("continue-on-error") && wdiff["working-directory"] == "." && wdiff["shell"] == "bash" &&
+       wdiff["env"] == { "EVENT" => "${{ github.event_name }}", "BASE_REF" => "${{ github.event.pull_request.base.ref }}",
+                         "BASE_SHA" => "${{ github.event.pull_request.base.sha }}",
+                         "HEAD_SHA" => "${{ github.event.pull_request.head.sha }}" } && !wdiff["run"].to_s.include?("${{"),
+       "web-ci: the decision step always runs, cannot be skipped past, and takes the event's name, base branch, base and head through env only")
+check.(wdi && wsteps.length > wdi + 1 && wsteps[(wdi + 1)..].all? { |st| st["if"] == "steps.diff.outputs.run == 'true'" },
+       "web-ci: every step after the decision runs only when it says run=true")
+decide = lambda do |event, failing_diff = false, &build|
+  Dir.mktmpdir do |d|
+    git = ->(*a) { o, st = Open3.capture2e("git", "-C", d, *a); raise "git #{a.join(" ")}: #{o}" unless st.success?; o }
+    put = ->(f, t = "x") { FileUtils.mkdir_p(File.dirname(File.join(d, f))); File.write(File.join(d, f), t) }
+    git.("init", "-q", "-b", "base")
+    git.("config", "user.name", "t"); git.("config", "user.email", "t@example.invalid")
+    put.("web/a.txt"); put.("android/b.txt"); put.(".github/workflows/web-ci.yml")
+    git.("add", "-A"); git.("commit", "-q", "-m", "base")
+    shas = build.(git, put)
+    shas = {} unless shas.is_a?(Hash)
+    sha = ->(r) { o, st = Open3.capture2e("git", "-C", d, "rev-parse", r); st.success? ? o.strip : "" }
+    shas = { "BASE_REF" => "base", "BASE_SHA" => sha.("HEAD^1"), "HEAD_SHA" => sha.("HEAD^2") }.merge(shas)
+    # checkout's whole-history fetch copies every branch to refs/remotes/origin/; a build may name one to leave out
+    drop = shas.delete("DROP_BRANCH")
+    git.("for-each-ref", "--format=%(refname:short)", "refs/heads").split.each do |b|
+      git.("update-ref", "refs/remotes/origin/#{b}", "refs/heads/#{b}") unless b == drop
+    end
+    out = File.join(d, "out")
+    File.write(out, "")
+    env = { "EVENT" => event, "GITHUB_OUTPUT" => out }.merge(shas)
+    if failing_diff                # a git whose diff fails as git does on an error (128); every other command is git's own
+      bin = File.join(d, ".bin"); Dir.mkdir(bin)
+      File.write(File.join(bin, "git"), "#!/usr/bin/env bash\n[ \"$1\" = diff ] && { echo 'fatal: bad object' >&2; exit 128; }\nexec #{`sh -c "command -v git"`.strip} \"$@\"\n")
+      File.chmod(0o755, File.join(bin, "git"))
+      env["PATH"] = "#{bin}:#{ENV["PATH"]}"
+    end
+    # `shell: bash` runs a step as bash --noprofile --norc -eo pipefail {0}
+    o, st = Open3.capture2e(env, "bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", wdiff["run"].to_s, chdir: d)
+    [st.success?, File.read(out), o]
+  end
+end
+pr = lambda do |base_change = nil, lagging_event_base = false, &head|
+  lambda do |git, put|
+    git.("checkout", "-q", "-b", "head")
+    head.(git, put)
+    git.("add", "-A"); git.("commit", "-q", "-m", "head")
+    git.("checkout", "-q", "base")
+    event_base = git.("rev-parse", "HEAD").strip
+    if base_change
+      put.(base_change, "moved on"); git.("add", "-A"); git.("commit", "-q", "-m", "base moves on")
+    end
+    git.("merge", "-q", "--no-ff", "-m", "test merge", "head")
+    # the event can name the base commit from before the base moved on, while the merge commit is on the new tip (#473)
+    lagging_event_base ? { "BASE_SHA" => event_base } : nil
+  end
+end
+{ "a change under web/" => [pr.() { |_, put| put.("web/a.txt", "y") }, "run=true"],
+  "an Android-only change" => [pr.() { |_, put| put.("android/b.txt", "y") }, "run=false"],
+  "a change to web-ci.yml" => [pr.() { |_, put| put.(".github/workflows/web-ci.yml", "y") }, "run=true"],
+  "a file moved out of web/" => [pr.() { |git, _| git.("mv", "web/a.txt", "a.txt") }, "run=true"],
+  "a file deleted under web/" => [pr.() { |git, _| git.("rm", "-q", "web/a.txt") }, "run=true"],
+  "a new file under webapp/ (not web/)" => [pr.() { |_, put| put.("webapp/x.txt") }, "run=false"],
+  "a file named web-ci.yml.bak" => [pr.() { |_, put| put.(".github/workflows/web-ci.yml.bak") }, "run=false"],
+  "a new file under web/ with a non-ASCII name (git quotes it)" => [pr.() { |_, put| put.("web/caf\u00e9.txt") }, "run=true"],
+  "a non-ASCII file outside web/" => [pr.() { |_, put| put.("docs/caf\u00e9.txt") }, "run=false"],
+  "an Android-only change while the base moved on under web/" =>
+    [pr.("web/c.txt") { |_, put| put.("android/b.txt", "y") }, "run=false"],
+  "a web/ change while the base moved on and the event names the base's older commit" =>
+    [pr.("android/c.txt", true) { |_, put| put.("web/a.txt", "y") }, "run=true"],
+  "an Android-only change, the event naming the base's older commit" =>
+    [pr.("web/c.txt", true) { |_, put| put.("android/b.txt", "y") }, "run=false"] }.each do |what, (build, want)|
+  ok, out, = decide.("pull_request", &build)
+  check.(ok && out.lines.map(&:strip) == [want], "web-ci decision: #{what} => #{want}")
+end
+# A retargeted pull request whose test merge commit still sits on the old base: the head adds only android/ on top of
+# an old base that changed web/; the new base is from before that web/ change, so against it the pull request changes web/.
+ok, out, = decide.("pull_request") do |git, put|
+  root = git.("rev-parse", "HEAD").strip
+  put.("web/a.txt", "old base"); git.("commit", "-qam", "old base changes web/")
+  git.("checkout", "-q", "-b", "head"); put.("android/b.txt", "y"); git.("commit", "-qam", "head")
+  head = git.("rev-parse", "HEAD").strip
+  git.("checkout", "-q", "-b", "newbase", root); put.("docs/n.txt"); git.("add", "-A"); git.("commit", "-qm", "new base")
+  newbase = git.("rev-parse", "HEAD").strip
+  git.("checkout", "-q", "base"); git.("merge", "-q", "--no-ff", "-m", "stale test merge", "head")
+  { "BASE_REF" => "newbase", "BASE_SHA" => newbase, "HEAD_SHA" => head }
+end
+check.(!ok && !out.include?("run="), "web-ci decision: a retarget whose merge commit is on the old base, changing web/ against the new base => the step fails (it would build the wrong tree)")
+# a retarget onto a base the old base already contains (staging holding all of main): the merge commit is past the event's
+# base commit but not on the new base branch, so it would still build the old base's tree
+ok, out, = decide.("pull_request") do |git, put|
+  git.("branch", "newbase")
+  put.("android/b.txt", "old base"); git.("commit", "-qam", "old base moves on")
+  git.("checkout", "-q", "-b", "head"); put.("web/a.txt", "y"); git.("commit", "-qam", "head")
+  head = git.("rev-parse", "HEAD").strip
+  git.("checkout", "-q", "base"); git.("merge", "-q", "--no-ff", "-m", "stale test merge", "head")
+  { "BASE_REF" => "newbase", "BASE_SHA" => git.("rev-parse", "newbase").strip, "HEAD_SHA" => head }
+end
+check.(!ok && !out.include?("run="), "web-ci decision: a retarget onto a base the old base contains, changing web/ => the step fails (the merge commit is not on the new base branch)")
+# a retarget onto a base that already contains the old one (main holding staging's tip and more, right after a release
+# merge): the merge commit's base is on the new base branch, but behind the event's base commit
+ok, out, = decide.("pull_request") do |git, put|
+  git.("checkout", "-q", "-b", "head"); put.("web/a.txt", "y"); git.("commit", "-qam", "head")
+  head = git.("rev-parse", "HEAD").strip
+  git.("checkout", "-q", "-b", "newbase", "base"); put.("docs/n.txt"); git.("add", "-A"); git.("commit", "-qm", "new base: the old base and more")
+  newbase = git.("rev-parse", "HEAD").strip
+  git.("checkout", "-q", "base"); git.("merge", "-q", "--no-ff", "-m", "stale test merge", "head")
+  { "BASE_REF" => "newbase", "BASE_SHA" => newbase, "HEAD_SHA" => head }
+end
+check.(!ok && !out.include?("run="), "web-ci decision: a retarget onto a base that contains the old base, changing web/ => the step fails (the merge commit is behind the event's base commit)")
+# the checked-out commit must be GitHub's merge of the event's head
+ok, out, = decide.("pull_request") do |git, put|
+  git.("checkout", "-q", "-b", "head"); put.("web/a.txt", "y"); git.("commit", "-qam", "head 1")
+  first = git.("rev-parse", "HEAD").strip
+  put.("web/a.txt", "z"); git.("commit", "-qam", "head 2")
+  git.("checkout", "-q", "base"); git.("merge", "-q", "--no-ff", "-m", "test merge", "head")
+  { "HEAD_SHA" => first }
+end
+check.(!ok && !out.include?("run="), "web-ci decision: a merge commit of another head than the event's, changing web/ => the step fails")
+ok, out, = decide.("pull_request") do |git, put|
+  base = git.("rev-parse", "HEAD").strip
+  git.("checkout", "-q", "-b", "head"); put.("web/a.txt", "y"); git.("commit", "-qam", "head")
+  head = git.("rev-parse", "HEAD").strip
+  git.("checkout", "-q", "base"); git.("merge", "-q", "--no-ff", "-m", "test merge", "head")
+  git.("checkout", "-q", "--detach", "head")
+  { "BASE_SHA" => base, "HEAD_SHA" => head }
+end
+check.(!ok && !out.include?("run="), "web-ci decision: the checkout is not a merge commit, changing web/ => the step fails")
+ok, out, = decide.("pull_request", &pr.() { |_, put| put.("web/a.txt", "y") }.then { |b| ->(g, p) { b.(g, p); { "DROP_BRANCH" => "base" } } })
+check.(!ok && !out.include?("run="), "web-ci decision: a web/ change but the checkout has no copy of the base branch => the step fails")
+ok, out, = decide.("pull_request", &pr.() { |_, put| put.("web/a.txt", "y") }.then { |b| ->(g, p) { b.(g, p); { "BASE_REF" => "" } } })
+check.(!ok && !out.include?("run="), "web-ci decision: the event names no base branch => the step fails, nothing decided")
+# the same stale merge commit when the pull request changes no web/ against the new base: nothing is built, so it skips
+ok, out, = decide.("pull_request") do |git, put|
+  root = git.("rev-parse", "HEAD").strip
+  put.("android/b.txt", "old base"); git.("commit", "-qam", "old base moves on")
+  git.("checkout", "-q", "-b", "head"); put.("docs/h.txt"); git.("add", "-A"); git.("commit", "-qm", "head")
+  head = git.("rev-parse", "HEAD").strip
+  git.("checkout", "-q", "-b", "newbase", root); put.("docs/n.txt"); git.("add", "-A"); git.("commit", "-qm", "new base")
+  newbase = git.("rev-parse", "HEAD").strip
+  git.("checkout", "-q", "base"); git.("merge", "-q", "--no-ff", "-m", "stale test merge", "head")
+  { "BASE_REF" => "newbase", "BASE_SHA" => newbase, "HEAD_SHA" => head }
+end
+check.(ok && out.lines.map(&:strip) == ["run=false"], "web-ci decision: a stale merge commit, no web/ change against the new base => run=false")
+ok, out, = decide.("pull_request", &pr.() { |_, put| put.("web/a.txt", "y") }.then { |b| ->(g, p) { b.(g, p); { "BASE_SHA" => "" } } })
+check.(!ok && !out.include?("run="), "web-ci decision: the event names no base commit => the step fails, nothing decided")
+ok, out, = decide.("pull_request") do |git, put|
+  git.("checkout", "-q", "--orphan", "lone"); put.("web/z.txt"); git.("add", "-A"); git.("commit", "-qm", "unrelated")
+  { "BASE_SHA" => git.("rev-parse", "base").strip, "HEAD_SHA" => git.("rev-parse", "HEAD").strip }
+end
+check.(!ok && !out.include?("run="), "web-ci decision: no merge base between base and head => the step fails, nothing decided")
+ok, out, = decide.("pull_request", true, &pr.() { |_, put| put.("android/b.txt", "y") })
+check.(!ok && !out.include?("run="), "web-ci decision: git diff fails => the step fails, nothing decided")
+ok, out, = decide.("workflow_dispatch") { |_, _| }
+check.(ok && out.lines.map(&:strip) == ["run=true"], "web-ci decision: a run by hand => run=true")
 
 # The one-time full-history scan: privacy-history.yml, by hand on main only, the same environment and the same shape
 # (objects only, the script from the run's own commit, the list in the last step only), with --history
