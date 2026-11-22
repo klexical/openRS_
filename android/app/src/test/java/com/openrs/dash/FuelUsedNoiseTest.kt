@@ -81,8 +81,11 @@ class FuelUsedNoiseTest {
     private fun storedDrive(vararg levels: Double): DriveEntity {
         val rec = DriveRecorder(app, vs, WeatherRepository(""), db, dao, { _, _ -> null }, gps, { }).also { recorders += it }
         vs.value = VehicleState(isConnected = true, rpm = 850.0, fuelLevelPct = levels[0])
+        // This drive's own subscription (#462): a test that records two drives shares one fake source, and "opened at
+        // least once" is already true from the first, so a fix could go to the first drive's channel, which nobody reads
+        val openedBefore = gps.opened.get()
         rec.startDrive()
-        check(waitUntil { rec.driveState.value.let { it.isRecording && it.driveId > 0 } && gps.opened.get() > 0 }) { "no start" }
+        check(waitUntil { rec.driveState.value.let { it.isRecording && it.driveId > 0 } && gps.opened.get() > openedBefore }) { "no start" }
         levels.forEachIndexed { i, pct ->
             val before = rec.driveState.value.totalPointCount
             vs.value = VehicleState(isConnected = true, rpm = 850.0, fuelLevelPct = pct)
