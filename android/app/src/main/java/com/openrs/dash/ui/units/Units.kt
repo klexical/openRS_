@@ -101,10 +101,17 @@ enum class Region(val label: String) {
         /**
          * An existing user's units after the update (owner's rule, #464): the same phone-country region as a new install
          * ([unitsForCountry]) gives the seven added units, and the four original choices (speed, temperature, boost,
-         * tyres) are kept exactly. Where the four differ from that region's, Region reads Custom.
+         * tyres) are kept exactly. One exception: km/h with °C on a phone whose region is US or UK takes Europe &
+         * international's seven, because km/h and °C were never the old defaults (mph, °F), so they are the driver's
+         * own metric choice. Where the four differ from the seven's preset, Region reads Custom.
          */
-        fun unitsForExisting(country: String, speed: String, temp: String, boost: String, tyre: String): UnitSet =
-            unitsForCountry(country).copy(speed = speed, temp = temp, boost = boost, tyre = tyre)
+        fun unitsForExisting(country: String, speed: String, temp: String, boost: String, tyre: String): UnitSet {
+            val phone = unitsForCountry(country)
+            val metricChoice = speed == UnitIds.KPH && temp == UnitIds.C &&
+                (phone == PRESETS.getValue(US) || phone == PRESETS.getValue(UK))
+            val seven = if (metricChoice) PRESETS.getValue(EUROPE) else phone
+            return seven.copy(speed = speed, temp = temp, boost = boost, tyre = tyre)
+        }
     }
 }
 

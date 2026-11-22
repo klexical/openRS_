@@ -124,8 +124,31 @@ class UnitsRegionTest {
             listOf("MPH", "C", "PSI", "PSI"), listOf("MPH", "F", "PSI", "PSI"), listOf("KPH", "F", "PSI", "KPA"))
         for ((locale, region) in phones) for (four in fours) {
             prefs.edit(commit = true) { clear() }
-            assertMigrated(existing(four[0], four[1], four[2], four[3], locale), four, region.units!!)
+            // km/h + °C on a US or UK phone is the one exception: Europe's seven (the test below)
+            val metric = four[0] == "KPH" && four[1] == "C" && region in setOf(Region.US, Region.UK)
+            assertMigrated(existing(four[0], four[1], four[2], four[3], locale), four,
+                (if (metric) Region.EUROPE else region).units!!)
         }
+    }
+
+    @Test fun `an upgrade with km per h and degrees C on a US or UK phone gets Europe's seven`() {
+        // km/h + °C was never the default (mph, °F), so it is the driver's own choice: EU's seven, whatever the phone (owner)
+        val eu = Region.EUROPE.units!!
+        for (locale in listOf(Locale.US, Locale.UK)) for (four in listOf(listOf("KPH", "C", "BAR", "BAR"),
+                listOf("KPH", "C", "PSI", "PSI"), listOf("KPH", "C", "KPA", "KPA"))) {
+            prefs.edit(commit = true) { clear() }
+            val p = existing(four[0], four[1], four[2], four[3], locale)
+            assertMigrated(p, four, eu)
+            assertEquals("$locale $four", if (four == listOf("KPH", "C", "BAR", "BAR")) Region.EUROPE else Region.CUSTOM, p.region)
+        }
+        // Canada's, Australia & NZ's and Europe's own fills are unchanged
+        for ((locale, region) in mapOf(Locale.CANADA to Region.CANADA, Locale("en", "AU") to Region.AUS_NZ,
+                Locale("en", "NZ") to Region.AUS_NZ, Locale.GERMANY to Region.EUROPE)) {
+            prefs.edit(commit = true) { clear() }
+            assertMigrated(existing("KPH", "C", "PSI", "PSI", locale), listOf("KPH", "C", "PSI", "PSI"), region.units!!)
+        }
+        prefs.edit(commit = true) { clear() }
+        assertEquals(UnitIds.KML, existing("KPH", "C", "BAR", "BAR", Locale("es", "MX")).economyUnit)
     }
 
     @Test fun `an upgrade whose four equal the phone region's own reads that region, on every region's phone`() {

@@ -397,8 +397,9 @@ object AppSettings {
 
     /**
      * #464: stores the eleven units once, before anything reads them. A settings file that already holds any key is an
-     * existing install: the seven new units come from the phone's country setting, as on a new install, and its four
-     * original choices are kept exactly ([Region.unitsForExisting]). An empty file is a new install: all eleven come
+     * existing install: the seven new units come from the phone's country setting, as on a new install (km/h with °C on
+     * a US or UK phone takes Europe & international's), and its four original choices are kept exactly
+     * ([Region.unitsForExisting]). An empty file is a new install: all eleven come
      * from the phone's country setting ([Region.unitsForCountry]). After it runs, [KEY_UNITS_VERSION] is set and it
      * never runs again.
      */
