@@ -197,6 +197,9 @@ adb shell am start --activity-single-top -n com.openrs.dash.debug/com.openrs.das
 
 In demo mode the header pill always says DEMO (`DEMO · RCN` during LOSS) — never drop the simulation label.
 
+On a pull request, the label `emulator-smoke` runs the same demo-mode walk on an API 36 emulator in GitHub Actions
+(`.github/workflows/emulator-smoke.yml`, `android/scripts/demo-smoke.sh`; `.claude/rules/build-release.md`).
+
 Keys: `android/local.properties` (`MAPS_API_KEY`, `OPENWEATHER_API_KEY`) or the same names in the environment — optional for
 local builds (#235); `android/keystore.properties` for release signing.
 Version display format: `openRS_ v<releaseName> · Build <versionCode>` (Settings) — the release name comes from

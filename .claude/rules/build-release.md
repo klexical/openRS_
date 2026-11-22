@@ -175,6 +175,18 @@ paths:
   for every required check. One head, one pull request: a twin gets a branch of its own (the `-staging` branch beside
   the main one), and a retargeted pull request is decided again (`web-ci.yml` runs on `edited`; the review of
   #473 / #474).
+- **The emulator smoke on a pull request (Q139)** — `.github/workflows/emulator-smoke.yml` runs
+  `scripts/demo-smoke.sh` (what it checks and prints: its header; `scripts/test-demo-smoke.sh` pins it and the workflow's
+  shape) only for the label `emulator-smoke`; the older label `emulator` starts nothing. Read its result from the Actions
+  runs of `emulator-smoke.yml` for the PR's head SHA, the newest run whose job did not skip: adding any other label (the
+  privacy label included) starts a run whose job is skipped, under the same check name, and the PR's check list can show
+  that "skipped" over a red smoke. It uploads nothing; screenshots as run artifacts are the owner's call (what leaves
+  the runner). It reads the UI text tree, not pixels, so a covered node still reads as shown. What #472's labelled runs
+  on GitHub's API 36 image showed: the screen must be woken and unlocked first; the active-window dump often finds no
+  root ("null root node"), so it reads every window (`uiautomator dump --windows`); a tab's "<NAME> tab" description is
+  on the fake first child Compose adds to a merging node (`SemanticsNode.emitFakeNodes`), and the tab's `selected` state
+  on that child's parent; a dump takes up to about 40 s there. CI's build job does not run its test (that line would
+  need the nightly.yml twin, the exact-commands check)
 
 ## Releases: RCs, nightlies, stable and the release checklist
 
