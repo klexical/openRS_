@@ -107,13 +107,13 @@ paths:
     bytes in every member (cold start only; pinned by a limit test). Only the run reads 00, a rejection's text stays; the
     0xF190 branch in `vinMasked()` is dead on the probe path (the prober cannot request it).
   - **Form.** Raw log data bytes → `00` with ID / DLC / timing / mux kept so candump-style readers still parse (none has
-    been run on a masked log; SavvyCAN's loader refuses this log's padded time field at all, see the #209 entry); inventory and trace → `**`, probe CSV too; the other 0x405 pages
+    been run on a masked log; which readers were read: the #209 entry); inventory and trace → `**`, probe CSV too; the other 0x405 pages
     stay (content unknown). The summary and the detail are written from one `ExportCounters` snapshot.
   - **Limits.** DIAG still shows the VIN and the DID prober's on-screen list still shows the reply bytes — never claim the
     app hides it. Older ZIPs on the device are untouched: exports made before this masking can hold the VIN (#260). A
     test that scans an export for the VIN proves nothing unless the fake adapter sends 0x405.
 - **The raw log holds the app's own requests (#209)** — every CAN frame the app writes is one `# TX` comment line in the
-  SLCAN log, on the replies' clock: `# TX (  12.345) can0 7E0#0322033E00000000 sent`. The log's `# Format:` header line names the
+  SLCAN log, on the replies' clock: `# TX (12.345) can0 7E0#0322033E00000000 sent`. The log's `# Format:` header line names the
   form (`# TX (relative_seconds) can0 ID#DATA <result>`); no header line starts with `# TX `, which would read as a request. No export schema bump: an addition inside comment lines (#253, QA's
   ruling).
   - **Time.** Taken BEFORE the write (`DiagnosticLogger.txStamp`), as the ledger stamps the request; the line is written
@@ -139,12 +139,15 @@ paths:
     (`slcanLinesDropped`, LOG LIMITS).
   - **Request capture's timeout line** (`# CAPTURE-TIMEOUT …`, obd-polling.md) is written the same way: same parse, VIN
     mask, cap and clock. Our readers' anchored matches skip it as they skip `# TX` lines.
-  - **Readers.** Ours match frame lines anchored at the line's start (`tools/claude/hardware/slcan_tools.py`,
-    `check_export.py`; `tools/replay/candump_to_slcan.py` drops `# TX` lines), so a TX line is never read as a frame: keep
-    that anchor. can-utils' `canplayer` / `log2asc` read the frame lines and skip any line not starting with `(` (their
-    source, read). SavvyCAN's loader refuses the log's time field, which is padded inside the parentheses (`(%10.3f)`;
-    its source, read, not run); Kayak not read. So no text in the app names either as compatible (`RequestLogTest`,
-    `RequestLogExportTest`, `DtcScanExplainTest`, `BufferBoundsTest`)
+  - **Readers.** Ours match frame lines anchored at the line's start (`check_export.py`;
+    `tools/replay/candump_to_slcan.py` drops `# TX` lines), so a TX line is never read as a frame: keep that anchor.
+    can-utils' `canplayer` / `log2asc` read the frame lines and skip any line not starting with `(` (their source,
+    read). The time field has no width (`(%.3f)`, #403): SavvyCAN's loader keeps a line only when its first
+    space-separated token matches `^\(\S+\)$` (its source, read, not run), which the padded `(%10.3f)` of earlier builds
+    failed on every line. `SlcanLogTimeFieldTest` checks the format against that split and pattern; it does not run
+    SavvyCAN. `check_export.py` and `tools/replay/candump_to_slcan.py` read both forms (`test_candump.py`). No build has
+    been loaded in SavvyCAN, and Kayak was not read, so no text in the app names either as compatible until that load is
+    done once (`RequestLogTest`, `RequestLogExportTest`, `DtcScanExplainTest`, `BufferBoundsTest`)
 - **UI timing in the export is counts only, per session (#421)** — `uiTiming` / UI TIMING: main-thread lateness (a 100 ms
   ticker on Main inside the connection job), frame durations by the pager's settled page (a frame-metrics listener on its
   own thread, counted only between `sessionStart` and `sessionEnd`), each OBD merge's wait for the link lock (from before
