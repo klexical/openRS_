@@ -42,9 +42,9 @@ jobs:
       # test merge commit's first parent is not used for that: on a pull request retargeted onto another base, the
       # `edited` run's merge commit can still sit on the old base (seen twice on a scratch pull request). The event's base
       # commit can also lag that first parent when the base branch moved on (seen on #473: the merge commit was on main's
-      # tip, the event named an older main commit). So when the checks would run, the step makes sure the merge commit is
-      # on the base branch at or past the event's base commit, and fails otherwise, since the checks would build the wrong
-      # tree. git itself matches the paths (no listing of names, which git quotes when they are not ASCII); --no-renames
+      # tip, the event named an older main commit). So when the checks would run, the step makes sure the checked-out
+      # commit is GitHub's merge of the event's head, and that its base is on the base branch at or past the event's base
+      # commit, and fails otherwise, since the checks would build the wrong tree. git itself matches the paths (no listing of names, which git quotes when they are not ASCII); --no-renames
       # counts both sides of a move, so a file moved out of web/ counts.
       # git diff --quiet: 1 = a change (run), 0 = none (skip), anything else = an error (the step fails).
       - name: Does this pull request change web/ or this workflow?
@@ -62,10 +62,11 @@ jobs:
           rc=0
           git diff --quiet --no-renames "$BASE_SHA...$HEAD_SHA" -- web .github/workflows/web-ci.yml || rc=$?
           case "$rc" in
-            1) branch="refs/remotes/origin/$BASE_REF"
+            1) [ "$(git rev-parse -q --verify 'HEAD^2' || true)" = "$HEAD_SHA" ] || { echo "::error::the checked-out commit is not GitHub's test merge of this pull request's head, so the checks would build another tree"; exit 1; }
+               branch="refs/remotes/origin/$BASE_REF"
                git rev-parse --verify -q "$branch^{commit}" > /dev/null || { echo "::error::the checkout has no copy of the base branch $BASE_REF"; exit 1; }
                if ! git merge-base --is-ancestor "$BASE_SHA" 'HEAD^1' || ! git merge-base --is-ancestor 'HEAD^1' "$branch"; then
-                 echo "::error::GitHub's test merge commit is not on this pull request's base branch $BASE_REF (a retarget leaves it on the old base), so the checks would build the wrong tree: push a new commit (a re-run replays the same merge commit)"
+                 echo "::error::GitHub's test merge commit is not on this pull request's base branch $BASE_REF at or past the event's base commit (a retarget can leave it on the old base, and the base can move between GitHub's merge and the event), so the checks would build the wrong tree: push a new commit (a re-run replays the same merge commit)"
                  exit 1
                fi
                echo run=true >> "$GITHUB_OUTPUT" ;;
