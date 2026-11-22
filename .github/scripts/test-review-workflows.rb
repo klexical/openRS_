@@ -252,8 +252,10 @@ require "tmpdir"
 web = load_wf.("web-ci.yml")
 won = on_of.(web)
 check.(won.is_a?(Hash) && won.keys.sort == %w[pull_request workflow_dispatch] &&
-       won["pull_request"].keys == ["branches"] && won.dig("pull_request", "branches").sort == %w[main staging],
+       won["pull_request"].keys.sort == %w[branches types] && won.dig("pull_request", "branches").sort == %w[main staging],
        "web-ci: every pull request to main and staging (no paths filter), and by hand")
+check.(won.dig("pull_request", "types") == %w[opened synchronize reopened edited],
+       "web-ci: opened, synchronize, reopened and edited (a pull request retargeted onto another base is decided again)")
 wjob = web["jobs"]["web"] || {}
 check.(web["jobs"].keys == ["web"] && wjob["name"] == "Sapphire" && !wjob.key?("if") && !wjob.key?("continue-on-error"),
        "web-ci: one job, named Sapphire (the required check's name), with no condition")
@@ -263,12 +265,12 @@ wdiff = wdi ? wsteps[wdi] : {}
 check.(wdi == 1 && wsteps[0]["uses"].to_s.start_with?("actions/checkout@") && wsteps[0].dig("with", "fetch-depth") == 2 &&
        wsteps[0].dig("with", "persist-credentials") == false && !wsteps[0].key?("if"),
        "web-ci: checkout (the test merge commit and its parents, no credentials), then the decision step")
-check.(!wdiff.key?("if") && !wdiff.key?("continue-on-error") && wdiff["working-directory"] == "." &&
+check.(!wdiff.key?("if") && !wdiff.key?("continue-on-error") && wdiff["working-directory"] == "." && wdiff["shell"] == "bash" &&
        wdiff["env"] == { "EVENT" => "${{ github.event_name }}" } && !wdiff["run"].to_s.include?("${{"),
        "web-ci: the decision step always runs, cannot be skipped past, and takes the event name through env only")
 check.(wdi && wsteps.length > wdi + 1 && wsteps[(wdi + 1)..].all? { |st| st["if"] == "steps.diff.outputs.run == 'true'" },
        "web-ci: every step after the decision runs only when it says run=true")
-decide = lambda do |event, &build|
+decide = lambda do |event, failing_diff = false, &build|
   Dir.mktmpdir do |d|
     git = ->(*a) { o, st = Open3.capture2e("git", "-C", d, *a); raise "git #{a.join(" ")}: #{o}" unless st.success?; o }
     put = ->(f, t = "x") { FileUtils.mkdir_p(File.dirname(File.join(d, f))); File.write(File.join(d, f), t) }
@@ -279,7 +281,15 @@ decide = lambda do |event, &build|
     build.(git, put)
     out = File.join(d, "out")
     File.write(out, "")
-    o, st = Open3.capture2e({ "EVENT" => event, "GITHUB_OUTPUT" => out }, "bash", "-e", "-c", wdiff["run"].to_s, chdir: d)
+    env = { "EVENT" => event, "GITHUB_OUTPUT" => out }
+    if failing_diff                # a git whose diff fails as git does on an error (128); every other command is git's own
+      bin = File.join(d, ".bin"); Dir.mkdir(bin)
+      File.write(File.join(bin, "git"), "#!/usr/bin/env bash\n[ \"$1\" = diff ] && { echo 'fatal: bad object' >&2; exit 128; }\nexec #{`sh -c "command -v git"`.strip} \"$@\"\n")
+      File.chmod(0o755, File.join(bin, "git"))
+      env["PATH"] = "#{bin}:#{ENV["PATH"]}"
+    end
+    # `shell: bash` runs a step as bash --noprofile --norc -eo pipefail {0}
+    o, st = Open3.capture2e(env, "bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", wdiff["run"].to_s, chdir: d)
     [st.success?, File.read(out), o]
   end
 end
@@ -302,6 +312,8 @@ end
   "a file deleted under web/" => [pr.() { |git, _| git.("rm", "-q", "web/a.txt") }, "run=true"],
   "a new file under webapp/ (not web/)" => [pr.() { |_, put| put.("webapp/x.txt") }, "run=false"],
   "a file named web-ci.yml.bak" => [pr.() { |_, put| put.(".github/workflows/web-ci.yml.bak") }, "run=false"],
+  "a new file under web/ with a non-ASCII name (git quotes it)" => [pr.() { |_, put| put.("web/caf\u00e9.txt") }, "run=true"],
+  "a non-ASCII file outside web/" => [pr.() { |_, put| put.("docs/caf\u00e9.txt") }, "run=false"],
   "an Android-only change while the base moved on under web/" =>
     [pr.("web/c.txt") { |_, put| put.("android/b.txt", "y") }, "run=false"] }.each do |what, (build, want)|
   ok, out, = decide.("pull_request", &build)
@@ -309,6 +321,8 @@ end
 end
 ok, out, = decide.("pull_request") { |git, put| put.("android/b.txt", "y"); git.("commit", "-qam", "not a merge") }
 check.(!ok && !out.include?("run="), "web-ci decision: HEAD not a merge commit => the step fails, nothing decided")
+ok, out, = decide.("pull_request", true, &pr.() { |_, put| put.("android/b.txt", "y") })
+check.(!ok && !out.include?("run="), "web-ci decision: git diff fails => the step fails, nothing decided")
 ok, out, = decide.("workflow_dispatch") { |_, _| }
 check.(ok && out.lines.map(&:strip) == ["run=true"], "web-ci decision: a run by hand => run=true")
 
