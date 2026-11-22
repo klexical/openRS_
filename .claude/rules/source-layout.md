@@ -113,7 +113,7 @@ data/
   FuelUsed.kt             — Fuel used from the gauge (#336): a figure only after a drop of 4 steps (0.4 % each); a start on
                             the 100 % clamp moves to the first reading below it; the drive's figure and DRIVE's cell share it
   PerformanceTimer.kt     — 0-60 / 0-100 timer using CAN speed: IDLE → ARMED → RUNNING → FINISHED
-  SessionEntities.kt      — the legacy `sessions` / `snapshots` tables in DriveDatabase (written, never read, #391)
+  SessionEntities.kt      — the legacy `sessions` / `snapshots` tables in DriveDatabase (written by the service; no screen or export reads them, #391)
   BoostSweepStats.kt      — Target-vs-actual boost delta analytics; rc.5 uses fresh-only samples;
                             rc.6 adds avgWgdcAtPeak (≥ 90 % of peak TIP) + byGear (gauge PSI vs std atm)
   BoostSessionLog.kt      — Live 90 s window of fresh TIP decodes (+ target/WGDC if ≤ 2.5 s old) for the POWER

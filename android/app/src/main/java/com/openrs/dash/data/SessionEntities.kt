@@ -6,8 +6,9 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 
 // ═══════════════════════════════════════════════════════════════════════════
-// LEGACY SESSION TABLES — `sessions` and `snapshots`, kept in DriveDatabase. The service writes them and nothing reads
-// them; removing them needs a database migration, a decision of its own (#391). Their own database class is gone (#391).
+// LEGACY SESSION TABLES — `sessions` and `snapshots`, kept in DriveDatabase. The service writes them (and reads its own
+// row back to close it); no screen or export reads them. Removing them needs a database migration, a decision of its own
+// (#391). Their own database class is gone (#391).
 // ═══════════════════════════════════════════════════════════════════════════
 
 @Entity(tableName = "sessions")
