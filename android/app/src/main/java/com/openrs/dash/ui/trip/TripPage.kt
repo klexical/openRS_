@@ -1,5 +1,15 @@
 package com.openrs.dash.ui.trip
 
+import com.openrs.dash.ui.units.distance
+import com.openrs.dash.ui.units.speed
+import com.openrs.dash.ui.units.range
+import com.openrs.dash.ui.units.fuelVolume
+import com.openrs.dash.ui.units.fuelUnitText
+import com.openrs.dash.ui.units.economy
+import com.openrs.dash.ui.units.economyUnitText
+import com.openrs.dash.ui.units.boostPsi
+import com.openrs.dash.ui.units.altitudeM
+import com.openrs.dash.ui.units.speedDelta
 import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -632,14 +642,10 @@ private fun TripPageContent(
                         .padding(horizontal = 8.dp, vertical = 6.dp)
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        val dist = if (prefs.speedUnit == "MPH")
-                            "%.1f mi".format(statDist * 0.621371)
-                        else "%.1f km".format(statDist)
+                        val dist = prefs.distance(statDist).text
                         MonoText(dist, 12.sp, Frost, FontWeight.Bold)
                         MonoText(statDuration, 10.sp, Mid)
-                        val avgSpd = if (prefs.speedUnit == "MPH")
-                            "%.0f mph".format(statAvgSpd * 0.621371)
-                        else "%.0f km/h".format(statAvgSpd)
+                        val avgSpd = prefs.speed(statAvgSpd).text
                         MonoText("AVG $avgSpd", 10.sp, Dim)
 
                         // 1.1 — DTE + boost (live recording only)
@@ -649,16 +655,14 @@ private fun TripPageContent(
                             MonoText("${com.openrs.dash.ui.liveGaugeLabel(boost)} ${boost.gaugeKpa?.let { g -> prefs.displayGauge(g).let { (v, u) -> "$v $u" } } ?: "—"}", 10.sp, Dim)
                             val dte = driveState.distanceToEmptyKm
                             if (dte > 0) {
-                                val dteStr = if (prefs.speedUnit == "MPH")
-                                    "%.0f mi".format(dte * 0.621371)
-                                else "%.0f km".format(dte)
+                                val dteStr = prefs.range(dte).text
                                 MonoText("DTE $dteStr", 10.sp, if (dte < 30) Warn else Dim)
                             }
                         }
 
                         // 1.4 — Altitude + heading (live only)
                         if (driveState.isRecording) {
-                            fixReadout(driveState, vehicleState.speedKph, prefs.speedUnit == "MPH", fixClockMs)?.let { r ->
+                            fixReadout(driveState, vehicleState.speedKph, prefs, fixClockMs)?.let { r ->
                                 r.alt?.let { MonoText(it, 10.sp, Dim) }
                                 r.hdg?.let { MonoText(it, 10.sp, Dim) }
                                 Row(
@@ -1032,11 +1036,8 @@ private fun LiveHud(
                 color = if (fuelLow && live) Warn else Color.Unspecified,
                 sub = if (hasFuel && !live) "STALE" else null)
             // Unavailable → "—" with its unit (same rule as DRIVE ECONOMY), not a computed 0.
-            val used = Readout("FUEL USED", if (driveState.fuelUsedL > 0) "%.2f L".format(driveState.fuelUsedL) else "— L")
-            val econ = if (prefs.speedUnit == "MPH")
-                Readout("ECONOMY", if (driveState.avgFuelMpg > 0) "%.1f MPG".format(driveState.avgFuelMpg) else "— MPG")
-            else
-                Readout("ECONOMY", if (driveState.avgFuelL100km > 0) "%.1f L/100".format(driveState.avgFuelL100km) else "— L/100")
+            val used = Readout("FUEL USED", if (driveState.fuelUsedL > 0) prefs.fuelVolume(driveState.fuelUsedL).text else "— ${prefs.fuelUnitText}")
+            val econ = Readout("ECONOMY", prefs.economy(driveState.avgFuelL100km)?.text ?: "— ${prefs.economyUnitText}")
             val panelLevel = worstLevel(listOf(cltL, oilL, rduL, ptuL) + if (fuelLow && live) listOf(Level.WARN) else emptyList())
 
             // Wheel speeds / slip Δ — same tap-to-toggle as before, now with a visible switch; one panel with
@@ -1075,28 +1076,10 @@ private fun LiveHud(
                         }
                         Row(Modifier.fillMaxWidth()) {
                             val vs = vehicleState
-                            val cells: List<Pair<String, String>> = when {
-                                !live -> listOf("FL", "FR", "RL", "RR").map { it to ph }
-                                showSlipDelta -> {
-                                    val frontAvg = (vs.wheelSpeedFL + vs.wheelSpeedFR) / 2.0
-                                    val rearAvg = (vs.wheelSpeedRL + vs.wheelSpeedRR) / 2.0
-                                    val leftAvg = (vs.wheelSpeedFL + vs.wheelSpeedRL) / 2.0
-                                    val rightAvg = (vs.wheelSpeedFR + vs.wheelSpeedRR) / 2.0
-                                    listOf(
-                                        "F-R" to "%.1f".format(kotlin.math.abs(frontAvg - rearAvg)),
-                                        "L-R" to "%.1f".format(kotlin.math.abs(leftAvg - rightAvg)),
-                                        "FL-RL" to "%.1f".format(kotlin.math.abs(vs.wheelSpeedFL - vs.wheelSpeedRL)),
-                                        "FR-RR" to "%.1f".format(kotlin.math.abs(vs.wheelSpeedFR - vs.wheelSpeedRR)),
-                                    )
-                                }
-                                else -> listOf(
-                                    "FL" to prefs.displaySpeed(vs.wheelSpeedFL), "FR" to prefs.displaySpeed(vs.wheelSpeedFR),
-                                    "RL" to prefs.displaySpeed(vs.wheelSpeedRL), "RR" to prefs.displaySpeed(vs.wheelSpeedRR),
-                                )
-                            }
-                            cells.forEach { (label, value) ->
-                                // Slip keeps its existing bands (> 2 amber, > 5 orange); in range reads in ink, not green.
-                                val d = if (showSlipDelta && live) value.toDoubleOrNull() ?: 0.0 else 0.0
+                            val cells = wheelSpeedCells(vs, prefs, live, showSlipDelta, ph)
+                            cells.forEach { (label, value, slipKph) ->
+                                // Slip keeps its existing bands (> 2 amber, > 5 orange, km/h); in range reads in ink, not green.
+                                val d = if (showSlipDelta && live) slipKph else 0.0
                                 val c = when { d > 5 -> Orange; d > 2 -> Warn; else -> Frost }
                                 Column(Modifier.weight(1f)) {
                                     InstrumentLabel(label)
@@ -1368,9 +1351,7 @@ private fun DriveHistoryList(
                                             val timeFormat = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
                                             val displayName = drive.name ?: timeFormat.format(Date(drive.startTime))
                                             MonoText(displayName, 11.sp, Frost, FontWeight.Bold)
-                                            val dist = if (prefs.speedUnit == "MPH")
-                                                "%.1f mi".format(drive.distanceKm * 0.621371)
-                                            else "%.1f km".format(drive.distanceKm)
+                                            val dist = prefs.distance(drive.distanceKm).text
                                             MonoLabel(dist, 9.sp, Dim)
                                         }
                                     }
@@ -1533,14 +1514,12 @@ private fun DriveCard(
 
         // Peaks — one readout row with units (was 7 sp captions over unlabelled 9 sp numbers)
         val cells = buildList {
-            if (drive.hasGps && drive.distanceKm > 0) add("DIST" to if (prefs.speedUnit == "MPH")
-                "%.1f mi".format(drive.distanceKm * 0.621371) else "%.1f km".format(drive.distanceKm))
-            if (drive.maxSpeedKph > 0) add("TOP" to "${prefs.displaySpeed(drive.maxSpeedKph)} ${prefs.speedLabel.lowercase()}")
+            if (drive.hasGps && drive.distanceKm > 0) add("DIST" to prefs.distance(drive.distanceKm).text)
+            if (drive.maxSpeedKph > 0) add("TOP" to prefs.speed(drive.maxSpeedKph).text)
             if (drive.peakRpm > 0) add("RPM" to "${drive.peakRpm}")
             // Named by the peak's own source (#207) — a genuine 0 shows; no reading doesn't; older drives: as recorded
             val peak = com.openrs.dash.data.StoredBoost.drivePeak(drive)
-            peak.psiOrNull?.let { psi -> add(peak.label to prefs.displayBoost(psi / UnitConversions.KPA_TO_PSI +
-                UnitConversions.STD_ATM_KPA).let { (v, u) -> "$v ${u.lowercase()}" }) }
+            peak.psiOrNull?.let { psi -> add(peak.label to prefs.boostPsi(psi).text) }
             if (drive.peakLateralG > 0) add("LAT G" to "%.2f g".format(drive.peakLateralG))
         }
         Row(Modifier.fillMaxWidth()) {
@@ -1811,12 +1790,14 @@ internal data class FixReadout(val alt: String?, val hdg: String?, val accuracy:
  * (DriveRecorder.currentFix, at most 2 s old): in a GPS gap, and before the drive's first fix, it reads "—" with no
  * accuracy dot, until a fresh fix arrives (#318, the owner's "hide").
  */
-internal fun fixReadout(state: DriveState, speedKph: Double, imperial: Boolean, nowMs: Long): FixReadout? {
+internal fun fixReadout(state: DriveState, speedKph: Double, p: UserPrefs, nowMs: Long): FixReadout? {
     if (!state.isRecording) return null
     val fix = com.openrs.dash.service.DriveRecorder.currentFix(state, nowMs) ?: return FixReadout("ALT —", "HDG —", "±—", null)
-    val alt = if (fix.hasAltitude()) fix.altitude.toInt().let { m -> "ALT " + if (imperial) "${(m * 3.28084).toInt()} ft" else "$m m" } else null
+    // Altitude and accuracy in the altitude unit (#464); the fix gives metres
+    val alt = if (fix.hasAltitude()) "ALT " + p.altitudeM(fix.altitude).text else null
     val hdg = if (fix.hasBearing() && speedKph > 5) "HDG ${fix.bearing.toInt()}°" else null
-    return FixReadout(alt, hdg, "±${"%.0f".format(fix.accuracy)}m", fix.accuracy)
+    val acc = p.altitudeM(fix.accuracy.toDouble())
+    return FixReadout(alt, hdg, "±${acc.value}${acc.unit}", fix.accuracy)
 }
 
 /**
@@ -1832,3 +1813,34 @@ internal fun tripDot(
     // Strictly after: a fetch asked for in the drive's start millisecond cannot be shown to be after it, and the safe
     // answer is no dot (a pre-drive position drawn as current is what #311 removes)
     else idle?.takeIf { idleFetchedAtMs > state.startTime }
+
+/**
+ * TRIP's wheel-speed panel: (label, shown value, slip in km/h) per cell. Slip shows in the speed unit (#464); its
+ * colour bands compare the stored km/h (the third value), so they fire at the same physical slip in either unit.
+ * Wheel speeds carry 0.0 there: they take no band. Offline cells all read [placeholder].
+ */
+internal fun wheelSpeedCells(
+    vs: VehicleState,
+    prefs: UserPrefs,
+    live: Boolean,
+    showSlipDelta: Boolean,
+    placeholder: String,
+): List<Triple<String, String, Double>> = when {
+    !live -> listOf("FL", "FR", "RL", "RR").map { Triple(it, placeholder, 0.0) }
+    showSlipDelta -> {
+        val frontAvg = (vs.wheelSpeedFL + vs.wheelSpeedFR) / 2.0
+        val rearAvg = (vs.wheelSpeedRL + vs.wheelSpeedRR) / 2.0
+        val leftAvg = (vs.wheelSpeedFL + vs.wheelSpeedRL) / 2.0
+        val rightAvg = (vs.wheelSpeedFR + vs.wheelSpeedRR) / 2.0
+        listOf(
+            "F-R" to kotlin.math.abs(frontAvg - rearAvg),
+            "L-R" to kotlin.math.abs(leftAvg - rightAvg),
+            "FL-RL" to kotlin.math.abs(vs.wheelSpeedFL - vs.wheelSpeedRL),
+            "FR-RR" to kotlin.math.abs(vs.wheelSpeedFR - vs.wheelSpeedRR),
+        ).map { (l, kph) -> Triple(l, prefs.speedDelta(kph).value, kph) }
+    }
+    else -> listOf(
+        Triple("FL", prefs.displaySpeed(vs.wheelSpeedFL), 0.0), Triple("FR", prefs.displaySpeed(vs.wheelSpeedFR), 0.0),
+        Triple("RL", prefs.displaySpeed(vs.wheelSpeedRL), 0.0), Triple("RR", prefs.displaySpeed(vs.wheelSpeedRR), 0.0),
+    )
+}

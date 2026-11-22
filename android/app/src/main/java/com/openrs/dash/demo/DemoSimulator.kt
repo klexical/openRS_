@@ -13,7 +13,7 @@ import kotlin.math.sin
 /** Debug demo scenarios. Each is a pure function of scenario time — reset replays it exactly. */
 enum class DemoScenario(val label: String, val chip: String, val blurb: String) {
     IDLE("Idle", "IDLE", "Cold start at standstill, e-brake on — engine + drivetrain warm up"),
-    DRIVING("Driving", "DRIVE", "60 s loop: launch, pull to 125 km/h, braking, corner, cruise"),
+    DRIVING("Driving", "DRIVE", "60 s loop: launch, full-throttle pull, braking, corner, cruise"),
     WARNING("Warnings", "WARN", "Hot lap: overheating, knock, low tyre, underboost, low fuel, charge fault"),
     CONNECTION_LOSS("Connection loss", "LOSS", "40 s loop: live 10 s → lost 12 s → OBD re-warm 4 s → live"),
     COOLDOWN("Cool-down", "COOL", "Readiness: oil cools past warn, RDU heats then its replies stop, coolant drops out, oil below warm-up, clutch heat"),

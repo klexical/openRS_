@@ -1,5 +1,6 @@
 package com.openrs.dash.ui
 
+import com.openrs.dash.ui.units.distance
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -921,8 +922,7 @@ class MainActivity : ComponentActivity() {
                 val mm = (elapsed / 60_000).toInt()
                 val ss = ((elapsed % 60_000) / 1_000).toInt()
                 val distKm = driveState.cumulativeDistanceKm
-                val distStr = if (prefs.speedUnit == "MPH") "%.1f mi".format(distKm * UnitConversions.KM_TO_MI)
-                              else "%.1f km".format(distKm)
+                val distStr = prefs.distance(distKm).text
                 // Hours as h:mm:ss (minutes no longer grow to three digits on a long drive)
                 val hh = (elapsed / 3_600_000).toInt()
                 val time = if (hh > 0) "%d:%02d:%02d".format(hh, mm % 60, ss) else "%02d:%02d".format(mm, ss)

@@ -65,6 +65,9 @@ class HeaderFitMatrixTest {
     @After fun reset() {                                 // theme and update state are process-wide
         setThemeMode(ThemeMode.NIGHT)
         updateState(com.openrs.dash.update.UpdateState.Idle)
+        // The theme is Compose state: drain the work its write queues, or a later class's Compose Dialog never shows
+        // (SettingsPickersFitTest)
+        repeat(8) { shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(16)) }
     }
 
     /** UpdateManager's state is private: set it by reflection so the link pill reads "UPD" (test only). */

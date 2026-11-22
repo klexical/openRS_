@@ -40,8 +40,8 @@ class KnockScatterMathTest {
             val (v, label) = p.displayBoost(kpaAbs)
             assertEquals("$v $label", knockBoostText(psi, p))
         }
-        assertEquals("1.00 BAR", knockBoostText(psi, UserPrefs(boostUnit = "BAR")))
-        assertEquals("14.5 PSI", knockBoostText(psi, null))
+        assertEquals("1.00 bar", knockBoostText(psi, UserPrefs(boostUnit = "BAR")))   // one spelling (#464)
+        assertEquals("14.5 psi", knockBoostText(psi, null))
     }
 
     @Test

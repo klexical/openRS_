@@ -59,6 +59,8 @@ import com.openrs.dash.data.DashLayout
 import com.openrs.dash.data.VehicleState
 import com.openrs.dash.data.barFraction
 import com.openrs.dash.data.resolveValue
+import com.openrs.dash.ui.units.boostUnitText
+import com.openrs.dash.ui.units.speedUnitText
 import com.openrs.dash.ui.Tokens.CardBorder
 import com.openrs.dash.ui.anim.isShiftPoint
 
@@ -303,7 +305,7 @@ private fun CustomGaugeCell(
         return
     }
     val now = wallClockMs()   // a stalled link must still age readings out (#207 / #217)
-    val (displayValue, rawValue) = resolveValue(vs, prefs, cell, now)
+    val (bareValue, rawValue) = resolveValue(vs, prefs, cell, now)
     val boost = if (cell.fieldKey == "boostKpa") com.openrs.dash.data.BoostSession.gauge(vs, now) else null
     // The pressure cell is the live gauge (#207): BOOST whatever label a saved layout carries
     val label = dashCellLabel(cell)
@@ -315,13 +317,11 @@ private fun CustomGaugeCell(
     // The RPM shift point colours the digits only (like DRIVE), not the panel.
     val panelLevel = if (cell.fieldKey == "rpm") Level.NORMAL else level
 
+    // Boost and speed values come bare: the hero prints the unit beside the number, number / bar cells after it (#464)
+    val unit = dashCellUnit(cell.fieldKey, prefs)
+    val displayValue = if (cell.displayType == "hero") bareValue else withUnit(bareValue, unit)
     when (cell.displayType) {
         "hero" -> {
-            val unit = when (cell.fieldKey) {
-                "boostKpa" -> prefs.displayGauge(0.0).second
-                "speedKph" -> prefs.speedLabel
-                else -> ""     // RPM: the caption already says it
-            }
             val peak = when (cell.fieldKey) {
                 "rpm" -> "PEAK ${vs.session.peakRpm.toInt()}"
                 // The peak of the source shown, named with it, in the selected unit (#207)
@@ -782,3 +782,14 @@ private fun DisplayTypeBadge(type: String) {
         MonoLabel(label, 10.sp, Dim, letterSpacing = 0.1.sp)
     }
 }
+
+/** The unit a boost or speed cell prints (the other fields carry theirs in the value); "" for RPM and the rest. */
+internal fun dashCellUnit(fieldKey: String, prefs: UserPrefs): String = when (fieldKey) {
+    "boostKpa" -> prefs.boostUnitText
+    "speedKph" -> prefs.speedUnitText
+    else -> ""
+}
+
+/** A number / bar cell's text: the value and its unit, or the placeholder alone. */
+internal fun withUnit(value: String, unit: String): String =
+    if (unit.isEmpty() || value.startsWith("\u2014")) value else "$value $unit"

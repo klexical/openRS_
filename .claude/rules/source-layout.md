@@ -266,6 +266,9 @@ ui/
                             Legacy migration: "WICAN"→"MEATPI_USB", "MEATPI"→"MEATPI_PRO", "BLUETOOTH"(adapter)→USB+BLE
                             BLE device prefs: saveBleDevice/getBleDeviceAddress/clearBleDevice
                             rememberSectionExpanded() composable for persistent collapsible sections
+  units/Units.kt          — The one units formatter (#464): unit ids, Region presets + migration rule, spellings
+                            (UnitText), factors, and the UserPrefs.format functions every screen, the HUD and the Custom
+                            Dashboard print through (UnitLiteralGuardTest fails on a unit spelled elsewhere)
   UserPrefs.kt            — Observable prefs data class + unit-conversion helpers
                             UserPrefsStore object: MutableStateFlow<UserPrefs>
                             Fields: adapterType, connectionMethod, host, port, + all unit/UI prefs

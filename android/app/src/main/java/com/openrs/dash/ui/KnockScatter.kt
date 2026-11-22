@@ -1,5 +1,9 @@
 package com.openrs.dash.ui
 
+import com.openrs.dash.ui.units.UnitIds
+import com.openrs.dash.ui.units.UnitFactors
+import com.openrs.dash.ui.units.boostPsi
+import com.openrs.dash.ui.units.boostUnitText
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -349,17 +353,13 @@ internal fun severityColor(krDeg: Double): Color = when {
 // ── Boost in the user's unit (knock events store gauge psi) ─────────────────
 
 /** Stored gauge psi → the boost-pressure setting's value + unit, exactly like the live boost readings. */
-internal fun knockBoostText(gaugePsi: Double, p: UserPrefs?): String {
-    if (p == null) return "${"%.1f".format(gaugePsi)} PSI"
-    val (v, unit) = p.displayBoost(gaugePsi / UnitConversions.KPA_TO_PSI + UnitConversions.STD_ATM_KPA)
-    return "$v $unit"
-}
+internal fun knockBoostText(gaugePsi: Double, p: UserPrefs?): String = (p ?: UserPrefs()).boostPsi(gaugePsi).text
 
-private fun knockBoostUnit(p: UserPrefs?): String = when (p?.boostUnit) { "BAR" -> "BAR"; "KPA" -> "kPa"; else -> "PSI" }
+private fun knockBoostUnit(p: UserPrefs?): String = (p ?: UserPrefs()).boostUnitText
 
 /** Gridlines as (gauge psi, label in the user's unit). */
 internal fun knockBoostGrid(boostUnit: String?): List<Pair<Float, String>> = when (boostUnit) {
-    "BAR" -> listOf(0.0, 0.5, 1.0).map { bar -> (bar / UnitConversions.PSI_TO_BAR).toFloat() to if (bar == 0.0) "0" else "+%.1f".format(bar) }
-    "KPA" -> listOf(0, 50, 100).map { kpa -> (kpa * UnitConversions.KPA_TO_PSI).toFloat() to if (kpa == 0) "0" else "+$kpa" }
-    else  -> listOf(0, 10, 20).map { psi -> psi.toFloat() to if (psi == 0) "0" else "+$psi" }
+    UnitIds.BAR -> listOf(0.0, 0.5, 1.0).map { bar -> (bar / UnitFactors.PSI_TO_BAR).toFloat() to if (bar == 0.0) "0" else "+%.1f".format(bar) }
+    UnitIds.KPA -> listOf(0, 50, 100).map { kpa -> (kpa * UnitFactors.KPA_TO_PSI).toFloat() to if (kpa == 0) "0" else "+$kpa" }
+    else  -> listOf(0, 10, 20).map { g -> g.toFloat() to if (g == 0) "0" else "+$g" }
 }

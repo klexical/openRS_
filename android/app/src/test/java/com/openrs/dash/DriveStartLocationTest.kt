@@ -246,7 +246,7 @@ class DriveStartLocationTest {
     @Test fun `in a GPS gap the ALT - HDG - accuracy readout shows a dash and no accuracy dot`() {
         startDrive()
         fix(30.0, 40.0, ageMs = 2_100)
-        val r = com.openrs.dash.ui.trip.fixReadout(rec.driveState.value, 60.0, false, System.currentTimeMillis())
+        val r = com.openrs.dash.ui.trip.fixReadout(rec.driveState.value, 60.0, com.openrs.dash.ui.UserPrefs(altitudeUnit = "M"), System.currentTimeMillis())
         assertEquals(com.openrs.dash.ui.trip.FixReadout("ALT —", "HDG —", "±—", null), r)
     }
 
@@ -256,7 +256,7 @@ class DriveStartLocationTest {
         fix(31.0, 41.0)
         val now = System.currentTimeMillis()
         assertEquals(31.0, com.openrs.dash.ui.trip.tripDot(rec.driveState.value, null, 0L, now)!!.latitude, 0.0)
-        assertEquals("±0m", com.openrs.dash.ui.trip.fixReadout(rec.driveState.value, 60.0, false, now)!!.accuracy)
+        assertEquals("±0m", com.openrs.dash.ui.trip.fixReadout(rec.driveState.value, 60.0, com.openrs.dash.ui.UserPrefs(altitudeUnit = "M"), now)!!.accuracy)
     }
 
     @Test fun `control - a fix 1,5 s old is still current`() {

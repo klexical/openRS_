@@ -259,11 +259,12 @@ class BoostSourceTest {
 
     @Test fun `Custom Dashboard TIP cells use the TIP gauge's reference, absolute only when labelled`() {
         rpmFrame(); tip(0x4F1A)
-        val prefs = com.openrs.dash.ui.UserPrefs()
+        // Absolute pressure in the air-pressure unit, kPa abs to 1 decimal (#464)
+        val prefs = com.openrs.dash.ui.UserPrefs(airUnit = "KPA")
         val cell = com.openrs.dash.data.DashCell("tipActualKpa", "number", "TIP ACTUAL")
-        assertEquals("8.9 PSI", com.openrs.dash.data.resolveValue(state.value, prefs, cell).first)   // was "158"
+        assertEquals("8.9 psi", com.openrs.dash.data.resolveValue(state.value, prefs, cell).first)   // was "158"
         state.update { it.copy(barometricPressure = 0.0) }
-        assertEquals("158 kPa abs", com.openrs.dash.data.resolveValue(state.value, prefs, cell).first)
+        assertEquals("158.2 kPa abs", com.openrs.dash.data.resolveValue(state.value, prefs, cell).first)
     }
 
     @Test fun `diagnostic detail JSON carries each measurement's session peak, not the retired field`() {

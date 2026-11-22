@@ -1,5 +1,6 @@
 package com.openrs.dash.ui.trip
 
+import com.openrs.dash.ui.units.distance
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -87,8 +88,7 @@ fun ExportOptionsSheet(
 
             // Drive info — distance in the user's unit (was always km)
             val durationMs = if (drive.endTime > 0) drive.endTime - drive.startTime else 0L
-            val dist = if (prefs.speedUnit == "MPH") "%.1f mi".format(drive.distanceKm * UnitConversions.KM_TO_MI)
-                else "%.1f km".format(drive.distanceKm)
+            val dist = prefs.distance(drive.distanceKm).text
             InstrumentMeta("$dist · ${formatDurationForExport(durationMs)}")
             Spacer(Modifier.height(12.dp))
 

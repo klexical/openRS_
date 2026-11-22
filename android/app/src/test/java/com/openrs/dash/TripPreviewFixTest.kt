@@ -35,6 +35,6 @@ class TripPreviewFixTest {
         assertNull("the rule itself: a 5 s old fix is not current", tripDot(remembered, null, 0L, later))
         val shown = TripPreview.withCurrentFix(remembered, later)
         assertNotNull(tripDot(shown, null, 0L, later))
-        assertEquals("±4m", fixReadout(shown, 60.0, false, later)!!.accuracy)
+        assertEquals("±4m", fixReadout(shown, 60.0, com.openrs.dash.ui.UserPrefs(altitudeUnit = "M"), later)!!.accuracy)
     }
 }

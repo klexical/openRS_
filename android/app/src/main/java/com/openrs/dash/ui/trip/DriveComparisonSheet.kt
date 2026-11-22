@@ -1,5 +1,14 @@
 package com.openrs.dash.ui.trip
 
+import com.openrs.dash.ui.units.distance
+import com.openrs.dash.ui.units.distanceIn
+import com.openrs.dash.ui.units.distanceUnitText
+import com.openrs.dash.ui.units.speed
+import com.openrs.dash.ui.units.speedIn
+import com.openrs.dash.ui.units.speedUnitText
+import com.openrs.dash.ui.units.boostPsi
+import com.openrs.dash.ui.units.tempDeltaIn
+import com.openrs.dash.ui.units.fuelVolume
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -107,28 +116,26 @@ fun DriveComparisonSheet(
 
             val distA = driveA.distanceKm
             val distB = driveB.distanceKm
-            val distUnit = if (prefs.speedUnit == "MPH") "mi" else "km"
-            val distFactor = if (prefs.speedUnit == "MPH") UnitConversions.KM_TO_MI else 1.0
             ComparisonRow(
                 label = "DISTANCE",
-                valueA = "%.1f %s".format(distA * distFactor, distUnit),
-                valueB = "%.1f %s".format(distB * distFactor, distUnit),
+                valueA = prefs.distance(distA).text,
+                valueB = prefs.distance(distB).text,
                 direction = DeltaDirection.NEUTRAL,
-                delta = formatNumericDelta(distB * distFactor - distA * distFactor, distUnit, 1)
+                delta = formatNumericDelta(prefs.distanceIn(distB) - prefs.distanceIn(distA), prefs.distanceUnitText, 1)
             )
 
             ComparisonRow(
                 label = "AVG SPEED",
-                valueA = "%s %s".format(prefs.displaySpeed(driveA.avgSpeedKph), prefs.speedLabel),
-                valueB = "%s %s".format(prefs.displaySpeed(driveB.avgSpeedKph), prefs.speedLabel),
+                valueA = prefs.speed(driveA.avgSpeedKph).text,
+                valueB = prefs.speed(driveB.avgSpeedKph).text,
                 direction = DeltaDirection.NEUTRAL,
                 delta = formatSpeedDelta(driveB.avgSpeedKph - driveA.avgSpeedKph, prefs)
             )
 
             ComparisonRow(
                 label = "MAX SPEED",
-                valueA = "%s %s".format(prefs.displaySpeed(driveA.maxSpeedKph), prefs.speedLabel),
-                valueB = "%s %s".format(prefs.displaySpeed(driveB.maxSpeedKph), prefs.speedLabel),
+                valueA = prefs.speed(driveA.maxSpeedKph).text,
+                valueB = prefs.speed(driveB.maxSpeedKph).text,
                 direction = DeltaDirection.HIGHER_BETTER,
                 rawDelta = driveB.maxSpeedKph - driveA.maxSpeedKph,
                 delta = formatSpeedDelta(driveB.maxSpeedKph - driveA.maxSpeedKph, prefs)
@@ -200,7 +207,7 @@ fun DriveComparisonSheet(
 
             Spacer(Modifier.height(6.dp))
 
-            val fuel = fuelUsedCompare(driveA.fuelUsedL, driveB.fuelUsedL)
+            val fuel = fuelUsedCompare(driveA.fuelUsedL, driveB.fuelUsedL, prefs)
             ComparisonRow(
                 label = "FUEL USED",
                 valueA = fuel.valueA,
@@ -309,11 +316,10 @@ private fun formatNumericDelta(delta: Double, unit: String, decimals: Int): Stri
 }
 
 private fun formatSpeedDelta(deltaKph: Double, prefs: UserPrefs): String {
-    val factor = if (prefs.speedUnit == "MPH") UnitConversions.KM_TO_MI else 1.0
-    val delta = deltaKph * factor
+    val delta = prefs.speedIn(deltaKph)
     if (abs(delta) < 0.5) return ""
     val prefix = if (delta > 0) "+" else ""
-    return "$prefix%.0f %s".format(delta, prefs.speedLabel)
+    return "$prefix%.0f %s".format(delta, prefs.speedUnitText)
 }
 
 private fun formatIntDelta(delta: Int): String {
@@ -323,21 +329,13 @@ private fun formatIntDelta(delta: Int): String {
 }
 
 private fun formatBoost(psi: Double, prefs: UserPrefs): String {
-    return when (prefs.boostUnit) {
-        "BAR" -> "%.2f BAR".format(psi * UnitConversions.PSI_TO_BAR)
-        "KPA" -> "%.0f kPa".format(psi / UnitConversions.KPA_TO_PSI)
-        else -> "%.1f PSI".format(psi)
-    }
+    return prefs.boostPsi(psi).text
 }
 
 private fun formatBoostDelta(deltaPsi: Double, prefs: UserPrefs): String {
     if (abs(deltaPsi) < 0.05) return ""
     val prefix = if (deltaPsi > 0) "+" else ""
-    return when (prefs.boostUnit) {
-        "BAR" -> "$prefix%.2f BAR".format(deltaPsi * UnitConversions.PSI_TO_BAR)
-        "KPA" -> "$prefix%.0f kPa".format(deltaPsi / UnitConversions.KPA_TO_PSI)
-        else -> "$prefix%.1f PSI".format(deltaPsi)
-    }
+    return prefix + prefs.boostPsi(deltaPsi).text
 }
 
 private fun formatGDelta(delta: Double): String {
@@ -357,7 +355,7 @@ private fun formatTempDelta(peakB: Double, peakA: Double, prefs: UserPrefs): Str
     val deltaC = peakB - peakA
     if (abs(deltaC) < 0.5) return ""
     // Convert the delta itself to display units
-    val deltaDisplay = if (prefs.tempUnit == "C") deltaC else deltaC * 9.0 / 5.0
+    val deltaDisplay = prefs.tempDeltaIn(deltaC)
     val prefix = if (deltaDisplay > 0) "+" else ""
     return "$prefix%.0f%s".format(deltaDisplay, prefs.tempLabel)
 }
@@ -369,14 +367,16 @@ internal data class FuelCompare(val valueA: String, val valueB: String, val delt
  * The FUEL USED row for two drives (#336): a stored 0.0 is no figure (the gauge never dropped by enough steps to be fuel),
  * shown "—", and a pair where either drive has none shows no difference, as Sapphire's Compare does.
  */
-internal fun fuelUsedCompare(aL: Double, bL: Double): FuelCompare {
-    fun text(l: Double) = if (l > 0) "%.2f L".format(l) else "—"
+internal fun fuelUsedCompare(aL: Double, bL: Double, prefs: UserPrefs): FuelCompare {
+    fun text(l: Double) = if (l > 0) prefs.fuelVolume(l).text else "—"
     val comparable = aL > 0 && bL > 0
-    return FuelCompare(text(aL), text(bL), if (comparable) formatFuelDelta(bL - aL) else "", if (comparable) bL - aL else 0.0, comparable)
+    return FuelCompare(text(aL), text(bL), if (comparable) formatFuelDelta(bL - aL, prefs) else "", if (comparable) bL - aL else 0.0, comparable)
 }
 
-private fun formatFuelDelta(deltaL: Double): String {
-    if (abs(deltaL) < 0.005) return ""
-    val prefix = if (deltaL > 0) "+" else ""
-    return "$prefix%.2f L".format(deltaL)
+/** The difference in the fuel unit; none when it rounds to zero at the unit's decimals. */
+private fun formatFuelDelta(deltaL: Double, prefs: UserPrefs): String {
+    val shown = prefs.fuelVolume(abs(deltaL))
+    // by each digit's value, so a locale with its own digits reads its zero too
+    if (shown.value.none { Character.isDigit(it) && Character.digit(it, 10) != 0 }) return ""
+    return (if (deltaL > 0) "+" else "-") + shown.text
 }

@@ -16,7 +16,7 @@ import org.junit.Test
  * [awdDetailRows]. A genuine 0 Nm must replace the previous reading; a reply for anything else must not touch it.
  */
 class AwdReqTorqueMergeTest {
-    private val p = UserPrefs()
+    private val p = UserPrefs(torqueUnit = "NM")   // these tests read the torque in Nm (#464: the default is the US preset, lb·ft)
     private fun reply(vararg b: Int) = ByteArray(b.size) { b[it].toByte() }
     private fun reqL(nm: Int) = reply(0x05, 0x62, 0x1E, 0x90, nm shr 8, nm and 0xFF)
     private fun reqR(nm: Int) = reply(0x05, 0x62, 0x1E, 0x91, nm shr 8, nm and 0xFF)

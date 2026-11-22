@@ -187,6 +187,9 @@ paths:
   on the fake first child Compose adds to a merging node (`SemanticsNode.emitFakeNodes`), and the tab's `selected` state
   on that child's parent; a dump takes up to about 40 s there. CI's build job does not run its test (that line would
   need the nightly.yml twin, the exact-commands check)
+- **Unit-test heap is 1 GB (#505)** — `android/app/build.gradle.kts` gives the unit-test JVM `maxHeapSize = "1g"`,
+  because the Robolectric suite keeps most of Gradle's default 512 MB live by its end. Keep it until #505 is fixed. A run
+  that slows to tens of minutes is the heap, not a hung test: read a `jcmd <pid> GC.class_histogram` before raising it
 
 ## Releases: RCs, nightlies, stable and the release checklist
 

@@ -1,8 +1,11 @@
 package com.openrs.dash.service
 
+import com.openrs.dash.ui.units.boostUnitText
+import com.openrs.dash.ui.units.tempUnitText
 import android.annotation.SuppressLint
 import android.app.Service
 import android.content.Intent
+import android.content.res.Resources
 import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -17,6 +20,7 @@ import android.widget.TextView
 import androidx.core.content.res.ResourcesCompat
 import com.openrs.dash.OpenRSDashApp
 import com.openrs.dash.R
+import com.openrs.dash.ui.UserPrefs
 import com.openrs.dash.ui.UserPrefsStore
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.combine
@@ -40,6 +44,18 @@ class HudOverlayService : Service() {
     private lateinit var demoTv: TextView
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    companion object {
+        /**
+         * The HUD's first frame (boost, RPM, oil), before any state arrives: placeholders with the chosen boost and
+         * temperature units (#464 row 13), never a bare "°".
+         */
+        internal fun startLines(res: Resources, p: UserPrefs): Triple<String, String, String> = Triple(
+            res.getString(R.string.hud_boost, "---", p.boostUnitText),
+            res.getString(R.string.hud_rpm_none),
+            res.getString(R.string.hud_oil, "---", p.tempUnitText),
+        )
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -115,9 +131,11 @@ class HudOverlayService : Service() {
             includeFontPadding = false
         }
 
-        boostTv = makeLabel(getString(R.string.hud_boost, "---", "PSI"))
-        rpmTv   = makeLabel("RPM:  ----")
-        oilTv   = makeLabel("OIL:  ---\u00B0")
+        // The first frame already speaks the chosen units (#464); the collector below refreshes them.
+        val (boostStart, rpmStart, oilStart) = startLines(resources, UserPrefsStore.prefs.value)
+        boostTv = makeLabel(boostStart)
+        rpmTv   = makeLabel(rpmStart)
+        oilTv   = makeLabel(oilStart)
 
         root.addView(boostTv)
         root.addView(rpmTv)

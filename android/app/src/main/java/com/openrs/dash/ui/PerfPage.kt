@@ -1,5 +1,10 @@
 package com.openrs.dash.ui
 
+import com.openrs.dash.ui.units.UnitIds
+import com.openrs.dash.ui.units.UnitText
+import com.openrs.dash.ui.units.UnitFactors
+import com.openrs.dash.ui.units.boostUnitText
+import com.openrs.dash.ui.units.boostPsi
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.RepeatMode
@@ -261,7 +266,7 @@ private fun PerformanceTimerCard(vs: VehicleState, p: UserPrefs) {
             // Session best badge
             best60?.let { ms -> InstrumentMeta("SESSION BEST ${formatTimerMs(ms)}", color = accent) }
         }
-        if (p.speedUnit == "KPH") InstrumentMeta("TARGETS IN MPH · 0-97 / 0-161 KM/H")
+        if (p.speedUnit == UnitIds.KPH) InstrumentMeta("TARGETS IN MPH · 0-97 / 0-161 KM/H")
 
         when (timerState) {
             PerformanceTimer.State.IDLE -> TimerIdleRow(vs.isConnected) {
@@ -270,7 +275,7 @@ private fun PerformanceTimerCard(vs: VehicleState, p: UserPrefs) {
             PerformanceTimer.State.ARMED -> TimerArmedRow {
                 PerformanceTimer.cancel()
             }
-            PerformanceTimer.State.RUNNING -> TimerRunningRow(elapsed, speedMph, p.speedUnit == "KPH") {
+            PerformanceTimer.State.RUNNING -> TimerRunningRow(elapsed, speedMph, p.speedUnit == UnitIds.KPH) {
                 PerformanceTimer.finishAt60()
                 // Persist the 60-only result to Room
                 val finishResult = PerformanceTimer.result.value
@@ -297,7 +302,7 @@ private fun PerformanceTimerCard(vs: VehicleState, p: UserPrefs) {
                 }
                 haptic.performHapticFeedback(HapticFeedbackType.Confirm)
             }
-            PerformanceTimer.State.FINISHED -> TimerResultRow(result, best60, best100) {
+            PerformanceTimer.State.FINISHED -> TimerResultRow(result, best60, best100, p) {
                 if (PerformanceTimer.arm()) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
             }
         }
@@ -378,8 +383,8 @@ private fun TimerRunningRow(elapsedMs: Long, speedMph: Double, showKph: Boolean,
                 style = androidx.compose.ui.text.TextStyle(fontFeatureSettings = "tnum")
             )
             // MPH first — the targets are mph; km/h users also get their unit
-            InstrumentMeta("${"%.0f".format(speedMph)} MPH" +
-                if (showKph) " · ${"%.0f".format(speedMph / UnitConversions.KM_TO_MI)} KM/H" else "")
+            InstrumentMeta("%.0f".format(speedMph) + " " + UnitText.MPH +
+                if (showKph) " · " + "%.0f".format(speedMph / UnitFactors.KM_TO_MI) + " " + UnitText.KMH else "")
         }
         Box(
             Modifier.pressClick(pressedScale = 0.95f) { onFinish60() }
@@ -396,6 +401,7 @@ private fun TimerResultRow(
     result: PerformanceTimer.TimerResult?,
     best60: Long?,
     best100: Long?,
+    p: UserPrefs,
     onRearm: () -> Unit
 ) {
     if (result == null) return
@@ -443,7 +449,7 @@ private fun TimerResultRow(
             // #207: named by its source (TIP first, as on the gauge); no reading during the run → "—"
             val peak = result.shownBoostPeak
             MiniReadout(if (peak?.first == com.openrs.dash.data.BoostSource.TIP_033E) "PEAK TIP" else "PEAK BOOST",
-                peak?.let { "${"%.1f".format(it.second)} PSI" } ?: "— PSI", Modifier.weight(1f))
+                perfPeakBoostText(p, peak?.second), Modifier.weight(1f))
         }
 
         // Re-arm button
@@ -463,3 +469,7 @@ private fun formatTimerMs(ms: Long): String {
     val frac = ms % 1000
     return "%d.%03d".format(seconds, frac)
 }
+
+/** A perf run's peak boost (stored gauge psi) in the boost unit (#464); "—" with the unit when the run had none. */
+internal fun perfPeakBoostText(p: UserPrefs, gaugePsi: Double?): String =
+    gaugePsi?.let { p.boostPsi(it).text } ?: "\u2014 ${p.boostUnitText}"

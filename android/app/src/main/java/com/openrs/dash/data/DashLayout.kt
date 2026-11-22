@@ -1,6 +1,9 @@
 package com.openrs.dash.data
 
 import com.openrs.dash.ui.UserPrefs
+import com.openrs.dash.ui.units.mixtureFromAfr
+import com.openrs.dash.ui.units.temp
+import com.openrs.dash.ui.units.torque
 
 /**
  * Custom dashboard layout — user-configurable gauge grid.
@@ -107,7 +110,7 @@ fun resolveValue(vs: VehicleState, prefs: UserPrefs, cell: DashCell, nowMs: Long
         "ignCorrCyl3" -> polled("ignCorrCyl3", vs.ignCorrCyl3) { "%.1f\u00B0".format(it) }
         "ignCorrCyl4" -> polled("ignCorrCyl4", vs.ignCorrCyl4) { "%.1f\u00B0".format(it) }
         "afrActual" -> {
-            if (vs.afrActual > 0) "%.2f".format(vs.afrActual) to vs.afrActual
+            if (vs.afrActual > 0) prefs.mixtureFromAfr(vs.afrActual).text to vs.afrActual
             else "\u2014 \u2014" to 0.0
         }
         "shortFuelTrim" -> polled("shortFuelTrim", vs.shortFuelTrim) { "%.1f%%".format(it) }
@@ -117,7 +120,7 @@ fun resolveValue(vs: VehicleState, prefs: UserPrefs, cell: DashCell, nowMs: Long
             else "\u2014 \u2014" to 0.0
         }
         "rearTorquePct" -> "\u2014 \u2014" to 0.0          // withdrawn (#226) — see WITHDRAWN_FIELDS
-        "torqueAtTrans" -> "%.0f Nm".format(vs.torqueAtTrans) to vs.torqueAtTrans
+        "torqueAtTrans" -> prefs.torque(vs.torqueAtTrans).text to vs.torqueAtTrans
         "steeringAngle" -> "%.1f\u00B0".format(vs.steeringAngle) to vs.steeringAngle
         "yawRate" -> "%.1f".format(vs.yawRate) to vs.yawRate
         "wgdcDesired" -> polled("wgdcDesired", vs.wgdcDesired) { "%.0f%%".format(it) }
@@ -132,7 +135,7 @@ fun resolveValue(vs: VehicleState, prefs: UserPrefs, cell: DashCell, nowMs: Long
 /** Helper: format a temperature field, showing placeholder if sentinel (-99). */
 private fun tempOrPlaceholder(tempC: Double, prefs: UserPrefs): Pair<String, Double> {
     return if (tempC > -90) {
-        "${prefs.displayTemp(tempC)}${prefs.tempLabel}" to tempC
+        prefs.temp(tempC) to tempC
     } else {
         "\u2014 \u2014" to 0.0
     }
@@ -157,4 +160,4 @@ fun barFraction(cell: DashCell, rawValue: Double): Float {
 }
 
 private fun tipText(vs: VehicleState, prefs: UserPrefs, absKpa: Double): String =
-    BoostRule.gaugeVsBaro(vs, absKpa)?.let { g -> prefs.displayGauge(g).let { (v, u) -> "$v $u" } } ?: "${"%.0f".format(absKpa)} kPa abs"
+    com.openrs.dash.ui.tipText(vs, prefs, absKpa)

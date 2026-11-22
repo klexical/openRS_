@@ -41,12 +41,31 @@ object AppSettings {
     const val KEY_SPEED_UNIT  = "speed_unit"    // "MPH" | "KPH"
     const val KEY_TEMP_UNIT   = "temp_unit"     // "F"   | "C"
     const val KEY_BOOST_UNIT  = "boost_unit"    // "PSI" | "BAR" | "KPA"
-    const val KEY_TIRE_UNIT   = "tire_unit"     // "PSI" | "BAR"
+    const val KEY_TIRE_UNIT   = "tire_unit"     // "PSI" | "BAR" | "KPA"
+    // #464: the seven units added with Region (ids in ui/units/Units.kt), and the migration's marker
+    const val KEY_ENGINE_UNIT   = "engine_pressure_unit"
+    const val KEY_AIR_UNIT      = "air_pressure_unit"
+    const val KEY_ALTITUDE_UNIT = "altitude_unit"
+    const val KEY_FUEL_UNIT     = "fuel_volume_unit"
+    const val KEY_ECONOMY_UNIT  = "economy_unit"
+    const val KEY_TORQUE_UNIT   = "torque_unit"
+    const val KEY_MIXTURE_UNIT  = "mixture_unit"
+    const val KEY_UNITS_VERSION = "units_version"
+    /** 1 = the eleven units of #464 are stored. */
+    const val UNITS_VERSION = 1
 
     const val DEFAULT_SPEED_UNIT  = "MPH"
     const val DEFAULT_TEMP_UNIT   = "F"
     const val DEFAULT_BOOST_UNIT  = "PSI"
     const val DEFAULT_TIRE_UNIT   = "PSI"
+    // The US preset's seven, matching the four defaults above (used only where no saved value exists)
+    const val DEFAULT_ENGINE_UNIT   = "PSI"
+    const val DEFAULT_AIR_UNIT      = "INHG"
+    const val DEFAULT_ALTITUDE_UNIT = "FT"
+    const val DEFAULT_FUEL_UNIT     = "US_GAL"
+    const val DEFAULT_ECONOMY_UNIT  = "MPG_US"
+    const val DEFAULT_TORQUE_UNIT   = "LBFT"
+    const val DEFAULT_MIXTURE_UNIT  = "AFR"
 
     // ── TPMS ────────────────────────────────────────────────────────────────
     const val KEY_TIRE_LOW_PSI  = "tire_low_psi"    // Critical low threshold
@@ -287,13 +306,6 @@ object AppSettings {
     fun getUpdateChannel(ctx: Context): String =
         prefs(ctx).getString(KEY_UPDATE_CHANNEL, DEFAULT_UPDATE_CHANNEL) ?: DEFAULT_UPDATE_CHANNEL
 
-    fun getOdomInMiles(ctx: Context): Boolean {
-        val p = prefs(ctx)
-        // Backward compat: if key absent, derive from speed unit.
-        return if (p.contains(KEY_ODOM_IN_MILES)) p.getBoolean(KEY_ODOM_IN_MILES, true)
-        else getSpeedUnit(ctx) == "MPH"
-    }
-
     // ── BLE device helpers ──────────────────────────────────────────────────
 
     fun getBleDeviceAddress(ctx: Context): String? =
@@ -345,6 +357,13 @@ object AppSettings {
             putString(KEY_TEMP_UNIT,   p.tempUnit)
             putString(KEY_BOOST_UNIT,  p.boostUnit)
             putString(KEY_TIRE_UNIT,   p.tireUnit)
+            putString(KEY_ENGINE_UNIT,   p.engineUnit)
+            putString(KEY_AIR_UNIT,      p.airUnit)
+            putString(KEY_ALTITUDE_UNIT, p.altitudeUnit)
+            putString(KEY_FUEL_UNIT,     p.fuelUnit)
+            putString(KEY_ECONOMY_UNIT,  p.economyUnit)
+            putString(KEY_TORQUE_UNIT,   p.torqueUnit)
+            putString(KEY_MIXTURE_UNIT,  p.mixtureUnit)
             putFloat (KEY_TIRE_LOW_PSI,  p.tireLowPsi)
             putFloat (KEY_TIRE_WARN_PSI, p.tireWarnPsi)
             putFloat (KEY_TIRE_HIGH_PSI, p.tireHighPsi)
@@ -376,11 +395,57 @@ object AppSettings {
         }
     }
 
-    fun load(ctx: Context): UserPrefs = UserPrefs(
+    /**
+     * #464: stores the eleven units once, before anything reads them. A settings file that already holds any key is an
+     * existing install: the seven new units come from the phone's country setting, as on a new install (km/h with °C on
+     * a US or UK phone takes Europe & international's), and its four original choices are kept exactly
+     * ([Region.unitsForExisting]). An empty file is a new install: all eleven come
+     * from the phone's country setting ([Region.unitsForCountry]). After it runs, [KEY_UNITS_VERSION] is set and it
+     * never runs again.
+     */
+    fun migrateUnits(ctx: Context, country: String = java.util.Locale.getDefault().country) =
+        migrateUnits(prefs(ctx), country)
+
+    internal fun migrateUnits(p: android.content.SharedPreferences, country: String) {
+        if (p.contains(KEY_UNITS_VERSION)) return
+        val units = if (p.all.isEmpty()) com.openrs.dash.ui.units.Region.unitsForCountry(country)
+        else com.openrs.dash.ui.units.Region.unitsForExisting(
+            country = country,
+            speed = p.getString(KEY_SPEED_UNIT, DEFAULT_SPEED_UNIT) ?: DEFAULT_SPEED_UNIT,
+            temp = p.getString(KEY_TEMP_UNIT, DEFAULT_TEMP_UNIT) ?: DEFAULT_TEMP_UNIT,
+            boost = p.getString(KEY_BOOST_UNIT, DEFAULT_BOOST_UNIT) ?: DEFAULT_BOOST_UNIT,
+            tyre = p.getString(KEY_TIRE_UNIT, DEFAULT_TIRE_UNIT) ?: DEFAULT_TIRE_UNIT,
+        )
+        p.edit {
+            putString(KEY_SPEED_UNIT, units.speed)
+            putString(KEY_TEMP_UNIT, units.temp)
+            putString(KEY_BOOST_UNIT, units.boost)
+            putString(KEY_TIRE_UNIT, units.tyre)
+            putString(KEY_ENGINE_UNIT, units.engine)
+            putString(KEY_AIR_UNIT, units.air)
+            putString(KEY_ALTITUDE_UNIT, units.altitude)
+            putString(KEY_FUEL_UNIT, units.fuel)
+            putString(KEY_ECONOMY_UNIT, units.economy)
+            putString(KEY_TORQUE_UNIT, units.torque)
+            putString(KEY_MIXTURE_UNIT, units.mixture)
+            putInt(KEY_UNITS_VERSION, UNITS_VERSION)
+        }
+    }
+
+    private fun str(ctx: Context, key: String, default: String) = prefs(ctx).getString(key, default) ?: default
+
+    fun load(ctx: Context): UserPrefs = migrateUnits(ctx).let { UserPrefs(
         speedUnit            = getSpeedUnit(ctx),
         tempUnit             = getTempUnit(ctx),
         boostUnit            = getBoostUnit(ctx),
         tireUnit             = getTireUnit(ctx),
+        engineUnit           = str(ctx, KEY_ENGINE_UNIT, DEFAULT_ENGINE_UNIT),
+        airUnit              = str(ctx, KEY_AIR_UNIT, DEFAULT_AIR_UNIT),
+        altitudeUnit         = str(ctx, KEY_ALTITUDE_UNIT, DEFAULT_ALTITUDE_UNIT),
+        fuelUnit             = str(ctx, KEY_FUEL_UNIT, DEFAULT_FUEL_UNIT),
+        economyUnit          = str(ctx, KEY_ECONOMY_UNIT, DEFAULT_ECONOMY_UNIT),
+        torqueUnit           = str(ctx, KEY_TORQUE_UNIT, DEFAULT_TORQUE_UNIT),
+        mixtureUnit          = str(ctx, KEY_MIXTURE_UNIT, DEFAULT_MIXTURE_UNIT),
         tireLowPsi           = getTireLowPsi(ctx),
         tireWarnPsi          = getTireWarnPsi(ctx),
         tireHighPsi          = getTireHighPsi(ctx),
@@ -395,7 +460,8 @@ object AppSettings {
         adapterType          = getAdapterType(ctx),
         connectionMethod     = getConnectionMethod(ctx),
         meatPiMicroSdLog     = getMeatPiMicroSd(ctx),
-        odomInMiles          = getOdomInMiles(ctx),
+        // #464: the odometer unit follows speed & distance (it has no setting of its own)
+        odomInMiles          = getSpeedUnit(ctx) == com.openrs.dash.ui.units.UnitIds.MPH,
         edgeShiftLight       = getEdgeShiftLight(ctx),
         edgeShiftColor       = getEdgeShiftColor(ctx),
         edgeShiftIntensity   = getEdgeShiftIntensity(ctx),
@@ -410,7 +476,7 @@ object AppSettings {
         navTabIdentity       = getNavTabIdentity(ctx),
         livePillQuiet        = getLivePillQuiet(ctx),
         gearModeTint         = getGearModeTint(ctx),
-    )
+    ) }
 
     // ── Custom dashboard persistence ────────────────────────────────────
 

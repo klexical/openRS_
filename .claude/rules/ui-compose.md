@@ -101,6 +101,8 @@ RS paint themes (`themeId`): `cyan`=Nitrous Blue, `red`=Race Red, `orange`=Deep 
 
 ```
 Speed: MPH  |  Temp: °F  |  Boost: PSI  |  Tire: PSI  |  TireLowPsi: 30
+Engine: PSI  |  Air: INHG  |  Altitude: FT  |  Fuel: US_GAL  |  Economy: MPG_US  |  Torque: LBFT  |  Mixture: AFR
+  (the US preset; AppSettings.load runs the one-time units migration first, #464)
 MeatPi USB (C3): 192.168.80.1:80 (WebSocket)    MeatPi Pro (S3): 192.168.0.10:35000 (TCP)
 ScreenOn: true  |  AutoReconnect: true  |  MaxDiagZips: 5
 AdapterType: "MEATPI_USB"  (alt: "MEATPI_PRO")

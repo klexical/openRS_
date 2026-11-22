@@ -1,5 +1,6 @@
 package com.openrs.dash.ui
 
+import com.openrs.dash.ui.units.UnitText
 import com.openrs.dash.data.DriveThermalSensor
 import com.openrs.dash.data.DriveThermalTracker
 import com.openrs.dash.data.VehicleState
@@ -169,8 +170,9 @@ data class ThermalCell(val valueC: Double, val text: String, val unit: String) {
  */
 fun validateThermalProfile(cells: Map<String, Double?>, unit: String): Map<String, String> {
     val errors = linkedMapOf<String, String>()
-    fun d(dc: Double) = if (unit == "C") "%.0f°C".format(dc) else "%.1f°F".format(dc * 9.0 / 5.0)
-    fun t(c: Double) = thermalEditText(c, unit) + (if (unit == "C") "°C" else "°F")
+    val deg = if (unit == "C") UnitText.DEG_C else UnitText.DEG_F
+    fun d(dc: Double) = if (unit == "C") "%.0f".format(dc) + deg else "%.1f".format(dc * 9.0 / 5.0) + deg
+    fun t(c: Double) = thermalEditText(c, unit) + deg
     for (f in ThermalProfile.FIELDS) {
         val v = cells[f.key]
         if (v == null) { errors[f.key] = "enter a number"; continue }
