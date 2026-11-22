@@ -207,9 +207,17 @@ for how in plain zlib png pk comment; do
 done
 repo; g checkout -q -b feature; zfix z.zip plain; commit "a ZIP"
 ACTION=labeled LABEL=privacy-ok-compressed run 0 "a ZIP-format file passes with the OK" "; ok label needed yes; "
-# a text file (no NUL, valid UTF-8, no magic at the start) that Python still opens as a ZIP: an end record of plain
-# characters, its comment length "!!" followed by that many bytes, reaches the zipok-only branch
-zotext() { python3 -I -c 'import sys; open(sys.argv[1], "wb").write(b"clean text\n" + b"PK\x05\x06" + b"AAAABBBBCCCCDDDD!!" + b"x" * 0x2121)' "$1"; }
+# a text file (no NUL, valid UTF-8, no magic at the start) that Python still opens as a ZIP reaches the zipok-only
+# branch. Python 3.14 also wants a central directory header where the end record places it, so the directory's size
+# has no zero byte (0x01010101, about 16 MB of spaces) and the comment length is 0x0101
+zotext() { python3 -I - "$1" <<'PY'
+import sys
+n = 0x01010101
+cd = b"PK\x01\x02" + b"C" * 42
+eocd = b"PK\x05\x06" + b"AAAABBBB" + n.to_bytes(4, "little") + b"DDDD" + b"\x01\x01"
+open(sys.argv[1], "wb").write(b"clean text\n" + cd + b" " * (n - len(cd)) + eocd + b" " * 0x0101)
+PY
+}
 repo; g checkout -q -b feature; zotext "$T/r/zo.txt"; g add zo.txt; commit "a text file Python opens as a ZIP"
 run 1 "a text file that Python opens as a ZIP waits for the OK" \
   "FINDING $(c12): a ZIP file, whose bytes outside its members may hold compressed data zo.txt" "; ok label needed yes; "
