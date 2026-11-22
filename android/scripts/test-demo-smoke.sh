@@ -96,11 +96,14 @@ case "$*" in
                               if [ -n "${FAKE_FOREIGN-}" ] || { [ -n "${FAKE_FOREIGN_AT-}" ] && [ "$n" -ge "$FAKE_FOREIGN_AT" ]; }; then
                                 printf '  topResumedActivity=ActivityRecord{1a2b u0 com.google.android.permissioncontroller/com.android.permissioncontroller.permission.ui.GrantPermissionsActivity t9}\r\n'
                               else printf '  topResumedActivity=ActivityRecord{1a2b u0 com.openrs.dash.debug/com.openrs.dash.ui.MainActivity t9}\r\n'; fi ;;
-  "exec-out rm -f /data/local/tmp/demo-smoke.xml; uiautomator dump"*)
+  "exec-out rm -f /data/local/tmp/demo-smoke.xml; echo"*)
                               hang dump; n=$(count dump)
                               [ "${FAKE_FAIL-}" = dump ] && { echo '<node text="RAW-DUMP-TEXT" />'; exit 1; }
-                              [ "$n" -gt "${FAKE_IDLE_FAILS:-0}" ] || exit 0      # no idle state: no file, nothing to cat
-                              dump ;;
+                              # no idle state: uiautomator says so, writes no file, nothing to cat
+                              [ "$n" -gt "${FAKE_IDLE_FAILS:-0}" ] || { echo "UIA:ERROR: could not get idle state."; exit 0; }
+                              echo "UIA:UI hierchary dumped to: /data/local/tmp/demo-smoke.xml"
+                              # FAKE_CTRL_CHAR=1: a node's text carries a control character, as a Compose text can
+                              if [ -n "${FAKE_CTRL_CHAR-}" ]; then dump | sed "s/text=\"12:00\"/text=\"12$(printf '\001')00\"/"; else dump; fi ;;
   "shell input tap "*)        set -- $*; x=$4; y=$5; echo "$x $y" >> "$S/taps"
                               if [ "$y" -ge 2252 ] && [ "$y" -le 2348 ]; then
                                 t=${TABS[$((x / 216))]}; [ "${FAKE_NO_SELECT-}" = "$t" ] || echo "$t" > "$S/tab"
@@ -171,7 +174,9 @@ if run_case "What's New is closed by its GOT IT" 0 "$APK" FAKE_WHATSNEW=1; then
 fi
 
 run_case "the DEMO label with a link state (DEMO · RCN) counts" 0 "$APK" "FAKE_DEMO_LABEL=DEMO · RCN" && pass
-run_case "two dumps with no idle state, then a readable one" 0 "$APK" FAKE_IDLE_FAILS=2 && expect "Emulator smoke OK"
+run_case "two dumps with no idle state, then a readable one" 0 "$APK" FAKE_IDLE_FAILS=2 \
+  && expect "Emulator smoke OK" "UI read after the cold start, try 1 of 3: uiautomator said 'ERROR: could not get idle state.'; 0 bytes; unreadable dump (no XML in 0 characters)"
+run_case "a control character in a node's text does not stop the reader" 0 "$APK" FAKE_CTRL_CHAR=1 && expect "Emulator smoke OK"
 
 # ── Failures, each named ──
 run_case "a tab that does not select after its tap fails" 1 "$APK" FAKE_NO_SELECT=THERMAL \
@@ -223,7 +228,7 @@ run_case "another app's activity on top fails, naming it" 1 "$APK" FAKE_FOREIGN=
 run_case "no DEMO label fails" 1 "$APK" FAKE_NO_DEMO=1 \
   && expect "::error::after the cold start: no DEMO label in the UI dump"
 run_case "a dump that never reads fails after three tries" 1 "$APK" FAKE_IDLE_FAILS=99 \
-  && expect "::error::after the cold start: no readable UI dump in 3 tries (unreadable dump (ParseError))"
+  && expect "::error::after the cold start: no readable UI dump in 3 tries (uiautomator said 'ERROR: could not get idle state.'; unreadable dump (no XML in 0 characters))"
 run_case "an installed APK that hashes differently fails" 1 "$APK" FAKE_BAD_HASH=1 \
   && expect "::error::the installed APK's SHA-256 is 0000000000000000000000000000000000000000000000000000000000000000"
 run_case "an install that does not answer fails, naming the step" 1 "$APK" FAKE_HANG=install SMOKE_ADB_LIMIT_S=1 \
@@ -267,7 +272,17 @@ others=<other>
 demo=0
 whatsnew=none
 selected=none'
-ui_case "ui: a dump that is not XML says only the error class" 'ERROR: could not get idle state.' 'unreadable dump (ParseError)'
+ui_case "ui: a dump that is not XML says so, with no text of it" 'ERROR: could not get idle state.' 'unreadable dump (no XML in 32 characters)'
+ui_case "ui: a broken dump gives the parser's position only" '<hierarchy><node text="SECRET-TEXT" </hierarchy>' 'unreadable dump (ParseError at line 1 column 36 of 48 characters)'
+ui_case "ui: text before the XML and a control character are dropped" \
+"junk before<?xml version='1.0' ?><hierarchy><node package=\"com.openrs.dash.debug\" text=\"a$(printf '\002')b\" content-desc=\"TRIP tab\" selected=\"true\" bounds=\"[648,2252][864,2348]\"/></hierarchy>" \
+'windows=1
+ours=1
+others=none
+demo=0
+whatsnew=none
+tab.TRIP=756 2300
+selected=TRIP'
 
 # ── The workflow's own claims (.github/workflows/emulator-smoke.yml): only the label starts it, read-only token, no
 #    secret, nothing uploaded, no credentials left in the checkout, the nightly's emulator start, then this smoke ──

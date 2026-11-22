@@ -131,16 +131,21 @@ resumed() {
 # ui <where>: one UI read into $WORK/facts. The dump file is removed first, so a dump that found no idle state ("could
 # not get idle state", no file) reads as empty and is tried again, up to DUMP_TRIES times
 ui() {
-  local i st
+  local i st msg bytes
   for i in $(seq 1 "$DUMP_TRIES"); do
+    # The first line is uiautomator's own message, cut to letters, spaces and path characters ("UI hierchary dumped to:
+    # …", "ERROR: could not get idle state."); the dump follows it
     call --private "the UI read $1 (try $i of $DUMP_TRIES)" exec-out \
-      "rm -f $DUMP_PATH; uiautomator dump $DUMP_PATH >/dev/null 2>&1; cat $DUMP_PATH 2>/dev/null; true"
-    printf '%s\n' "$OUT" > "$WORK/dump.xml"
+      "rm -f $DUMP_PATH; echo \"UIA:\$(uiautomator dump $DUMP_PATH 2>&1 | tr -cd 'A-Za-z :./_-' | cut -c1-120)\"; cat $DUMP_PATH 2>/dev/null; true"
+    msg=$(sed -n '1s/^UIA://p' <<<"$OUT" | tr -cd 'A-Za-z :./_-')
+    sed '1{/^UIA:/d;}' <<<"$OUT" > "$WORK/dump.xml"
+    bytes=$(wc -c < "$WORK/dump.xml" | tr -d ' ')
     st=0; python3 -I "$DIR/demo-smoke-ui.py" "$WORK/dump.xml" "$PKG" > "$WORK/facts" 2> "$WORK/ui-err" || st=$?
     if [ "$st" -eq 0 ] && [ "$(fact ours)" != 0 ]; then return 0; fi
+    echo "UI read $1, try $i of $DUMP_TRIES: uiautomator said '${msg:-nothing}'; $bytes bytes; $(tr -d '\n' < "$WORK/ui-err" | cut -c1-200)"
     [ "$i" -eq "$DUMP_TRIES" ] || pause "before UI read $((i + 1))" "$STEP_S"
   done
-  if [ "$st" -ne 0 ]; then fail "$1: no readable UI dump in $DUMP_TRIES tries ($(head -c 200 "$WORK/ui-err" || true))"; fi
+  if [ "$st" -ne 0 ]; then fail "$1: no readable UI dump in $DUMP_TRIES tries (uiautomator said '${msg:-nothing}'; $(tr -d '\n' < "$WORK/ui-err" | cut -c1-200))"; fi
   fail "$1: the UI dump holds no node of $PKG in $DUMP_TRIES tries (other packages: $(fact others))"
 }
 tap() {   # tap <where> "<x> <y>"

@@ -10,7 +10,7 @@ The facts use a fixed vocabulary only, so no text from the screen reaches the ru
   whatsnew=<x> <y>|none     the centre of the What's New dialog's GOT IT button, when it is shown
   tab.<NAME>=<x> <y>        the centre of each bottom-nav tab found (content-desc "<NAME> tab" or "<NAME> tab, alert")
   selected=<NAME>|none      the tab whose node is selected (Compose's `selected` semantics), or none
-A dump that is not XML exits 2 with the parser's error class only.
+A dump that is not XML exits 2 with the parser's error class and position only (never the dump's text).
 """
 import re
 import sys
@@ -20,6 +20,7 @@ TABS = ("DRIVE", "PERF", "THERMAL", "TRIP", "GARAGE")
 TAB_DESC = re.compile(r"(%s) tab(, alert)?" % "|".join(TABS))
 DEMO = re.compile("DEMO( \u00b7 [A-Z]{2,8})?")   # the pill: "DEMO", or "DEMO \u00b7 RCN" during LOSS
 PKG = re.compile(r"[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z0-9_]+)+")
+XML_FORBIDDEN = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\ufffe\uffff]")
 BOUNDS = re.compile(r"\[(-?\d+),(-?\d+)\]\[(-?\d+),(-?\d+)\]")
 
 
@@ -39,9 +40,23 @@ def main(argv):
         return 64
     path, package = argv[1], argv[2]
     try:
-        root = ET.parse(path).getroot()
-    except (ET.ParseError, OSError) as e:
+        with open(path, "rb") as f:
+            raw = f.read().decode("utf-8", errors="replace")
+    except OSError as e:
         print("unreadable dump (%s)" % type(e).__name__, file=sys.stderr)
+        return 2
+    # From the XML declaration or the root on (anything a shell printed before it is dropped), and without the
+    # characters XML 1.0 forbids (a control character in a node's text would stop the parser)
+    start = min([i for i in (raw.find("<?xml"), raw.find("<hierarchy")) if i >= 0], default=-1)
+    if start < 0:
+        print("unreadable dump (no XML in %d characters)" % len(raw), file=sys.stderr)
+        return 2
+    text = XML_FORBIDDEN.sub("", raw[start:])
+    try:
+        root = ET.fromstring(text)
+    except ET.ParseError as e:
+        line, col = e.position
+        print("unreadable dump (ParseError at line %d column %d of %d characters)" % (line, col, len(text)), file=sys.stderr)
         return 2
     nodes = list(root.iter("node"))
     ours = sum(1 for n in nodes if n.get("package") == package)
