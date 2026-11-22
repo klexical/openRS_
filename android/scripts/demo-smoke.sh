@@ -29,8 +29,8 @@ PKG=com.openrs.dash.debug; ACTIVITY=com.openrs.dash.ui.MainActivity; COMPONENT="
 ADB_LIMIT_S="${SMOKE_ADB_LIMIT_S:-60}"; SETTLE_S="${SMOKE_SETTLE_S:-10}"; STEP_S="${SMOKE_STEP_S:-3}"
 FRAME_S="${SMOKE_FRAME_S:-6}"   # after `at:2.5`: the replay runs from 0 in real time before it pauses
 RETRY_S="${SMOKE_RETRY_S:-10}"
-# Six tries, 10 s apart: on the runner's API 36 image the app's first UI reads can find no window ("null root node")
-# for about 15 s although it is resumed and focused; a read that works takes up to 40 s there
+# Six tries, 10 s apart: on the runner's API 36 image a read can find no tree for the app's window for a while after
+# the cold start, although the app is resumed and focused; a read that works takes up to about 40 s there
 DUMP_TRIES=6
 TABS="DRIVE PERF THERMAL TRIP GARAGE"
 SCENARIOS="idle driving warning loss cooldown launch"
@@ -133,7 +133,8 @@ resumed() {
   found=$(grep -o -E '[A-Za-z0-9_.]+/[A-Za-z0-9_.$]+' <<<"$OUT" | sort -u | tr '\n' ' ' || true)
   fail "$1: the resumed activity is not $COMPONENT (found: ${found:-none})"
 }
-# ui <where>: one UI read into $WORK/facts. The dump file is removed first, so a dump that found no idle state ("could
+# ui <where>: one UI read into $WORK/facts, of every window (`--windows`): the plain dump reads only the active window,
+# and on the runner's API 36 image it found none for over a minute after the cold start ("null root node"). The dump file is removed first, so a dump that found no idle state ("could
 # not get idle state", no file) reads as empty and is tried again, up to DUMP_TRIES times
 ui() {
   local i st msg bytes
@@ -141,7 +142,7 @@ ui() {
     # The first line is uiautomator's own message, cut to letters, spaces and path characters ("UI hierchary dumped to:
     # …", "ERROR: could not get idle state."); the dump follows it
     call --private "the UI read $1 (try $i of $DUMP_TRIES)" exec-out \
-      "rm -f $DUMP_PATH; echo \"UIA:\$(uiautomator dump $DUMP_PATH 2>&1 | tr -cd 'A-Za-z :./_-' | cut -c1-120)\"; cat $DUMP_PATH 2>/dev/null; true"
+      "rm -f $DUMP_PATH; echo \"UIA:\$(uiautomator dump --windows $DUMP_PATH 2>&1 | tr -cd 'A-Za-z :./_-' | cut -c1-120)\"; cat $DUMP_PATH 2>/dev/null; true"
     msg=$(sed -n '1s/^UIA://p' <<<"$OUT" | tr -cd 'A-Za-z :./_-')
     sed '1{/^UIA:/d;}' <<<"$OUT" > "$WORK/dump.xml"
     bytes=$(wc -c < "$WORK/dump.xml" | tr -d ' ')

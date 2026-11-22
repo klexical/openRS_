@@ -44,9 +44,12 @@ TABS=(DRIVE PERF THERMAL TRIP GARAGE)
 dump() {
   local tab demo i l r sel
   tab=$(cat "$S/tab"); demo=${FAKE_DEMO_LABEL-DEMO}
-  echo "<?xml version='1.0' encoding='UTF-8' standalone='yes' ?><hierarchy rotation=\"0\">"
+  # the shape of `uiautomator dump --windows`: displays, windows (one per app or system window), each with its hierarchy
+  echo "<?xml version='1.0' encoding='UTF-8' standalone='yes' ?><displays><display id=\"0\">"
+  echo "<window index=\"0\" title=\"Status bar\" type=\"TYPE_SYSTEM\"><hierarchy rotation=\"0\">"
   echo "<node index=\"0\" text=\"\" package=\"com.android.systemui\" content-desc=\"\" selected=\"false\" bounds=\"[0,0][1080,63]\"><node index=\"0\" text=\"12:00\" package=\"com.android.systemui\" content-desc=\"\" selected=\"false\" bounds=\"[40,0][160,63]\" /></node>"
-  echo "<node index=\"1\" text=\"\" package=\"com.openrs.dash.debug\" content-desc=\"\" selected=\"false\" bounds=\"[0,0][1080,2400]\">"
+  echo "</hierarchy></window><window index=\"1\" title=\"openRS_\" type=\"TYPE_APPLICATION\"><hierarchy rotation=\"0\">"
+  echo "<node index=\"0\" text=\"\" package=\"com.openrs.dash.debug\" content-desc=\"\" selected=\"false\" bounds=\"[0,0][1080,2400]\">"
   [ -n "${FAKE_NO_DEMO-}" ] || echo "<node index=\"0\" text=\"$demo\" package=\"com.openrs.dash.debug\" content-desc=\"\" selected=\"false\" bounds=\"[800,70][960,170]\" />"
   for i in 0 1 2 3 4; do
     l=$((i * 216)); r=$((l + 216)); sel=false; clk=true; [ "${TABS[$i]}" = "$tab" ] && { sel=true; clk=false; }
@@ -54,11 +57,11 @@ dump() {
     [ "${FAKE_SELECT_BY-}" = clickable ] && sel=false
     echo "<node index=\"$((i + 1))\" text=\"\" package=\"com.openrs.dash.debug\" content-desc=\"${TABS[$i]} tab\" selected=\"$sel\" clickable=\"$clk\" bounds=\"[$l,2252][$r,2348]\" />"
   done
-  echo "</node>"
+  echo "</node></hierarchy></window>"
   if [ -f "$S/whatsnew" ]; then
-    echo "<node index=\"2\" text=\"\" package=\"com.openrs.dash.debug\" content-desc=\"\" selected=\"false\" bounds=\"[86,600][994,1800]\"><node index=\"0\" text=\"GOT IT\" package=\"com.openrs.dash.debug\" content-desc=\"\" selected=\"false\" bounds=\"[400,1500][680,1600]\" /></node>"
+    echo "<window index=\"2\" title=\"openRS_\" type=\"TYPE_APPLICATION\"><hierarchy rotation=\"0\"><node index=\"0\" text=\"\" package=\"com.openrs.dash.debug\" content-desc=\"\" selected=\"false\" bounds=\"[86,600][994,1800]\"><node index=\"0\" text=\"GOT IT\" package=\"com.openrs.dash.debug\" content-desc=\"\" selected=\"false\" bounds=\"[400,1500][680,1600]\" /></node></hierarchy></window>"
   fi
-  echo "</hierarchy>"
+  echo "</display></displays>"
 }
 case "$*" in
   "shell pm disable-user"*)   : ;;
@@ -153,6 +156,7 @@ if run_case "a clean run passes: every tab, scenario and trip preview, one proce
   has "Emulator smoke OK: 5 tabs, 6 demo scenarios, 8 trip previews; process 4242 throughout" || why+="no OK line; "
   for t in DRIVE PERF THERMAL TRIP GARAGE; do has "Tab $t: selected (its selected flag), DEMO shown, process 4242, log clean" || why+="no $t line; "; done
   [ "$(first_of 'shell pm disable-user')" = 1 ] || why+="the Play Store is not disabled first; "
+  grep -q -F "uiautomator dump --windows" "$WORK/calls" || why+="the UI read is not of every window; "
   for w in "shell input keyevent KEYCODE_WAKEUP" "shell svc power stayon true" "shell wm dismiss-keyguard"; do
     n=$(first_of "$w"); s0=$(first_of "shell am start -S -W")
     [ -n "$n" ] && [ "$n" -lt "$s0" ] || why+="'$w' not sent before the cold start; "
@@ -312,6 +316,16 @@ tab.TRIP=756 2300
 selected=none
 selectedby=none
 tabflags=DRIVE:0---0:1 PERF:0---1:1 THERMAL:0---1:1 TRIP:0---1:1'
+ui_case "ui: a dump of every window: windows counted, another app's GOT IT and tab ignored, a window with no tree read as none" \
+'<?xml version="1.0" ?><displays><display id="0"><window index="0" title="w" type="TYPE_SYSTEM"><hierarchy rotation="0"><node package="com.android.systemui" text="GOT IT" content-desc="PERF tab" selected="true" bounds="[0,0][10,10]"/></hierarchy></window><window index="1" title="w" type="TYPE_APPLICATION"></window></display></displays>' \
+'windows=2
+ours=0
+others=com.android.systemui
+demo=0
+whatsnew=none
+selected=none
+selectedby=none
+tabflags=none'
 ui_case "ui: an odd package name is withheld" \
 '<hierarchy><node package="not a package" text="x" bounds="[0,0][10,10]"/></hierarchy>' \
 'windows=1

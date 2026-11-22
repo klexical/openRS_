@@ -2,7 +2,7 @@
 """demo-smoke-ui.py <dump.xml> <package> — reads one `uiautomator dump` for demo-smoke.sh and prints facts, one per line.
 
 The facts use a fixed vocabulary only, so no text from the screen reaches the run's log:
-  windows=<n>               the number of window roots (hierarchy children)
+  windows=<n>               the number of windows: <window> elements of a `--windows` dump, else the hierarchy's children
   ours=<n>                  the number of nodes of <package> (0: none of the app's windows is in the dump)
   others=<pkg,...>|none     the other packages with nodes in the dump (the system bars' own, a dialog of another app),
                             names of the form a.b.c only
@@ -75,6 +75,8 @@ def main(argv):
     tabs = {}
     seen, flags, tabnode = {}, {}, {}
     for n in nodes:
+        if n.get("package") != package:
+            continue   # the tabs and What's New are the app's own nodes
         if whatsnew == "none" and n.get("text") == "GOT IT":
             # The button's own node when Compose merges the label into it; else the label's (inside the button)
             whatsnew = centre(n) or "none"
@@ -87,7 +89,7 @@ def main(argv):
             c = centre(n)
             if c:
                 tabs[m.group(1)] = c
-    print("windows=%d" % sum(1 for _ in root))
+    print("windows=%d" % (sum(1 for _ in root.iter("window")) if root.tag == "displays" else sum(1 for _ in root)))
     print("ours=%d" % ours)
     print("others=%s" % (",".join(sorted(set(others))) or "none"))
     print("demo=%d" % (1 if demo else 0))
