@@ -52,7 +52,7 @@ class HeapExportTest {
         DiagnosticLogger.fps(1450.0, HeapSample(usedKb = 250_000, totalKb = 262_144, maxKb = 262_144, nativeKb = 41_000))
         DiagnosticLogger.fps(1300.0, HeapSample(usedKb = 120_000, totalKb = 262_144, maxKb = 262_144, nativeKb = 39_936))
         assertEquals(
-            listOf("  Heap: now 117.2 of 256.0 MB · peak 244.1 MB · native now 39.0 MB · 3 of 3 samples"),
+            listOf("  Heap: now 117.2 of 256.0 MiB · peak 244.1 MiB · native now 39.0 MiB · 3 of 3 samples"),
             heapLines(export().first),
         )
     }
@@ -68,7 +68,7 @@ class HeapExportTest {
     @Test fun `the heap line counts only samples that carry a reading`() {
         DiagnosticLogger.fps(1400.0, heap = null)
         DiagnosticLogger.fps(1400.0, HeapSample(usedKb = 1024, totalKb = 2048, maxKb = 4096, nativeKb = 512))
-        assertEquals(listOf("  Heap: now 1.0 of 4.0 MB · peak 1.0 MB · native now 0.5 MB · 1 of 2 samples"),
+        assertEquals(listOf("  Heap: now 1.0 of 4.0 MiB · peak 1.0 MiB · native now 0.5 MiB · 1 of 2 samples"),
             heapLines(export().first))
     }
 
@@ -76,7 +76,8 @@ class HeapExportTest {
         DiagnosticLogger.fps(1400.0)
         val h = DiagnosticLogger.fpsTimeline.single().heap
         assertNotNull(h); h!!
-        assertTrue(h.maxKb > 0)
+        assertEquals("KiB, not bytes or /1000", Runtime.getRuntime().maxMemory() / 1024, h.maxKb)
+        assertTrue("size within the limit", h.totalKb <= h.maxKb)
         assertTrue(h.usedKb in 1..h.totalKb)
         assertTrue(h.totalKb <= h.maxKb)
     }
@@ -87,9 +88,22 @@ class HeapExportTest {
         try {
             CrashTelemetryBuffer.flushToFile(file, OutOfMemoryError("test"), "main", "2.2.7-test")
             val j = JSONObject(file.readText())
-            assertTrue(j.getLong("heapMaxKb") > 0)
+            assertEquals("KiB, not bytes or /1000", Runtime.getRuntime().maxMemory() / 1024, j.getLong("heapMaxKb"))
             assertTrue(j.getLong("heapUsedKb") in 1..j.getLong("heapTotalKb"))
             assertTrue(j.has("nativeHeapKb"))
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test fun `crash record - no reading means no heap fields, and the record is still written`() {
+        CrashTelemetryBuffer.push(VehicleState())
+        val file = File.createTempFile("crash_heap_", ".json")
+        try {
+            CrashTelemetryBuffer.flushToFile(file, OutOfMemoryError("test"), "main", "2.2.7-test", heap = null)
+            val j = JSONObject(file.readText())
+            for (k in listOf("heapUsedKb", "heapTotalKb", "heapMaxKb", "nativeHeapKb")) assertFalse(k, j.has(k))
+            assertTrue(j.getInt("snapshotCount") >= 1)
         } finally {
             file.delete()
         }

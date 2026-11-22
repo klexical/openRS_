@@ -128,15 +128,15 @@ internal object DiagnosticReportBuilder {
 
     /**
      * The FPS TIMELINE section's heap line (#510): the last sample's Java heap used of its limit, the most used in any
-     * sample, and the last native heap, in MB; null when no sample carries a heap reading.
+     * sample, and the last native heap, in MiB (1024 × 1024 bytes); null when no sample carries a heap reading.
      */
     internal fun heapLine(fps: List<DiagnosticLogger.FpsPoint>): String? {
         val heaps = fps.mapNotNull { it.heap }
         if (heaps.isEmpty()) return null
         val last = heaps.last()
         fun mb(kb: Long) = "%.1f".format(java.util.Locale.ROOT, kb / 1024.0)
-        return "  Heap: now ${mb(last.usedKb)} of ${mb(last.maxKb)} MB · peak ${mb(heaps.maxOf { it.usedKb })} MB" +
-            " · native now ${mb(last.nativeKb)} MB · ${heaps.size} of ${fps.size} samples"
+        return "  Heap: now ${mb(last.usedKb)} of ${mb(last.maxKb)} MiB · peak ${mb(heaps.maxOf { it.usedKb })} MiB" +
+            " · native now ${mb(last.nativeKb)} MiB · ${heaps.size} of ${fps.size} samples"
     }
 
     fun buildSummaryText(

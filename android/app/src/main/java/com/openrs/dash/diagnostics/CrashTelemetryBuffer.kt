@@ -51,7 +51,7 @@ object CrashTelemetryBuffer {
 
     /**
      * Serializes the ring buffer + crash metadata to [file] as JSON, with the app's memory when the crash was caught
-     * (`heapUsedKb` … `nativeHeapKb`, absent when it could not be read; #510).
+     * (`heapUsedKb` … `nativeHeapKb`, absent when it could not be read; #510). [heap] is a seam for tests.
      * Called from the uncaught exception handler — must not throw.
      */
     fun flushToFile(
@@ -61,10 +61,10 @@ object CrashTelemetryBuffer {
         appVersion: String,
         versionCode: Int = 0,
         sourceCommit: String = "",
-        buildType: String = ""
+        buildType: String = "",
+        heap: HeapSample? = HeapSample.read(),   // at the start of the flush, before the record is built (#510)
     ) {
         try {
-            val heap = HeapSample.read()   // first, before this flush allocates (#510)
             val snapshots: List<Snapshot>
             synchronized(lock) {
                 val start = if (size < CAPACITY) 0 else head

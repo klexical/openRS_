@@ -38,7 +38,7 @@ object DiagnosticLogger {
     /** Session lifecycle / error events.  Enough for even the busiest sessions. */
     private const val MAX_EVENTS         = 1_000
 
-    /** FPS timeline at 1 sample/s → 2 h of data. */
+    /** FPS timeline at one sample every 3 s (SlcanConnection's frame-loop tick) → 6 h of data. */
     private const val MAX_FPS_POINTS     = 7_200
 
     /** Periodic sample interval per CAN ID (Option B). */
@@ -141,7 +141,10 @@ object DiagnosticLogger {
         val message: String
     )
 
-    /** One frame-rate sample; [heap] is the app's memory at the same moment (#510), null when it could not be read. */
+    /**
+     * One frame-rate sample; [heap] is the app's memory at the same moment (#510), null when it could not be read.
+     * The reading adds about 56 bytes per sample, about 0.4 MiB at the [MAX_FPS_POINTS] cap.
+     */
     data class FpsPoint(val relMs: Long, val fps: Double, val heap: HeapSample? = null)
 
     /** A single DID probe result from the DID Prober. */
