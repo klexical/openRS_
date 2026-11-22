@@ -211,7 +211,7 @@ dependencies {
     implementation("com.google.android.gms:play-services-maps:19.0.0")
     implementation("com.google.android.gms:play-services-location:21.3.0")
     implementation("com.google.maps.android:maps-compose:6.4.1")
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("com.squareup.okhttp3:okhttp:5.5.1")
 
     // ── Testing ─────────────────────────────────────────────
     testImplementation("junit:junit:4.13.2")
