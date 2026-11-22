@@ -95,6 +95,21 @@ run 1 "a path fails, and the path is withheld wherever it is printed" "FINDING $
 put "exports/$ID1.csv" "a\n$ID2\n"; commit "and its content"
 run 1 "an added line in such a file prints the withheld path with the line" \
   "FINDING $(c12): added line (a path that matches the list, withheld):2"
+# an entry of any length is also matched under Unicode case folding, on scanned lines and in printed paths: a sharp s
+# reads as "ss" (made-up entries; grep -i folds one letter to one letter only)
+repo; g checkout -q -b feature; put f.txt 'one\nseen at kro\xc3\x9fen\n'; commit "a sharp s"
+LIST=$(printf '%s\nKrossen\n' "$ID1") run 1 "a short entry found only under case folding fails on an added line" "FINDING $(c12): added line f.txt:2"
+repo; g checkout -q -b feature; put f.txt 'one\nseen at KROSSEN\n'; commit "a folded entry"
+LIST=$(printf '%s\nKro\xc3\x9fen\n' "$ID1") run 1 "a short entry with a sharp s matches its folded spelling" "FINDING $(c12): added line f.txt:2"
+repo; g checkout -q -b feature; put "notes-kro$(printf '\xc3\x9f')en.txt" "a\n$ID2\n"; commit "a folded path"
+LIST=$(printf '%s\n%s\nKrossen\n' "$ID1" "$ID2") run 1 "a path found only under case folding is withheld where it is printed" \
+  "FINDING $(c12): added line (a path that matches the list, withheld):2"
+# the pull request's branch name is a ref name: judged on its own, raw MAC bytes included (a made-up MAC whose six
+# bytes spell ZQXV77)
+repo; g checkout -q -b feature; commit "work"
+BRANCH=feature/ZQXV77 LIST=$(printf '%s\n5A:51:58:56:37:37\n' "$ID1") run 1 "a branch name holding a MAC entry's raw bytes fails" \
+  "FINDING pull request: the pull request branch name, judged on its own"
+BRANCH=feature/zqxv78 LIST=$(printf '%s\n5A:51:58:56:37:37\n' "$ID1") run 0 "a clean branch name passes the check on its own"
 repo; g checkout -q -b feature; put img.bin "\x00\x01PNG\x00$ID2\x00\xff"; commit "a binary file"
 run 1 "a binary file's content fails, counted, never printed" "FINDING $(c12): binary content img.bin"
 repo; g checkout -q -b feature; put img.bin '\x00\x01PNG\x00clean\x00\xff'; commit "a clean binary file"
@@ -731,10 +746,14 @@ hist --names "$T/names" "$(sha main)"
 expect 1 "dotted, base64, dotted, base64: two count" $? "privacy history scan: ref names 4, 2 matching the list"
 printf 'refs/remotes/origin/main\nrefs/tags/x-\x02\x5a\x1e\x7c\x3d\x9b\n' > "$T/names"
 LISTV=$(printf '%s\n%s\n' "$ID1" "$MAC") hist --names "$T/names" "$(sha main)"
-expect 0 "a name holding a MAC entry's six raw bytes counts" $? "privacy history scan: ref names 2, 1 matching the list"
+expect 1 "a name holding a MAC entry's six raw bytes counts and fails the scan" $? "privacy history scan: ref names 2, 1 matching the list" \
+  "privacy history scan: identifier matches 0 on scanned lines and 1 in files read whole or decoded"
+(cd "$T/r" && unset GITHUB_EVENT_PATH GITHUB_ACTIONS && PRIVACY_IDENTIFIERS=$(printf '%s\n%s\n' "$ID1" "$MAC") GITLEAKS=$STUB \
+  bash "$SCAN" --history --places --names "$T/names" "$(sha main)") > "$OUT" 2>&1
+expect 1 "--places places a name judged on its own by number" $? "FINDING refs: ref name #2, judged on its own"
 printf 'refs/remotes/origin/main\nrefs/heads/kro\xc3\x9fen\n' > "$T/names"
 LISTV=$(printf '%s\nKrossen\n' "$ID1") hist --names "$T/names" "$(sha main)"
-expect 0 "a name matching only by case folding (a sharp s) counts" $? "privacy history scan: ref names 2, 1 matching the list"
+expect 1 "a name matching only by case folding (a sharp s) counts and fails the scan" $? "privacy history scan: ref names 2, 1 matching the list"
 hist --names "$T/no-such-file" "$(sha main)"; expect 2 "--names needs a readable file" $? "--names needs a readable file"
 (cd "$T/r" && PRIVACY_IDENTIFIERS=$LISTV GITLEAKS=$STUB GITHUB_EVENT_PATH=$T/event.json bash "$SCAN" --names "$T/names" "$(sha main)" "$(sha HEAD)") > "$OUT" 2>&1
 expect 2 "--names is for --history only" $? "--names is for --history only"
