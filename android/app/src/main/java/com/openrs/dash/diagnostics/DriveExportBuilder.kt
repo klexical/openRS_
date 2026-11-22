@@ -34,6 +34,12 @@ internal object DriveExportBuilder {
     private fun oilPtuMappingValue(mapping: String?): String = mapping ?: "not_recorded"
     private fun oilPtuMappingValue(drive: DriveEntity): String = oilPtuMappingValue(drive.oilPtuMapping)
 
+    /**
+     * The namespace of the GPX's `openrs:` extension elements: this repository's URL (#390; builds before it declared a URL
+     * under another account). An identifier, not a link: nothing in the app or Sapphire reads it as of this change.
+     */
+    const val GPX_EXTENSION_NAMESPACE = "https://github.com/klexical/openRS_"
+
     fun buildGpx(drive: DriveEntity, points: List<DrivePointEntity>, ts: String): String {
         val isoFmt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply {
             timeZone = TimeZone.getTimeZone("UTC")
@@ -42,7 +48,7 @@ internal object DriveExportBuilder {
             appendLine("""<?xml version="1.0" encoding="UTF-8"?>""")
             appendLine("""<gpx version="1.1" creator="openRS_ v${appVersion}" """)
             appendLine("""    xmlns="http://www.topografix.com/GPX/1/1" """)
-            appendLine("""    xmlns:openrs="https://github.com/klex/openRS_">""")
+            appendLine("""    xmlns:openrs="$GPX_EXTENSION_NAMESPACE">""")
             appendLine("  <metadata>")
             appendLine("    <name>openRS_ Drive $ts</name>")
             appendLine("    <time>${isoFmt.format(Date(drive.startTime))}</time>")
