@@ -180,9 +180,9 @@ paths:
   under one coordinate (AGP's `transform-api`, #482), the entry carries Google's hash with Central's as `also-trust`;
   regenerating in a cloud thread records Central's alone and turns CI red. Sources and javadoc jars are trusted (an IDE fetches them;
   the build never does). Robolectric's android-all jars are downloaded by Robolectric itself, outside this file.
-- **Dependabot (talk-list item 5, owner decision)** — `.github/dependabot.yml` (on main, #481) is held until after stable
-  2.2.7: no Gradle or Actions proposal reaches staging while the outing build is tested. A Dependabot pull request is a
-  proposal: its commits fail the commit-identity check, so a thread re-commits each update as the owner. The owner's
+- **Dependabot (talk-list item 5, owner decision)** — `.github/dependabot.yml` (on main, #481): its staging proposals
+  (Gradle, Actions) stay untouched until after stable 2.2.7, while the outing build is tested; Sapphire's (npm, main) go
+  ahead as normal PRs. A Dependabot pull request is a proposal: its commits fail the commit-identity check, so a thread re-commits each update as the owner. The owner's
   rules for that: each Actions update regenerates `actions.lock` (keep Dependabot's own entries; when its PR does not
   change the lockfile, the round waits for the owner's Mac, where `gh actions-lock --no-narrow` runs); each Gradle update
   regenerates `verification-metadata.xml` in the same commit (above); a Gradle wrapper update changes
