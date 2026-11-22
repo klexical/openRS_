@@ -188,7 +188,7 @@ run_case "a control character in a node's text does not stop the reader" 0 "$APK
 
 # ── Failures, each named ──
 run_case "a tab that does not select after its tap fails" 1 "$APK" FAKE_NO_SELECT=THERMAL \
-  && expect "::error::the THERMAL tab is not selected after its tap (selected: PERF)"
+  && expect "::error::the THERMAL tab is not selected after its tap (selected: PERF; tab flags: DRIVE:0---:1 PERF:1---:1 THERMAL:0---:1 TRIP:0---:1 GARAGE:0---:1)"
 run_case "a restarted process fails" 1 "$APK" FAKE_RESTART_AT=3 \
   && expect "::error::com.openrs.dash.debug restarted on PERF: process 4242 at the start, 5151 now"
 run_case "a process gone after the start fails" 1 "$APK" FAKE_GONE_AT=1 \
@@ -255,15 +255,16 @@ ui_case() {   # ui_case <name> <xml> <expected facts, one per line>
   local got; got=$(python3 -I "$UI" "$WORK/ui.xml" com.openrs.dash.debug 2>&1)
   if [ "$got" = "$3" ]; then echo "PASS $1"; else echo "FAIL $1 — got:"; sed 's/^/    /' <<<"$got"; failures=$((failures + 1)); fi
 }
-ui_case "ui: a tab with an alert badge is found; another app's text never reaches the facts" \
+ui_case "ui: a tab with an alert badge is found; another app's text never reaches the facts, nor counts as the DEMO label" \
 '<hierarchy><node package="com.android.systemui" text="DEMO" bounds="[0,0][10,10]"/><node package="com.openrs.dash.debug" content-desc="PERF tab, alert" selected="true" text="" bounds="[216,2252][432,2348]"/></hierarchy>' \
 'windows=2
 ours=1
 others=com.android.systemui
-demo=1
+demo=0
 whatsnew=none
 tab.PERF=324 2300
-selected=PERF'
+selected=PERF
+tabflags=PERF:1---:1'
 ui_case "ui: a label that only starts with DEMO, and a tab with empty bounds, do not count" \
 '<hierarchy><node package="com.openrs.dash.debug" text="DEMO MODE ON" bounds="[0,0][10,10]"/><node package="com.openrs.dash.debug" content-desc="DRIVE tab" selected="false" bounds="[0,0][0,0]"/></hierarchy>' \
 'windows=2
@@ -271,7 +272,8 @@ ours=2
 others=none
 demo=0
 whatsnew=none
-selected=none'
+selected=none
+tabflags=DRIVE:0---:1'
 ui_case "ui: an odd package name is withheld" \
 '<hierarchy><node package="not a package" text="x" bounds="[0,0][10,10]"/></hierarchy>' \
 'windows=1
@@ -279,7 +281,8 @@ ours=0
 others=<other>
 demo=0
 whatsnew=none
-selected=none'
+selected=none
+tabflags=none'
 ui_case "ui: a dump that is not XML says so, with no text of it" 'ERROR: could not get idle state.' 'unreadable dump (no XML in 32 characters)'
 ui_case "ui: a broken dump gives the parser's position only" '<hierarchy><node text="SECRET-TEXT" </hierarchy>' 'unreadable dump (ParseError at line 1 column 36 of 48 characters)'
 ui_case "ui: text before the XML and a control character are dropped" \
@@ -290,7 +293,8 @@ others=none
 demo=0
 whatsnew=none
 tab.TRIP=756 2300
-selected=TRIP'
+selected=TRIP
+tabflags=TRIP:1---:1'
 
 # ── The workflow's own claims (.github/workflows/emulator-smoke.yml): only the label starts it, read-only token, no
 #    secret, nothing uploaded, no credentials left in the checkout, the nightly's emulator start, then this smoke ──

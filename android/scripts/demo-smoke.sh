@@ -212,7 +212,7 @@ for t in $TABS; do
   tap "on the $t tab" "$xy"
   pause "on $t" "$STEP_S"
   ui "on $t"
-  [ "$(fact selected)" = "$t" ] || fail "the $t tab is not selected after its tap (selected: $(fact selected))"
+  [ "$(fact selected)" = "$t" ] || fail "the $t tab is not selected after its tap (selected: $(fact selected); tab flags: $(fact tabflags))"
   need_demo "on $t"
   alive "on $t"; log_check "on $t"
   echo "Tab $t: selected, DEMO shown, process $PID1, log clean"

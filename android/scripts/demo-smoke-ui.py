@@ -6,10 +6,13 @@ The facts use a fixed vocabulary only, so no text from the screen reaches the ru
   ours=<n>                  the number of nodes of <package> (0: none of the app's windows is in the dump)
   others=<pkg,...>|none     the other packages with nodes in the dump (the system bars' own, a dialog of another app),
                             names of the form a.b.c only
-  demo=<0|1>                1 when a node's text or content-desc is the header's demo label: "DEMO" or "DEMO · <link>"
+  demo=<0|1>                1 when a node of <package> has the header's demo label as text or content-desc: "DEMO" or
+                            "DEMO · <link>"
   whatsnew=<x> <y>|none     the centre of the What's New dialog's GOT IT button, when it is shown
   tab.<NAME>=<x> <y>        the centre of each bottom-nav tab found (content-desc "<NAME> tab" or "<NAME> tab, alert")
   selected=<NAME>|none      the tab whose node is selected (Compose's `selected` semantics), or none
+  tabflags=<NAME>:<ssss>:<n> ...|none  each tab's selected, checked, checkable and focused attributes (1 true, 0 false,
+                            - absent) and the number of nodes with its description, for a tab not read as selected
 A dump that is not XML exits 2 with the parser's error class and position only (never the dump's text).
 """
 import re
@@ -17,6 +20,8 @@ import sys
 import xml.etree.ElementTree as ET
 
 TABS = ("DRIVE", "PERF", "THERMAL", "TRIP", "GARAGE")
+FLAGS = ("selected", "checked", "checkable", "focused")
+FLAG_CODE = {"true": "1", "false": "0", None: "-"}
 TAB_DESC = re.compile(r"(%s) tab(, alert)?" % "|".join(TABS))
 DEMO = re.compile("DEMO( \u00b7 [A-Z]{2,8})?")   # the pill: "DEMO", or "DEMO \u00b7 RCN" during LOSS
 PKG = re.compile(r"[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z0-9_]+)+")
@@ -62,16 +67,21 @@ def main(argv):
     ours = sum(1 for n in nodes if n.get("package") == package)
     others = sorted({n.get("package", "") for n in nodes} - {package})
     others = [o if PKG.fullmatch(o) else "<other>" for o in others]
-    demo = any(DEMO.fullmatch(n.get("text", "")) or DEMO.fullmatch(n.get("content-desc", "")) for n in nodes)
+    demo = any(n.get("package") == package and (DEMO.fullmatch(n.get("text", "")) or DEMO.fullmatch(n.get("content-desc", "")))
+               for n in nodes)
     whatsnew = "none"
     tabs = {}
     selected = "none"
+    seen, flags = {}, {}
     for n in nodes:
         if whatsnew == "none" and n.get("text") == "GOT IT":
             # The button's own node when Compose merges the label into it; else the label's (inside the button)
             whatsnew = centre(n) or "none"
         m = TAB_DESC.fullmatch(n.get("content-desc", ""))
+        if m:
+            seen[m.group(1)] = seen.get(m.group(1), 0) + 1
         if m and m.group(1) not in tabs:
+            flags[m.group(1)] = "".join(FLAG_CODE.get(n.get(a), "?") for a in FLAGS)
             c = centre(n)
             if c:
                 tabs[m.group(1)] = c
@@ -86,6 +96,9 @@ def main(argv):
         if t in tabs:
             print("tab.%s=%s" % (t, tabs[t]))
     print("selected=%s" % selected)
+    # For a tab that is not read as selected: each tab's selected / checked / checkable / focused attributes (1 true,
+    # 0 false, - absent) and how many nodes carry its description
+    print("tabflags=%s" % (" ".join("%s:%s:%d" % (t, flags[t], seen[t]) for t in TABS if t in flags) or "none"))
     return 0
 
 
