@@ -149,6 +149,20 @@ class UnitsRegionTest {
         assertEquals(Region.CUSTOM, p.region)
     }
 
+    @Test fun `tie - km per h, F, psi, psi goes to Canada, which matches the speed unit`() {
+        // US and Canada both match 3 of 4 and neither matches speed and temperature; the speed unit decides (owner),
+        // so economy stays L/100 km and distance km beside km/h
+        val p = existing("KPH", "F", "PSI", "PSI")
+        assertMigrated(p, listOf("KPH", "F", "PSI", "PSI"), Region.CANADA)
+        assertEquals(UnitIds.L100KM, p.economyUnit)
+        assertEquals(UnitIds.M, p.altitudeUnit)
+        assertEquals(UnitIds.L, p.fuelUnit)
+        assertEquals(Region.CUSTOM, p.region)
+        // the same tie with boost in kPa
+        prefs.edit(commit = true) { clear() }
+        assertMigrated(existing("KPH", "F", "KPA", "PSI"), listOf("KPH", "F", "KPA", "PSI"), Region.CANADA)
+    }
+
     @Test fun `mph, C, bar, bar goes to Europe and international, 3 of 4, so L per 100 km beside mph`() {
         val p = existing("MPH", "C", "BAR", "BAR")
         assertMigrated(p, listOf("MPH", "C", "BAR", "BAR"), Region.EUROPE)

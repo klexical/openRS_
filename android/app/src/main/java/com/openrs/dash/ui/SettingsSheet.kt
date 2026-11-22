@@ -1,5 +1,6 @@
 package com.openrs.dash.ui
 
+import com.openrs.dash.ui.units.tempDeltaText
 import com.openrs.dash.ui.units.UnitIds
 import com.openrs.dash.ui.units.Region
 import com.openrs.dash.ui.units.UnitSet
@@ -551,8 +552,8 @@ fun SettingsDialog(
                 Spacer(Modifier.height(6.dp))
                 SettingsNote(
                     "Order: warm-up < warning < critical. Critical must be more than " +
-                        "${if (tempUnit == "C") "2 °C" else "3.6 °F"} above warning and warning more than " +
-                        "${if (tempUnit == "C") "3 °C" else "5.4 °F"} above warm-up, so the existing recovery " +
+                        "${tempDeltaText(tempUnit, HEAT_MARGIN_C)} above warning and warning more than " +
+                        "${tempDeltaText(tempUnit, HEAT_MARGIN_C + WARM_MARGIN_C)} above warm-up, so the existing recovery " +
                         "margins still work. Freshness, hold times and forecasts don't change. SAVE applies, CANCEL discards."
                 )
             }

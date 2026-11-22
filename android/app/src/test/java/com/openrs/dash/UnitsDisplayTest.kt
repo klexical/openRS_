@@ -9,7 +9,10 @@ import com.openrs.dash.data.VehicleState
 import com.openrs.dash.data.resolveValue
 import com.openrs.dash.demo.DemoScenario
 import com.openrs.dash.demo.TripPreview
+import com.openrs.dash.diagnostics.DiagnosticLogger
+import com.openrs.dash.diagnostics.DiagnosticReportBuilder
 import com.openrs.dash.diagnostics.DriveExportBuilder
+import com.openrs.dash.service.HudOverlayService
 import com.openrs.dash.ui.Level
 import com.openrs.dash.ui.TempAvail
 import com.openrs.dash.ui.TyreThreshold
@@ -28,17 +31,22 @@ import com.openrs.dash.ui.perfPeakBoostText
 import com.openrs.dash.ui.tempLevel
 import com.openrs.dash.ui.tipText
 import com.openrs.dash.ui.trip.fixReadout
+import com.openrs.dash.ui.trip.wheelSpeedCells
 import com.openrs.dash.ui.units.Region
 import com.openrs.dash.ui.units.UnitIds
+import com.openrs.dash.ui.units.altitudeM
 import com.openrs.dash.ui.units.temp
+import com.openrs.dash.ui.units.tempDeltaText
 import com.openrs.dash.ui.units.withUnits
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.json.JSONObject
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 
 /**
  * #464, one test per audit row on the production formatter or page path: a metric preset shows bar / hPa abs / m / °C /
@@ -180,9 +188,89 @@ class UnitsDisplayTest {
         assertEquals("62 mph", formatWheelSpeed(100.0, us))
     }
 
+    // TRIP's slip Δ printed km/h values under an mph label (found with #464): it converts, and its colour bands keep
+    // comparing km/h
+    @Test fun `TRIP slip delta shows the speed unit and bands on km per h`() {
+        val vs = VehicleState(isConnected = true, wheelSpeedFL = 100.0, wheelSpeedFR = 100.0,
+            wheelSpeedRL = 90.0, wheelSpeedRR = 90.0)
+        val mph = wheelSpeedCells(vs, us, live = true, showSlipDelta = true, placeholder = "—")
+        assertEquals(listOf("F-R", "L-R", "FL-RL", "FR-RR"), mph.map { it.first })
+        assertEquals(listOf("6.2", "0.0", "6.2", "6.2"), mph.map { it.second })
+        assertEquals(listOf(10.0, 0.0, 10.0, 10.0), mph.map { it.third })
+        val kmh = wheelSpeedCells(vs, eu, live = true, showSlipDelta = true, placeholder = "—")
+        assertEquals(listOf("10.0", "0.0", "10.0", "10.0"), kmh.map { it.second })
+        assertEquals(mph.map { it.third }, kmh.map { it.third })
+        // Wheel speeds in the speed unit, no band; offline every cell is the placeholder
+        assertEquals(listOf("62", "62", "56", "56"),
+            wheelSpeedCells(vs, us, live = true, showSlipDelta = false, placeholder = "—").map { it.second })
+        assertEquals(List(4) { "—" }, wheelSpeedCells(vs, us, live = false, showSlipDelta = true, placeholder = "—").map { it.second })
+    }
+
+    @Test fun `a value that rounds to zero never prints as -0`() {
+        assertEquals("0 m", eu.altitudeM(-0.3).text)          // TRIP ALT just below sea level
+        assertEquals("0 ft", us.altitudeM(-0.1).text)
+        assertEquals("-1 m", eu.altitudeM(-0.6).text)
+    }
+
+    @Test fun `a fuel difference that rounds to zero shows no text, else a signed difference`() {
+        assertEquals("", com.openrs.dash.ui.trip.fuelUsedCompare(1.20, 1.23, eu).delta)
+        assertEquals("+0.1 L", com.openrs.dash.ui.trip.fuelUsedCompare(1.2, 1.3, eu).delta)
+        assertEquals("-0.1 L", com.openrs.dash.ui.trip.fuelUsedCompare(1.3, 1.2, eu).delta)
+    }
+
+    @Test fun `the thermal margins note reads in the chosen temperature unit`() {
+        assertEquals(listOf("2 °C", "3 °C", "3.6 °F", "5.4 °F"),
+            listOf(tempDeltaText("C", 2.0), tempDeltaText("C", 3.0), tempDeltaText("F", 2.0), tempDeltaText("F", 3.0)))
+    }
+
+    // Row 13: the HUD's first frame hard-coded "PSI" and a bare "°" before the first state arrived
+    @Test fun `row 13 - the HUD first frame speaks the boost and temperature units`() {
+        val res = RuntimeEnvironment.getApplication().resources
+        assertEquals(Triple("BOOST: --- bar", "RPM: ----", "OIL: ---°C"), HudOverlayService.startLines(res, eu))
+        assertEquals(Triple("BOOST: --- psi", "RPM: ----", "OIL: ---°F"), HudOverlayService.startLines(res, us))
+        assertFalse(HudOverlayService.startLines(res, UserPrefs()).third.endsWith("°"))
+    }
+
     // Row 15: the demo's scenario line named a speed in km/h for every user
     @Test fun `row 15 - the demo scenario line names no unit`() {
         assertFalse(DemoScenario.DRIVING.blurb.contains("km/h"))
+    }
+
+    // ── The diagnostic export's settings block (#464: additive, the one place the PR changes what leaves the phone) ──
+
+    @Test fun `diagnostic export adds Region and the seven units, and nothing else`() {
+        DiagnosticLogger.sessionStart("test", 0, prefs = uk)
+        try {
+            val settings = JSONObject(DiagnosticReportBuilder.buildDetailJson("t")).getJSONObject("settings")
+            val before = setOf("speedUnit", "tempUnit", "boostUnit", "tireUnit", "tireLowPsi", "screenOn",
+                "autoReconnect", "reconnectIntervalSec")
+            val added = setOf("unitRegion", "engineUnit", "airUnit", "altitudeUnit", "fuelUnit", "economyUnit",
+                "torqueUnit", "mixtureUnit")
+            assertEquals(before + added, settings.keys().asSequence().toSet())
+            assertEquals(
+                listOf("UK", "BAR", "HPA", "FT", "L", "MPG_UK", "NM", "AFR"),
+                added.map { settings.getString(it) },
+            )
+            assertEquals(listOf("MPH", "C", "PSI", "PSI"),
+                listOf("speedUnit", "tempUnit", "boostUnit", "tireUnit").map { settings.getString(it) })
+
+            val text = DiagnosticReportBuilder.buildSummaryText("t").lines()
+            val from = text.indexOfFirst { it.startsWith("─── SETTINGS") }
+            assertEquals(
+                listOf("  Speed     : MPH", "  Temp      : C", "  Boost     : PSI", "  Tires     : PSI",
+                    "  Region    : UK", "  Engine    : BAR", "  Air       : HPA", "  Altitude  : FT", "  Fuel      : L",
+                    "  Economy   : MPG_UK", "  Torque    : NM", "  Mixture   : AFR",
+                    "  TireLow   : ${uk.tireLowPsi} PSI", "  AutoRecon : ${uk.autoReconnect} / ${uk.reconnectIntervalSec}s", ""),
+                text.subList(from + 1, from + 16),
+            )
+
+            // A hand-changed unit reads Custom
+            DiagnosticLogger.sessionStart("test", 0, prefs = uk.copy(torqueUnit = UnitIds.LBFT))
+            assertEquals("CUSTOM",
+                JSONObject(DiagnosticReportBuilder.buildDetailJson("t")).getJSONObject("settings").getString("unitRegion"))
+        } finally {
+            DiagnosticLogger.sessionStart("test", 0, prefs = null)
+        }
     }
 
     // ── Warnings fire at the same physical value in every unit ──────────────────────────────────────────────────

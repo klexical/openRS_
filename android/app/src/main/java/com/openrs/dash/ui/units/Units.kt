@@ -98,14 +98,18 @@ enum class Region(val label: String) {
         /**
          * An existing user's units after the update (owner's rule, #464): the four original choices are kept exactly;
          * the seven added units come from the preset that matches most of those four. A tie goes to the preset that
-         * matches speed and temperature; a remaining tie to the first in [PRESETS]' order.
+         * matches the speed unit, so economy and distance follow the speed the user chose (owner: km/h, °F, psi, psi
+         * goes to Canada, not US); then to the one that also matches temperature; a remaining tie to the first in
+         * [PRESETS]' order.
          */
         fun unitsForExisting(speed: String, temp: String, boost: String, tyre: String): UnitSet {
             fun score(u: UnitSet) = listOf(u.speed == speed, u.temp == temp, u.boost == boost, u.tyre == tyre).count { it }
             fun speedAndTemp(u: UnitSet) = u.speed == speed && u.temp == temp
             val best = PRESETS.values.maxWith(
-                compareBy<UnitSet> { score(it) }.thenBy { if (speedAndTemp(it)) 1 else 0 }
-                    // maxWith keeps the LAST of equal elements; reverse list order so the first preset wins a tie
+                compareBy<UnitSet> { score(it) }
+                    .thenBy { if (it.speed == speed) 1 else 0 }
+                    .thenBy { if (speedAndTemp(it)) 1 else 0 }
+                    // an earlier preset ranks higher, so list order breaks a remaining tie
                     .thenByDescending { PRESETS.values.indexOf(it) }
             )
             return best.copy(speed = speed, temp = temp, boost = boost, tyre = tyre)
@@ -163,7 +167,7 @@ object UnitSearch {
     val TPMS = listOf("tpms", "tire", "tyre", "pressure", "low", "warn", "high", "psi", "bar", "kpa")
 }
 
-/** Conversion factors from the stored units (#464 spec). */
+/** Conversion factors from the stored units (#464). */
 object UnitFactors {
     const val KM_TO_MI = 0.621371
     const val KPA_TO_PSI = 0.14503773
@@ -180,7 +184,11 @@ object UnitFactors {
     const val STOICH_AFR = 14.7
 }
 
-private fun f(decimals: Int, v: Double) = "%.${decimals}f".format(v)
+/** [v] to [decimals] places in the phone's locale; a value that rounds to zero never prints as "-0". */
+private fun f(decimals: Int, v: Double): String {
+    val s = "%.${decimals}f".format(v)
+    return if (s.startsWith("-") && s.none { it in '1'..'9' }) s.substring(1) else s
+}
 
 // ── Speed & distance (stored km/h, km) ────────────────────────────────────────────────────────────────────────────
 
@@ -220,6 +228,16 @@ fun UserPrefs.tempIn(c: Double): Double = if (tempUnit == UnitIds.C) c else c * 
 
 /** A temperature difference in the shown unit (× 1.8, no offset). */
 fun UserPrefs.tempDeltaIn(dc: Double): Double = if (tempUnit == UnitIds.C) dc else dc * 9.0 / 5.0
+
+/**
+ * A temperature difference for prose, in the unit with id [tempUnitId] (Settings' staged choice): "2 °C" or "3.6 °F",
+ * with a decimal only where the converted value needs one.
+ */
+fun tempDeltaText(tempUnitId: String, dc: Double): String {
+    val v = if (tempUnitId == UnitIds.C) dc else dc * 9.0 / 5.0
+    val d = if (kotlin.math.abs(v - Math.round(v)) < 1e-9) 0 else 1
+    return f(d, v) + " " + if (tempUnitId == UnitIds.C) UnitText.DEG_C else UnitText.DEG_F
+}
 
 /** A temperature, 0 decimals; the value and unit join with no space ("90°C"), as every screen printed them. */
 fun UserPrefs.temp(c: Double): String = f(0, tempIn(c)) + tempUnitText

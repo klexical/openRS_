@@ -1076,27 +1076,7 @@ private fun LiveHud(
                         }
                         Row(Modifier.fillMaxWidth()) {
                             val vs = vehicleState
-                            // (label, shown value, slip in km/h). Slip shows in the speed unit (#464); its bands
-                            // compare the stored km/h, so they fire at the same physical slip in either unit.
-                            val cells: List<Triple<String, String, Double>> = when {
-                                !live -> listOf("FL", "FR", "RL", "RR").map { Triple(it, ph, 0.0) }
-                                showSlipDelta -> {
-                                    val frontAvg = (vs.wheelSpeedFL + vs.wheelSpeedFR) / 2.0
-                                    val rearAvg = (vs.wheelSpeedRL + vs.wheelSpeedRR) / 2.0
-                                    val leftAvg = (vs.wheelSpeedFL + vs.wheelSpeedRL) / 2.0
-                                    val rightAvg = (vs.wheelSpeedFR + vs.wheelSpeedRR) / 2.0
-                                    listOf(
-                                        "F-R" to kotlin.math.abs(frontAvg - rearAvg),
-                                        "L-R" to kotlin.math.abs(leftAvg - rightAvg),
-                                        "FL-RL" to kotlin.math.abs(vs.wheelSpeedFL - vs.wheelSpeedRL),
-                                        "FR-RR" to kotlin.math.abs(vs.wheelSpeedFR - vs.wheelSpeedRR),
-                                    ).map { (l, kph) -> Triple(l, prefs.speedDelta(kph).value, kph) }
-                                }
-                                else -> listOf(
-                                    Triple("FL", prefs.displaySpeed(vs.wheelSpeedFL), 0.0), Triple("FR", prefs.displaySpeed(vs.wheelSpeedFR), 0.0),
-                                    Triple("RL", prefs.displaySpeed(vs.wheelSpeedRL), 0.0), Triple("RR", prefs.displaySpeed(vs.wheelSpeedRR), 0.0),
-                                )
-                            }
+                            val cells = wheelSpeedCells(vs, prefs, live, showSlipDelta, ph)
                             cells.forEach { (label, value, slipKph) ->
                                 // Slip keeps its existing bands (> 2 amber, > 5 orange, km/h); in range reads in ink, not green.
                                 val d = if (showSlipDelta && live) slipKph else 0.0
@@ -1833,3 +1813,34 @@ internal fun tripDot(
     // Strictly after: a fetch asked for in the drive's start millisecond cannot be shown to be after it, and the safe
     // answer is no dot (a pre-drive position drawn as current is what #311 removes)
     else idle?.takeIf { idleFetchedAtMs > state.startTime }
+
+/**
+ * TRIP's wheel-speed panel: (label, shown value, slip in km/h) per cell. Slip shows in the speed unit (#464); its
+ * colour bands compare the stored km/h (the third value), so they fire at the same physical slip in either unit.
+ * Wheel speeds carry 0.0 there: they take no band. Offline cells all read [placeholder].
+ */
+internal fun wheelSpeedCells(
+    vs: VehicleState,
+    prefs: UserPrefs,
+    live: Boolean,
+    showSlipDelta: Boolean,
+    placeholder: String,
+): List<Triple<String, String, Double>> = when {
+    !live -> listOf("FL", "FR", "RL", "RR").map { Triple(it, placeholder, 0.0) }
+    showSlipDelta -> {
+        val frontAvg = (vs.wheelSpeedFL + vs.wheelSpeedFR) / 2.0
+        val rearAvg = (vs.wheelSpeedRL + vs.wheelSpeedRR) / 2.0
+        val leftAvg = (vs.wheelSpeedFL + vs.wheelSpeedRL) / 2.0
+        val rightAvg = (vs.wheelSpeedFR + vs.wheelSpeedRR) / 2.0
+        listOf(
+            "F-R" to kotlin.math.abs(frontAvg - rearAvg),
+            "L-R" to kotlin.math.abs(leftAvg - rightAvg),
+            "FL-RL" to kotlin.math.abs(vs.wheelSpeedFL - vs.wheelSpeedRL),
+            "FR-RR" to kotlin.math.abs(vs.wheelSpeedFR - vs.wheelSpeedRR),
+        ).map { (l, kph) -> Triple(l, prefs.speedDelta(kph).value, kph) }
+    }
+    else -> listOf(
+        Triple("FL", prefs.displaySpeed(vs.wheelSpeedFL), 0.0), Triple("FR", prefs.displaySpeed(vs.wheelSpeedFR), 0.0),
+        Triple("RL", prefs.displaySpeed(vs.wheelSpeedRL), 0.0), Triple("RR", prefs.displaySpeed(vs.wheelSpeedRR), 0.0),
+    )
+}

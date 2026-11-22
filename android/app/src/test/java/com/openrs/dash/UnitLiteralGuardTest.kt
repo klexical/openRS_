@@ -47,6 +47,20 @@ class UnitLiteralGuardTest {
         assertEquals(0, violations("val a = \"TPMS \${age}m ago\"").size)
     }
 
+    @Test fun `the guard reads strings inside a template and decodes escapes`() {
+        // The shapes the old code spelled units in (DriveSummarySheet's "${if (mpg) "MPG" else "L/100"}") and the
+        // escaped degree sign (DashLayout writes \u00B0); each must fail.
+        assertEquals(listOf(listOf("PSI")), violations("val a = \"\$v PSI\"").map { it.third })
+        assertEquals(listOf(listOf("MPG"), listOf("L/100")),
+            violations("val a = \"%.1f \${if (m) \"MPG\" else \"L/100\"}\"").map { it.third })
+        assertEquals(listOf(listOf("°C")), violations("val a = \"\${t}\\u00B0C\"").map { it.third })
+        assertEquals(listOf(listOf("°F")), violations("val a = \"\${\"%.0f\".format(t)}\\u00B0F\"").map { it.third })
+        // A char literal '\u00B0' keeps the scanner in step, so the next string is still read.
+        assertEquals(listOf(listOf("kPa")), violations("val c = '\\u00B0'; val a = \"\$v kPa\"").map { it.third })
+        // A template still supplies no unit text, and a word inside one stays a word.
+        assertEquals(0, violations("val a = \"\${label(\"bar\")} \$v\"").size)
+    }
+
     companion object {
         val LONG = listOf("psi", "PSI", "kPa", "KPA", "km/h", "KM/H", "kph", "KPH", "mph", "MPH", "°C", "°F", "L/100",
             "MPG", "Nm", "lb·ft", "lb-ft", "hPa", "inHg", "L/hr", "L/h", "MPa", "gal")
@@ -72,60 +86,68 @@ class UnitLiteralGuardTest {
 
         /**
          * The string literals of Kotlin [src] with their line, comments skipped. A template (`${…}` or `$name`) reads as
-         * one placeholder character, so a template never supplies unit text and a string inside one is not read.
+         * one placeholder character in its string, so a template never supplies unit text to the string around it; a
+         * string inside a `${…}` is read as a literal of its own (`"${if (m) "MPG" else "L/100"}"`). Escapes are decoded
+         * before matching, so `"\u00B0C"` reads as °C.
          */
-        fun literals(src: String): List<Pair<Int, String>> {
+        fun literals(src: String): List<Pair<Int, String>> = LiteralScanner(src).run { code(0, inTemplate = false); out }
+
+        private class LiteralScanner(private val src: String) {
             val out = mutableListOf<Pair<Int, String>>()
-            var i = 0
-            val n = src.length
-            fun lineAt(k: Int) = src.substring(0, k).count { it == '\n' } + 1
-            fun skipTemplate(start: Int): Int {          // start = index after "${"; returns index after the closing }
-                var k = start
+            private val n = src.length
+            private fun lineAt(k: Int) = src.substring(0, k).count { it == '\n' } + 1
+
+            /** Code from [start]; in a template, up to its closing } (returns the index after it), else to the end. */
+            fun code(start: Int, inTemplate: Boolean): Int {
+                var i = start
                 var depth = 1
-                while (k < n && depth > 0) {
-                    when (src[k]) {
-                        '{' -> depth++
-                        '}' -> depth--
-                        '"' -> { k++; while (k < n && src[k] != '"') { if (src[k] == '\\') k++; k++ } }
+                while (i < n) {
+                    when {
+                        src.startsWith("//", i) -> { val j = src.indexOf('\n', i); i = if (j < 0) n else j }
+                        src.startsWith("/*", i) -> { val j = src.indexOf("*/", i + 2); i = if (j < 0) n else j + 2 }
+                        src[i] == '\'' -> i = charEnd(i)
+                        src.startsWith("\"\"\"", i) -> i = string(i, raw = true)
+                        src[i] == '"' -> i = string(i, raw = false)
+                        inTemplate && src[i] == '{' -> { depth++; i++ }
+                        inTemplate && src[i] == '}' -> { depth--; i++; if (depth == 0) return i }
+                        else -> i++
                     }
-                    k++
                 }
-                return k
+                return i
             }
-            while (i < n) {
-                when {
-                    src.startsWith("//", i) -> { val j = src.indexOf('\n', i); i = if (j < 0) n else j }
-                    src.startsWith("/*", i) -> { val j = src.indexOf("*/", i + 2); i = if (j < 0) n else j + 2 }
-                    src[i] == '\'' -> { i += if (i + 1 < n && src[i + 1] == '\\') 4 else 3 }
-                    src.startsWith("\"\"\"", i) -> {
-                        val j = src.indexOf("\"\"\"", i + 3).let { if (it < 0) n else it }
-                        out += lineAt(i) to raw(src.substring(i + 3, j))
-                        i = j + 3
-                    }
-                    src[i] == '"' -> {
-                        val line = lineAt(i)
-                        val buf = StringBuilder()
-                        var j = i + 1
-                        while (j < n && src[j] != '"') {
-                            when {
-                                src[j] == '\\' -> { buf.append(src, j, minOf(j + 2, n)); j += 2 }
-                                src.startsWith("\${", j) -> { buf.append(TEMPLATE); j = skipTemplate(j + 2) }
-                                src[j] == '$' && j + 1 < n && (src[j + 1].isLetter() || src[j + 1] == '_') -> {
-                                    buf.append(TEMPLATE); j++
-                                    while (j < n && (src[j].isLetterOrDigit() || src[j] == '_')) j++
-                                }
-                                else -> { buf.append(src[j]); j++ }
+
+            /** The index after the char literal opening at [i]: 'x', '\n' or '\uXXXX'. */
+            private fun charEnd(i: Int): Int = when {
+                i + 1 < n && src[i + 1] == '\\' -> if (i + 2 < n && src[i + 2] == 'u') i + 8 else i + 4
+                else -> i + 3
+            }
+
+            /** Reads the string opening at [i], records it, and returns the index after its closing quote. */
+            private fun string(i: Int, raw: Boolean): Int {
+                val line = lineAt(i)
+                val buf = StringBuilder()
+                val close = if (raw) "\"\"\"" else "\""
+                var j = i + close.length
+                while (j < n && !src.startsWith(close, j)) {
+                    when {
+                        !raw && src[j] == '\\' && j + 1 < n -> {
+                            if (src[j + 1] == 'u' && j + 5 < n) {
+                                buf.append(src.substring(j + 2, j + 6).toIntOrNull(16)?.toChar() ?: '?'); j += 6
+                            } else {
+                                buf.append(when (val e = src[j + 1]) { 'n', 't', 'r', 'b' -> ' '; else -> e }); j += 2
                             }
                         }
-                        out += line to buf.toString()
-                        i = j + 1
+                        src.startsWith("\${", j) -> { buf.append(TEMPLATE); j = code(j + 2, inTemplate = true) }
+                        src[j] == '$' && j + 1 < n && (src[j + 1].isLetter() || src[j + 1] == '_') -> {
+                            buf.append(TEMPLATE); j++
+                            while (j < n && (src[j].isLetterOrDigit() || src[j] == '_')) j++
+                        }
+                        else -> { buf.append(src[j]); j++ }
                     }
-                    else -> i++
                 }
+                out += line to buf.toString()
+                return minOf(n, j + close.length)
             }
-            return out
         }
-
-        private fun raw(s: String) = s.replace(Regex("""\$\{[^}]*}|\$[A-Za-z_]\w*"""), TEMPLATE)
     }
 }

@@ -20,12 +20,12 @@ import com.openrs.dash.ui.units.tyreUnitText
  * User-configurable display and connection preferences.
  * Observable via [UserPrefsStore.prefs] so all Compose UI reacts to changes instantly.
  */
-/** Unit conversion constants — shared across UI. */
+/** The older names of four of [com.openrs.dash.ui.units.UnitFactors]' factors, kept for their callers; one set of numbers. */
 object UnitConversions {
-    const val KM_TO_MI = 0.621371
-    const val STD_ATM_KPA = 101.325
-    const val KPA_TO_PSI = 0.14503773
-    const val PSI_TO_BAR = 0.0689476
+    const val KM_TO_MI = com.openrs.dash.ui.units.UnitFactors.KM_TO_MI
+    const val STD_ATM_KPA = com.openrs.dash.ui.units.UnitFactors.STD_ATM_KPA
+    const val KPA_TO_PSI = com.openrs.dash.ui.units.UnitFactors.KPA_TO_PSI
+    const val PSI_TO_BAR = com.openrs.dash.ui.units.UnitFactors.PSI_TO_BAR
 }
 
 data class UserPrefs(
