@@ -5,15 +5,20 @@
 # A Dependabot pull request is a proposal, never merged as it stands: its commits are authored by dependabot[bot], so
 # the required commit-identity check fails it (.github/scripts/check-commit-identity.sh). A thread re-commits the change
 # on its own branch as the owner, with whatever else the update needs in the same commit:
-#   - Gradle: regenerate android/gradle/verification-metadata.xml (.claude/rules/build-release.md, "Dependency
-#     verification"); Dependabot does not update it, so its own pull request fails the build.
-#   - Actions: keep Dependabot's actions.lock entries (it regenerates them; never edit by hand), and update the pins in
+#   - Gradle (plugins, libraries and the Gradle wrapper in android/gradle/wrapper/): regenerate
+#     android/gradle/verification-metadata.xml (.claude/rules/build-release.md, "Dependency verification"); Dependabot
+#     does not update it, so its own pull request fails the build. An Android Gradle plugin bump also rereads the lint
+#     pin in android/gradle.properties (build-release.md, "Lint version is pinned above AGP").
+#   - Actions: first check that Dependabot's pull request changes .github/workflows/actions.lock; if it does not, the
+#     round waits for the owner's Mac, where `gh actions-lock --no-narrow` can run. Keep Dependabot's actions.lock
+#     entries (it regenerates them; never edit by hand), and update the pins in
 #     .github/scripts/test-review-workflows.rb (RESTORED_AT, re-read at the new claude-code-action commit) and, on
 #     staging, android/scripts/test-release-workflows.rb. A change to nightly.yml or release-apk.yml is owner-only;
 #     nightly.yml is a twin, so its two rounds (staging, main) land together.
 # Dependabot then closes its own pull request once the update is on the target branch.
 #
-# Security updates are a repository setting and always target main; this file covers version updates only.
+# Security updates are a repository setting and always target main; this file covers version updates only. A
+# security pull request for android/ is rebuilt on staging the same way, never merged into main.
 
 version: 2
 
@@ -28,9 +33,10 @@ updates:
     cooldown:
       default-days: 7
     open-pull-requests-limit: 5
-    labels: [dependencies]
+    labels: [ci]
     groups:
-      # Kotlin, its Compose compiler plugin and KSP are released in step (KSP's version starts with Kotlin's).
+      # Kotlin, its Compose compiler plugin and KSP are released in step (KSP's version starts with Kotlin's);
+      # the pattern also takes kotlinx (coroutines), which follows Kotlin's releases.
       kotlin:
         patterns:
           - "org.jetbrains.kotlin*"
@@ -56,7 +62,7 @@ updates:
     cooldown:
       default-days: 7
     open-pull-requests-limit: 5
-    labels: [dependencies]
+    labels: [ci]
     groups:
       web-minor-patch:
         update-types: [minor, patch]
@@ -70,7 +76,7 @@ updates:
       day: monday
     cooldown:
       default-days: 7
-    labels: [dependencies]
+    labels: [ci]
     groups:
       actions:
         patterns: ["*"]
@@ -83,7 +89,7 @@ updates:
       day: monday
     cooldown:
       default-days: 7
-    labels: [dependencies]
+    labels: [ci]
     groups:
       actions:
         patterns: ["*"]
