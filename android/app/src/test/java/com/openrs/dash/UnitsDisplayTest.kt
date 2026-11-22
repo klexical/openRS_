@@ -85,8 +85,8 @@ class UnitsDisplayTest {
         assertEquals("65 psi", lpFuelText(us, 450.0))
     }
 
-    // Row 4: POWER BARO (stored kPa absolute) — said absolute in every unit
-    @Test fun `row 4 - baro follows the air-pressure unit and says abs`() {
+    // Row 4: POWER BARO (stored kPa absolute) — its label says absolute, in every unit
+    @Test fun `row 4 - baro follows the air-pressure unit and its label says abs`() {
         assertEquals("BARO ABS", com.openrs.dash.ui.BARO_LABEL)   // the label says abs; the value keeps one line
         assertEquals("1013 hPa", baroText(eu, 101.3))
         assertEquals("101.3 kPa", baroText(canada, 101.3))
@@ -213,6 +213,9 @@ class UnitsDisplayTest {
         assertEquals("0 m", eu.altitudeM(-0.3).text)          // TRIP ALT just below sea level
         assertEquals("0 ft", us.altitudeM(-0.1).text)
         assertEquals("-1 m", eu.altitudeM(-0.6).text)
+        // Negative zero itself (0.0 × a negative, or a difference of equal negatives) prints as zero too
+        assertEquals("0 m", eu.altitudeM(-0.0).text)
+        assertEquals("0°C", eu.temp(0.0 * -5))
     }
 
     @Test fun `in a locale with its own digits, negatives keep their sign and zero is never -0`() {

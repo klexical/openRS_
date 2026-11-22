@@ -67,7 +67,7 @@ enum class Region(val label: String) {
     val units: UnitSet? get() = PRESETS[this]
 
     companion object {
-        /** The presets, in the list order that also breaks a migration tie. */
+        /** The presets, in the Region picker's order. */
         val PRESETS: Map<Region, UnitSet> = linkedMapOf(
             EUROPE to UnitSet(UnitIds.KPH, UnitIds.C, UnitIds.BAR, UnitIds.BAR, UnitIds.BAR, UnitIds.HPA, UnitIds.M,
                 UnitIds.L, UnitIds.L100KM, UnitIds.NM, UnitIds.AFR),
@@ -177,12 +177,12 @@ object UnitFactors {
 }
 
 /**
- * [v] to [decimals] places in the phone's locale; a value that rounds to zero never prints as "-0". The zero test is on
- * the number (half-up, as the formatter rounds), never the text, so a locale with its own digits or minus sign keeps
- * every real sign.
+ * [v] to [decimals] places in the phone's locale; a value that rounds to zero (negative zero included) never prints as
+ * "-0". The zero test is on the number (half-up, as the formatter rounds), never the text, so a locale with its own
+ * digits or minus sign keeps every real sign.
  */
 private fun f(decimals: Int, v: Double): String {
-    val zero = v < 0 && v.isFinite() && java.math.BigDecimal.valueOf(v).setScale(decimals, java.math.RoundingMode.HALF_UP).signum() == 0
+    val zero = v <= 0 && v.isFinite() && java.math.BigDecimal.valueOf(v).setScale(decimals, java.math.RoundingMode.HALF_UP).signum() == 0
     return "%.${decimals}f".format(if (zero) 0.0 else v)
 }
 

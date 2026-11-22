@@ -142,9 +142,10 @@ class UnitsFitTest {
             }
         }
         return baro to shown.first { it.text == baro && !it.clickable }.lines
+            .also { assertEquals("label at font $fontScale", 1, shown.first { it.text == com.openrs.dash.ui.BARO_LABEL }.lines) }
     }
 
-    @Test fun `POWER BARO is one line in every air unit at 360 dp`() {
+    @Test fun `POWER BARO - label and value are one line each in every air unit at 360 dp`() {
         for (scale in listOf(1.0f, 1.3f)) for (air in listOf(UnitIds.INHG, UnitIds.HPA, UnitIds.KPA)) {
             val (text, lines) = baroLines(scale, air)
             assertEquals("BARO \"$text\" at font $scale", 1, lines)
