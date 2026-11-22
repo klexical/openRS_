@@ -87,9 +87,10 @@ class UnitsDisplayTest {
 
     // Row 4: POWER BARO (stored kPa absolute) — said absolute in every unit
     @Test fun `row 4 - baro follows the air-pressure unit and says abs`() {
-        assertEquals("1013 hPa abs", baroText(eu, 101.3))
-        assertEquals("101.3 kPa abs", baroText(canada, 101.3))
-        assertEquals("29.91 inHg abs", baroText(us, 101.3))
+        assertEquals("BARO ABS", com.openrs.dash.ui.BARO_LABEL)   // the label says abs; the value keeps one line
+        assertEquals("1013 hPa", baroText(eu, 101.3))
+        assertEquals("101.3 kPa", baroText(canada, 101.3))
+        assertEquals("29.91 inHg", baroText(us, 101.3))
     }
 
     // Row 5: TIP — gauge vs measured baro in the boost unit; absolute in the air unit while baro is unknown

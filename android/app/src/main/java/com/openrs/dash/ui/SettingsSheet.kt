@@ -56,6 +56,7 @@ import kotlinx.coroutines.launch
 import com.openrs.dash.ui.Tokens.CardBorder
 import com.openrs.dash.ui.anim.pageEntrance
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -417,43 +418,7 @@ fun SettingsDialog(
             "UNITS",
             UnitSearch.UNITS,
         ) {
-            SettingsSection("UNITS") {
-                val stagedRegion = Region.of(stagedUnits)
-                SettingsRow(
-                    "Region",
-                    stacked = true,
-                    help = "A region sets every unit below. Changing any unit by hand makes it Custom. " +
-                        "Display only: drives and exports keep their units.",
-                ) {
-                    // Two rows of three so the longest names keep one line at 360 dp
-                    val regions = Region.entries.map { it.label }
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        regions.chunked(3).forEach { row ->
-                            SettingsPicker(
-                                options = row,
-                                selected = stagedRegion.label,
-                                onSelect = { label ->
-                                    // Custom changes nothing by itself; a preset stages all eleven units
-                                    Region.entries.first { it.label == label }.units?.let { stageUnits(it) }
-                                },
-                                fill = true,
-                            )
-                        }
-                    }
-                }
-                Spacer(Modifier.height(4.dp))
-                UnitRow("Speed & distance", UnitText.SPEED, speedUnit) { stageUnits(stagedUnits.copy(speed = it)) }
-                UnitRow("Temperature", UnitText.TEMP, tempUnit) { stageUnits(stagedUnits.copy(temp = it)) }
-                UnitRow("Boost", UnitText.BOOST, boostUnit) { stageUnits(stagedUnits.copy(boost = it)) }
-                UnitRow("Tyres", UnitText.TYRE, tireUnit) { stageUnits(stagedUnits.copy(tyre = it)) }
-                UnitRow("Engine pressures", UnitText.ENGINE, engineUnit) { stageUnits(stagedUnits.copy(engine = it)) }
-                UnitRow("Air pressure", UnitText.AIR, airUnit) { stageUnits(stagedUnits.copy(air = it)) }
-                UnitRow("Altitude", UnitText.ALTITUDE, altitudeUnit) { stageUnits(stagedUnits.copy(altitude = it)) }
-                UnitRow("Fuel volume", UnitText.FUEL, fuelUnit, stacked = true) { stageUnits(stagedUnits.copy(fuel = it)) }
-                UnitRow("Economy", UnitText.ECONOMY, economyUnit, stacked = true) { stageUnits(stagedUnits.copy(economy = it)) }
-                UnitRow("Torque", UnitText.TORQUE, torqueUnit) { stageUnits(stagedUnits.copy(torque = it)) }
-                UnitRow("Mixture", UnitText.MIXTURE, mixtureUnit) { stageUnits(stagedUnits.copy(mixture = it)) }
-            }
+            UnitsSection(stagedUnits, ::stageUnits)
         },
         NavSection(
             SettingsCategory.UNITS,
@@ -1533,8 +1498,9 @@ private fun SettingsSwitchRow(
 
 /**
  * Option picker (Settings, PERF knock scope): the selected option is an accent tint with its label in [actionInk] (dark on
- * DAY) — the chip style used across the app — instead of a solid fill. Every option is a 44 dp chip in
- * a 48 dp control. [fill] spreads the options across the row (stacked rows).
+ * DAY) — the chip style used across the app — instead of a solid fill. Every option is at least a [minTarget] chip
+ * (44 dp tall on PERF; 48 × 48 dp in Settings) in a control 4 dp taller. [fill] spreads the options across the row
+ * (stacked rows).
  */
 @Composable
 fun SegmentedPicker(
@@ -1542,6 +1508,7 @@ fun SegmentedPicker(
     selected: String,
     onSelect: (String) -> Unit,
     fill: Boolean = false,
+    minTarget: androidx.compose.ui.unit.Dp = 44.dp,
 ) {
     val accent = LocalThemeAccent.current
     val haptic = LocalHapticFeedback.current
@@ -1566,7 +1533,7 @@ fun SegmentedPicker(
             Box(
                 Modifier
                     .then(if (fill) Modifier.weight(1f) else Modifier)
-                    .heightIn(min = 44.dp)
+                    .defaultMinSize(minWidth = if (minTarget >= 48.dp) minTarget else Dp.Unspecified, minHeight = minTarget)
                     .clip(RoundedCornerShape(6.dp))
                     .background(bgColor, RoundedCornerShape(6.dp))
                     .border(CardBorder, borderColor, RoundedCornerShape(6.dp))
@@ -1589,15 +1556,71 @@ fun SegmentedPicker(
     }
 }
 
-/** Settings' picker — the shared [SegmentedPicker]. */
+/** Settings' picker — the shared [SegmentedPicker], every option a 48 dp touch target (PERF keeps its 44 dp chips). */
 @Composable
 private fun SettingsPicker(
     options: List<String>,
     selected: String,
     onSelect: (String) -> Unit,
     fill: Boolean = false,
-) = SegmentedPicker(options, selected, onSelect, fill)
+) = SegmentedPicker(options, selected, onSelect, fill, minTarget = 48.dp)
 
+
+/**
+ * Settings → UNITS (#464): the Region picker (two rows of three short names) and the eleven unit pickers. [units] is
+ * the staged set; [onStage] stages a new one (a region stages all eleven; Custom changes nothing by itself). Rows whose
+ * options don't fit beside the label at 360 dp are stacked (`UnitsFitTest` holds every label and option to one line).
+ */
+@Composable
+internal fun UnitsSection(units: UnitSet, onStage: (UnitSet) -> Unit) {
+    SettingsSection("UNITS") {
+        val stagedRegion = Region.of(units)
+        SettingsRow(
+            "Region",
+            stacked = true,
+            help = "A region sets every unit below. Changing any unit by hand makes it Custom. " +
+                "Display only: drives and exports keep their units.",
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Region.entries.chunked(3).forEach { row ->
+                    SettingsPicker(
+                        options = row.map { it.label },
+                        selected = stagedRegion.label,
+                        onSelect = { label -> Region.entries.first { it.label == label }.units?.let(onStage) },
+                        fill = true,
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.height(4.dp))
+        for (row in UNIT_ROWS) {
+            UnitRow(row.label, row.options, row.get(units), stacked = row.stacked) { onStage(row.set(units, it)) }
+        }
+    }
+}
+
+/** One row of Settings → UNITS: its label, options, whether it stacks at 360 dp, and its unit in a [UnitSet]. */
+internal class UnitRowSpec(
+    val label: String,
+    val options: List<Pair<String, String>>,
+    val stacked: Boolean,
+    val get: (UnitSet) -> String,
+    val set: (UnitSet, String) -> UnitSet,
+)
+
+internal val UNIT_ROWS = listOf(
+    UnitRowSpec("Speed & distance", UnitText.SPEED, false, { it.speed }) { u, v -> u.copy(speed = v) },
+    UnitRowSpec("Temperature", UnitText.TEMP, false, { it.temp }) { u, v -> u.copy(temp = v) },
+    UnitRowSpec("Boost", UnitText.BOOST, false, { it.boost }) { u, v -> u.copy(boost = v) },
+    UnitRowSpec("Tyres", UnitText.TYRE, false, { it.tyre }) { u, v -> u.copy(tyre = v) },
+    UnitRowSpec("Engine pressures", UnitText.ENGINE, true, { it.engine }) { u, v -> u.copy(engine = v) },
+    UnitRowSpec("Air pressure", UnitText.AIR, false, { it.air }) { u, v -> u.copy(air = v) },
+    UnitRowSpec("Altitude", UnitText.ALTITUDE, false, { it.altitude }) { u, v -> u.copy(altitude = v) },
+    UnitRowSpec("Fuel volume", UnitText.FUEL, true, { it.fuel }) { u, v -> u.copy(fuel = v) },
+    UnitRowSpec("Economy", UnitText.ECONOMY, true, { it.economy }) { u, v -> u.copy(economy = v) },
+    UnitRowSpec("Torque", UnitText.TORQUE, false, { it.torque }) { u, v -> u.copy(torque = v) },
+    UnitRowSpec("Mixture", UnitText.MIXTURE, false, { it.mixture }) { u, v -> u.copy(mixture = v) },
+)
 
 /** One unit setting (#464): [options] are (stored id, label) pairs from [UnitText]; [onSelect] gets the id. */
 @Composable
@@ -1608,13 +1631,19 @@ private fun UnitRow(
     stacked: Boolean = false,
     onSelect: (String) -> Unit,
 ) {
+    val selected = options.firstOrNull { it.first == selectedId }?.second ?: ""
+    val pick: (String) -> Unit = { shown -> options.firstOrNull { it.second == shown }?.first?.let(onSelect) }
     SettingsRow(label, stacked = stacked) {
-        SettingsPicker(
-            options = options.map { it.second },
-            selected = options.firstOrNull { it.first == selectedId }?.second ?: "",
-            onSelect = { shown -> options.firstOrNull { it.second == shown }?.first?.let(onSelect) },
-            fill = stacked,
-        )
+        if (stacked && options.size > 3) {
+            // Four options (Economy) go two to a row, so "L/100 km" and "MPG (UK)" keep one line at 360 dp
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                options.chunked(2).forEach { row ->
+                    SettingsPicker(options = row.map { it.second }, selected = selected, onSelect = pick, fill = true)
+                }
+            }
+        } else {
+            SettingsPicker(options = options.map { it.second }, selected = selected, onSelect = pick, fill = stacked)
+        }
     }
 }
 

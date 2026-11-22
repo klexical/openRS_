@@ -44,6 +44,7 @@ import com.openrs.dash.ui.anim.SparklineData
 import com.openrs.dash.ui.anim.StaggeredColumn
 import com.openrs.dash.ui.anim.pageEntrance
 import com.openrs.dash.ui.units.airAbs
+import com.openrs.dash.ui.units.airAbsLabelled
 import com.openrs.dash.ui.units.altitudeFt
 import com.openrs.dash.ui.units.boostGauge
 import com.openrs.dash.ui.units.enginePressureKpa
@@ -249,7 +250,7 @@ import kotlin.math.roundToInt
                 listOf(
                     trim("SHORT FT", stftState, fuelTrimColor(vs.shortFuelTrim), stftSnap),
                     trim("LONG FT", ltftState, ltftColor(vs.longFuelTrim), ltftSnap),
-                    Readout("BARO", baroText(p, vs.barometricPressure)),
+                    Readout(BARO_LABEL, baroText(p, vs.barometricPressure)),
                 ),
                 listOf(
                     cell("CMD ${p.mixtureWord}", "commandedAfr", vs.commandedAfr, engineOnly = false, valid = { it > 0 }) { p.mixtureFromLambda(it).text },
@@ -297,7 +298,10 @@ internal fun hpFuelText(p: UserPrefs, psi: Double): String = p.enginePressurePsi
 internal fun lpFuelText(p: UserPrefs, kpa: Double): String = p.enginePressureKpa(kpa).text
 
 /** Barometric pressure (stored kPa absolute) in the air-pressure unit, marked absolute. */
-internal fun baroText(p: UserPrefs, kpaAbs: Double): String = p.airAbs(kpaAbs).text
+internal fun baroText(p: UserPrefs, kpaAbs: Double): String = p.airAbsLabelled(kpaAbs).text
+
+/** BARO's label says it is absolute, so its value keeps one line at 360 dp ("29.92 inHg", `UnitsFitTest`). */
+internal const val BARO_LABEL = "BARO ABS"
 
 /** Density altitude (computed in feet) in the altitude unit; null until baro and ambient are known. */
 internal fun densityAltitudeText(p: UserPrefs, ft: Int?): String? = ft?.let { p.altitudeFt(it.toDouble()).text }

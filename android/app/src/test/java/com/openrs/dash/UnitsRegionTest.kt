@@ -23,8 +23,8 @@ import java.util.Locale
 
 /**
  * #464: Settings → UNITS → Region. The five presets, Region derived from the eleven units, a new install's units from
- * the phone's country setting, and the existing-user rule (the owner's): keep the four original choices, fill the seven
- * new units from the closest preset, run once.
+ * the phone's country setting, and the existing-user rule (the owner's): the same phone-country region gives the seven
+ * new units, the four original choices are kept, and it runs once.
  */
 @RunWith(RobolectricTestRunner::class)
 class UnitsRegionTest {
@@ -96,108 +96,75 @@ class UnitsRegionTest {
         assertEquals(Region.EUROPE, AppSettings.load(ctx).region)
     }
 
-    // ── Existing installs: the owner's closest-preset rule ───────────────────────────────────────────────────────
+    // ── Existing installs: the phone's region, the four choices kept (owner) ─────────────────────────────────────
 
-    private fun existing(speed: String, temp: String, boost: String, tyre: String): UserPrefs {
+    /** An existing settings file holding the four original choices, loaded on a phone set to [locale]. */
+    private fun existing(speed: String, temp: String, boost: String, tyre: String, locale: Locale = Locale.US): UserPrefs {
         prefs.edit(commit = true) {
             putString(AppSettings.KEY_SPEED_UNIT, speed); putString(AppSettings.KEY_TEMP_UNIT, temp)
             putString(AppSettings.KEY_BOOST_UNIT, boost); putString(AppSettings.KEY_TIRE_UNIT, tyre)
         }
-        Locale.setDefault(Locale.US)   // must not matter for an existing install
+        Locale.setDefault(locale)
         return AppSettings.load(ctx)
     }
 
-    /** The four are kept, the other six come from [preset], and economy is [economy] (the preset's unless given). */
-    private fun assertMigrated(p: UserPrefs, four: List<String>, preset: Region, economy: String = preset.units!!.economy) {
+    /** The four are kept exactly, and the seven new units are [region]'s. */
+    private fun assertMigrated(p: UserPrefs, four: List<String>, seven: UnitSet) {
         assertEquals("the four choices are kept", four, listOf(p.speedUnit, p.tempUnit, p.boostUnit, p.tireUnit))
-        val u = preset.units!!
-        assertEquals("the seven new units come from $preset, economy $economy",
-            listOf(u.engine, u.air, u.altitude, u.fuel, economy, u.torque, u.mixture),
+        assertEquals("the seven new units come from the phone's region",
+            listOf(seven.engine, seven.air, seven.altitude, seven.fuel, seven.economy, seven.torque, seven.mixture),
             listOf(p.engineUnit, p.airUnit, p.altitudeUnit, p.fuelUnit, p.economyUnit, p.torqueUnit, p.mixtureUnit))
     }
 
-    @Test fun `km per h, C, bar, bar starts on Europe and international, HP fuel in bar`() {
-        val p = existing("KPH", "C", "BAR", "BAR")
-        assertMigrated(p, listOf("KPH", "C", "BAR", "BAR"), Region.EUROPE)
-        assertEquals(Region.EUROPE, p.region)
-        assertEquals(UnitIds.BAR, p.engineUnit)
-    }
-
-    @Test fun `km per h, C, psi, psi starts on Canada`() {
-        val p = existing("KPH", "C", "PSI", "PSI")
-        assertMigrated(p, listOf("KPH", "C", "PSI", "PSI"), Region.CANADA)
-        assertEquals(Region.CANADA, p.region)
-    }
-
-    @Test fun `mph, C, psi, psi starts on UK with MPG UK unchanged`() {
-        val p = existing("MPH", "C", "PSI", "PSI")
-        assertMigrated(p, listOf("MPH", "C", "PSI", "PSI"), Region.UK)
-        assertEquals(UnitIds.MPG_UK, p.economyUnit)
-        assertEquals(Region.UK, p.region)
-    }
-
-    @Test fun `mph, F, psi, psi - the old defaults - starts on US, MPG in US gallons`() {
-        val p = existing("MPH", "F", "PSI", "PSI")
-        assertMigrated(p, listOf("MPH", "F", "PSI", "PSI"), Region.US)
-        assertEquals(UnitIds.MPG_US, p.economyUnit)
-        assertEquals(Region.US, p.region)
-    }
-
-    @Test fun `tie - mph, F, bar, bar goes to US, which matches speed and temperature`() {
-        // Europe and US both match 2 of 4; US matches speed and temperature
-        val p = existing("MPH", "F", "BAR", "BAR")
-        assertMigrated(p, listOf("MPH", "F", "BAR", "BAR"), Region.US)
-        assertEquals(Region.CUSTOM, p.region)
-    }
-
-    @Test fun `tie - km per h, F, psi, psi takes Canada's whole set of units, which matches the speed unit`() {
-        // US and Canada both match 3 of 4 and neither matches speed and temperature; the speed unit decides (owner),
-        // so all of Canada's units, and economy L/100 km by the economy rule
-        val p = existing("KPH", "F", "PSI", "PSI")
-        assertMigrated(p, listOf("KPH", "F", "PSI", "PSI"), Region.CANADA)
-        assertEquals(listOf(UnitIds.L, UnitIds.M, UnitIds.KPA, UnitIds.L100KM),
-            listOf(p.fuelUnit, p.altitudeUnit, p.airUnit, p.economyUnit))
-        assertEquals(Region.CUSTOM, p.region)
-        // the same tie with boost in kPa
-        prefs.edit(commit = true) { clear() }
-        assertMigrated(existing("KPH", "F", "KPA", "PSI"), listOf("KPH", "F", "KPA", "PSI"), Region.CANADA)
-    }
-
-    @Test fun `mph, C, bar, bar takes Europe and international's units, 3 of 4, with MPG UK`() {
-        val p = existing("MPH", "C", "BAR", "BAR")
-        assertMigrated(p, listOf("MPH", "C", "BAR", "BAR"), Region.EUROPE, economy = UnitIds.MPG_UK)
-        assertEquals(Region.CUSTOM, p.region)
-    }
-
-    // Economy follows the user's own speed and temperature after the preset fill (owner): one test per pair, each
-    // over every boost and tyre unit
-    private fun assertEconomy(speed: String, temp: String, economy: String) {
-        for (boost in listOf("PSI", "BAR", "KPA")) for (tyre in listOf("PSI", "BAR", "KPA")) {
+    @Test fun `an existing install takes the seven new units from the phone's region and keeps its four`() {
+        val phones = mapOf(Locale.UK to Region.UK, Locale.US to Region.US, Locale.CANADA to Region.CANADA,
+            Locale("en", "AU") to Region.AUS_NZ, Locale("en", "NZ") to Region.AUS_NZ, Locale.GERMANY to Region.EUROPE,
+            Locale("en", "IE") to Region.EUROPE)
+        val fours = listOf(listOf("KPH", "C", "BAR", "BAR"), listOf("KPH", "C", "PSI", "PSI"),
+            listOf("MPH", "C", "PSI", "PSI"), listOf("MPH", "F", "PSI", "PSI"), listOf("KPH", "F", "PSI", "KPA"))
+        for ((locale, region) in phones) for (four in fours) {
             prefs.edit(commit = true) { clear() }
-            assertEquals("$speed $temp $boost $tyre", economy, existing(speed, temp, boost, tyre).economyUnit)
+            assertMigrated(existing(four[0], four[1], four[2], four[3], locale), four, region.units!!)
         }
     }
 
-    @Test fun `economy - km per h with C reads L per 100 km`() = assertEconomy("KPH", "C", UnitIds.L100KM)
-    @Test fun `economy - km per h with F reads L per 100 km`() = assertEconomy("KPH", "F", UnitIds.L100KM)
-    @Test fun `economy - mph with C reads MPG UK`() = assertEconomy("MPH", "C", UnitIds.MPG_UK)
-    @Test fun `economy - mph with F reads MPG US`() = assertEconomy("MPH", "F", UnitIds.MPG_US)
-
-    @Test fun `tie on speed and temperature goes to the first preset in list order`() {
-        // km/h, C, psi, bar: Europe 3 (speed, temp, tyre), Canada 3 (speed, temp, boost) → Europe (listed first)
-        val p = existing("KPH", "C", "PSI", "BAR")
-        assertMigrated(p, listOf("KPH", "C", "PSI", "BAR"), Region.EUROPE)
+    @Test fun `where the four match the phone's region, Region reads it, else Custom`() {
+        assertEquals(Region.UK, existing("MPH", "C", "PSI", "PSI", Locale.UK).region)
+        prefs.edit(commit = true) { clear() }
+        assertEquals(Region.US, existing("MPH", "F", "PSI", "PSI", Locale.US).region)
+        prefs.edit(commit = true) { clear() }
+        assertEquals(Region.EUROPE, existing("KPH", "C", "BAR", "BAR", Locale.GERMANY).region)
+        prefs.edit(commit = true) { clear() }
+        // The old defaults on a German phone: mph, °F and psi kept beside Europe & international's seven
+        val p = existing("MPH", "F", "PSI", "PSI", Locale.GERMANY)
+        assertEquals(Region.CUSTOM, p.region)
+        assertEquals(UnitIds.L100KM, p.economyUnit)
     }
 
-    @Test fun `an existing install with only other keys keeps the old defaults and gets US`() {
+    @Test fun `the old defaults on a US phone read MPG in US gallons, and on a UK phone in UK gallons`() {
+        assertEquals(UnitIds.MPG_US, existing("MPH", "F", "PSI", "PSI", Locale.US).economyUnit)
+        prefs.edit(commit = true) { clear() }
+        assertEquals(UnitIds.MPG_UK, existing("MPH", "F", "PSI", "PSI", Locale.UK).economyUnit)
+    }
+
+    @Test fun `an existing install on a Mexican phone takes Europe and international with km per litre`() {
+        val p = existing("KPH", "C", "BAR", "BAR", Locale("es", "MX"))
+        assertMigrated(p, listOf("KPH", "C", "BAR", "BAR"), Region.EUROPE.units!!.copy(economy = UnitIds.KML))
+        assertEquals(Region.CUSTOM, p.region)
+    }
+
+    @Test fun `an existing install with only other keys keeps the old four defaults beside the phone's region`() {
         prefs.edit(commit = true) { putBoolean("screen_on", true) }
         Locale.setDefault(Locale.GERMANY)
         val p = AppSettings.load(ctx)
-        assertEquals(Region.US, p.region)
+        assertMigrated(p, listOf("MPH", "F", "PSI", "PSI"), Region.EUROPE.units!!)
+        prefs.edit(commit = true) { clear(); putBoolean("screen_on", true) }
+        Locale.setDefault(Locale.US)
+        assertEquals(Region.US, AppSettings.load(ctx).region)
     }
 
     @Test fun `running the migration twice changes nothing`() {
-        existing("MPH", "C", "PSI", "PSI")
+        existing("MPH", "C", "PSI", "PSI", Locale.UK)
         val once = prefs.all.toMap()
         AppSettings.migrateUnits(ctx, "DE")
         AppSettings.load(ctx)

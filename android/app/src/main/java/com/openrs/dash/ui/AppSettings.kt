@@ -306,13 +306,6 @@ object AppSettings {
     fun getUpdateChannel(ctx: Context): String =
         prefs(ctx).getString(KEY_UPDATE_CHANNEL, DEFAULT_UPDATE_CHANNEL) ?: DEFAULT_UPDATE_CHANNEL
 
-    fun getOdomInMiles(ctx: Context): Boolean {
-        val p = prefs(ctx)
-        // Backward compat: if key absent, derive from speed unit.
-        return if (p.contains(KEY_ODOM_IN_MILES)) p.getBoolean(KEY_ODOM_IN_MILES, true)
-        else getSpeedUnit(ctx) == "MPH"
-    }
-
     // ── BLE device helpers ──────────────────────────────────────────────────
 
     fun getBleDeviceAddress(ctx: Context): String? =
@@ -404,9 +397,10 @@ object AppSettings {
 
     /**
      * #464: stores the eleven units once, before anything reads them. A settings file that already holds any key is an
-     * existing install: its four original choices are kept exactly, economy follows its speed and temperature, and the
-     * other six new units come from the closest preset ([Region.unitsForExisting]). An empty file is a new install: all eleven come from the phone's country
-     * setting ([Region.unitsForCountry]). After it runs, [KEY_UNITS_VERSION] is set and it never runs again.
+     * existing install: the seven new units come from the phone's country setting, as on a new install, and its four
+     * original choices are kept exactly ([Region.unitsForExisting]). An empty file is a new install: all eleven come
+     * from the phone's country setting ([Region.unitsForCountry]). After it runs, [KEY_UNITS_VERSION] is set and it
+     * never runs again.
      */
     fun migrateUnits(ctx: Context, country: String = java.util.Locale.getDefault().country) =
         migrateUnits(prefs(ctx), country)
@@ -415,6 +409,7 @@ object AppSettings {
         if (p.contains(KEY_UNITS_VERSION)) return
         val units = if (p.all.isEmpty()) com.openrs.dash.ui.units.Region.unitsForCountry(country)
         else com.openrs.dash.ui.units.Region.unitsForExisting(
+            country = country,
             speed = p.getString(KEY_SPEED_UNIT, DEFAULT_SPEED_UNIT) ?: DEFAULT_SPEED_UNIT,
             temp = p.getString(KEY_TEMP_UNIT, DEFAULT_TEMP_UNIT) ?: DEFAULT_TEMP_UNIT,
             boost = p.getString(KEY_BOOST_UNIT, DEFAULT_BOOST_UNIT) ?: DEFAULT_BOOST_UNIT,

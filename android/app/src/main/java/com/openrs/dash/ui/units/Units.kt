@@ -52,12 +52,13 @@ data class UnitSet(
 )
 
 /** Settings → UNITS → Region. A preset sets all eleven units; [CUSTOM] is any set that equals no preset. */
+/** The unit presets; [label] is the short name on the Region picker (owner, #464). */
 enum class Region(val label: String) {
-    EUROPE("Europe & international"),
+    EUROPE("EU"),          // Europe & international
     UK("UK"),
     US("US"),
-    CANADA("Canada"),
-    AUS_NZ("Australia & NZ"),
+    CANADA("CA"),
+    AUS_NZ("AU / NZ"),     // Australia & New Zealand
     CUSTOM("Custom");
 
     /** The preset's units; null for [CUSTOM]. */
@@ -96,29 +97,12 @@ enum class Region(val label: String) {
         }
 
         /**
-         * An existing user's units after the update (owner's rule, #464): the four original choices are kept exactly;
-         * the other units come from the preset that matches most of those four. A tie goes to the preset that matches
-         * the speed unit (owner: km/h, °F, psi, psi takes Canada's units, not US's), then to the one that also matches
-         * temperature, then to the first in [PRESETS]' order. Economy then follows the user's own speed and
-         * temperature, whatever the preset: km/h → L/100 km, mph with °C → MPG (UK), mph with °F → MPG (US).
+         * An existing user's units after the update (owner's rule, #464): the same phone-country region as a new install
+         * ([unitsForCountry]) gives the seven added units, and the four original choices (speed, temperature, boost,
+         * tyres) are kept exactly. Where the four differ from that region's, Region reads Custom.
          */
-        fun unitsForExisting(speed: String, temp: String, boost: String, tyre: String): UnitSet {
-            fun score(u: UnitSet) = listOf(u.speed == speed, u.temp == temp, u.boost == boost, u.tyre == tyre).count { it }
-            fun speedAndTemp(u: UnitSet) = u.speed == speed && u.temp == temp
-            val best = PRESETS.values.maxWith(
-                compareBy<UnitSet> { score(it) }
-                    .thenBy { if (it.speed == speed) 1 else 0 }
-                    .thenBy { if (speedAndTemp(it)) 1 else 0 }
-                    // an earlier preset ranks higher, so list order breaks a remaining tie
-                    .thenByDescending { PRESETS.values.indexOf(it) }
-            )
-            val economy = when {
-                speed == UnitIds.KPH -> UnitIds.L100KM
-                temp == UnitIds.C -> UnitIds.MPG_UK
-                else -> UnitIds.MPG_US
-            }
-            return best.copy(speed = speed, temp = temp, boost = boost, tyre = tyre, economy = economy)
-        }
+        fun unitsForExisting(country: String, speed: String, temp: String, boost: String, tyre: String): UnitSet =
+            unitsForCountry(country).copy(speed = speed, temp = temp, boost = boost, tyre = tyre)
     }
 }
 
@@ -140,6 +124,7 @@ object UnitText {
     const val KMH = "km/h"; const val MPH = "mph"; const val KM = "km"; const val MI = "mi"
     const val DEG_C = "°C"; const val DEG_F = "°F"
     const val PSI = "psi"; const val BAR = "bar"; const val KPA = "kPa"; const val MPA = "MPa"
+    const val HPA = "hPa"; const val INHG = "inHg"
     const val HPA_ABS = "hPa abs"; const val KPA_ABS = "kPa abs"; const val INHG_ABS = "inHg abs"
     const val M = "m"; const val FT = "ft"
     const val L = "L"; const val US_GAL = "US gal"; const val UK_GAL = "UK gal"
@@ -154,7 +139,7 @@ object UnitText {
     val BOOST = listOf(UnitIds.PSI to PSI, UnitIds.BAR to BAR, UnitIds.KPA to KPA)
     val TYRE = listOf(UnitIds.PSI to PSI, UnitIds.BAR to BAR, UnitIds.KPA to KPA)
     val ENGINE = listOf(UnitIds.BAR to BAR, UnitIds.PSI to PSI, UnitIds.MPA to MPA)
-    val AIR = listOf(UnitIds.HPA to "hPa", UnitIds.KPA to KPA, UnitIds.INHG to "inHg")
+    val AIR = listOf(UnitIds.HPA to HPA, UnitIds.KPA to KPA, UnitIds.INHG to INHG)
     val ALTITUDE = listOf(UnitIds.M to M, UnitIds.FT to FT)
     val FUEL = listOf(UnitIds.L to L, UnitIds.US_GAL to US_GAL, UnitIds.UK_GAL to UK_GAL)
     val ECONOMY = listOf(UnitIds.L100KM to L100KM, UnitIds.KML to KML, UnitIds.MPG_US to MPG_US, UnitIds.MPG_UK to MPG_UK)
@@ -331,6 +316,16 @@ fun UserPrefs.enginePressurePsi(psi: Double): Shown = enginePressureKpa(psi / Un
 fun UserPrefs.enginePressureMbar(mbar: Double): Shown = enginePressureKpa(mbar / 10.0)
 
 // ── Air pressure (stored kPa absolute) ────────────────────────────────────────────────────────────────────────────
+
+/**
+ * An absolute air pressure where the label already says it is absolute (POWER's "BARO ABS", which must keep one line
+ * in a third of a 360 dp row): hPa 0, kPa 1, inHg 2 decimals, the unit without "abs".
+ */
+fun UserPrefs.airAbsLabelled(kpaAbs: Double): Shown = when (airUnit) {
+    UnitIds.KPA -> Shown(f(1, kpaAbs), UnitText.KPA)
+    UnitIds.INHG -> Shown(f(2, kpaAbs / UnitFactors.KPA_PER_INHG), UnitText.INHG)
+    else -> Shown(f(0, kpaAbs * 10.0), UnitText.HPA)
+}
 
 /** An absolute air pressure: hPa abs 0, kPa abs 1, inHg abs 2 decimals. */
 fun UserPrefs.airAbs(kpaAbs: Double): Shown = when (airUnit) {
