@@ -139,14 +139,15 @@ paths:
     (`slcanLinesDropped`, LOG LIMITS).
   - **Request capture's timeout line** (`# CAPTURE-TIMEOUT …`, obd-polling.md) is written the same way: same parse, VIN
     mask, cap and clock. Our readers' anchored matches skip it as they skip `# TX` lines.
-  - **Readers.** Ours match frame lines anchored at the line's start (`tools/claude/hardware/slcan_tools.py`,
-    `check_export.py`; `tools/replay/candump_to_slcan.py` drops `# TX` lines), so a TX line is never read as a frame: keep
-    that anchor. can-utils' `canplayer` / `log2asc` read the frame lines and skip any line not starting with `(` (their
-    source, read). The time field has no width (`(%.3f)`, #403): SavvyCAN's loader keeps a line only when its first
-    space-separated token matches `^\(\S+\)$` (its source, read, not run), which the padded `(%10.3f)` of earlier
-    builds failed on every line (`SlcanLogTimeFieldTest`); our readers accept both forms. No build has been loaded in
-    SavvyCAN, and Kayak was not read, so no text in the app names either as compatible until that load is done once
-    (`RequestLogTest`, `RequestLogExportTest`, `DtcScanExplainTest`, `BufferBoundsTest`)
+  - **Readers.** Ours match frame lines anchored at the line's start (`check_export.py`;
+    `tools/replay/candump_to_slcan.py` drops `# TX` lines), so a TX line is never read as a frame: keep that anchor.
+    can-utils' `canplayer` / `log2asc` read the frame lines and skip any line not starting with `(` (their source,
+    read). The time field has no width (`(%.3f)`, #403): SavvyCAN's loader keeps a line only when its first
+    space-separated token matches `^\(\S+\)$` (its source, read, not run), which the padded `(%10.3f)` of earlier builds
+    failed on every line. `SlcanLogTimeFieldTest` checks the format against that split and pattern; it does not run
+    SavvyCAN. `check_export.py` and `tools/replay/candump_to_slcan.py` read both forms (`test_candump.py`). No build has
+    been loaded in SavvyCAN, and Kayak was not read, so no text in the app names either as compatible until that load is
+    done once (`RequestLogTest`, `RequestLogExportTest`, `DtcScanExplainTest`, `BufferBoundsTest`)
 - **UI timing in the export is counts only, per session (#421)** — `uiTiming` / UI TIMING: main-thread lateness (a 100 ms
   ticker on Main inside the connection job), frame durations by the pager's settled page (a frame-metrics listener on its
   own thread, counted only between `sessionStart` and `sessionEnd`), each OBD merge's wait for the link lock (from before
