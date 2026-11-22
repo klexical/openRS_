@@ -274,8 +274,9 @@ object WicanApi {
 
                     val reader = BufferedReader(InputStreamReader(s.getInputStream()))
                     val statusLine = reader.readLine() ?: return@withContext null
-                    if (!statusLine.contains("200")) {
-                        logFailure("check_status", "HTTP ${httpStatusCode(statusLine)}")
+                    val code = httpStatusCode(statusLine)
+                    if (code != 200) {
+                        logFailure("check_status", httpStatusText(code))
                         return@withContext null
                     }
 
@@ -340,7 +341,9 @@ object WicanApi {
 
                     val reader = BufferedReader(InputStreamReader(s.getInputStream()))
                     val statusLine = reader.readLine() ?: return@withContext false
-                    statusLine.contains("200")
+                    val code = httpStatusCode(statusLine)
+                    if (code != 200) logFailure("reboot", httpStatusText(code))
+                    code == 200
                 }
             } catch (e: Exception) {
                 logFailure("reboot", e.javaClass.simpleName)
@@ -355,7 +358,13 @@ object WicanApi {
     private fun logFailure(request: String, what: String) =
         android.util.Log.d("WicanApi", "$request failed: $what")
 
-    /** The status line's three-digit code alone, or "no status code"; the reason text after it comes from the adapter. */
-    internal fun httpStatusCode(statusLine: String): String =
-        Regex("""^HTTP/\S+\s+(\d{3})(?:\s|$)""").find(statusLine)?.groupValues?.get(1) ?: "no status code"
+    /**
+     * The status line's three-digit code, or null when the line has none. Only the code is read: the reason text after
+     * it comes from the adapter, and a "200" inside it (`HTTP/1.1 500 x200`) is not a success.
+     */
+    internal fun httpStatusCode(statusLine: String): Int? =
+        Regex("""^HTTP/\S+\s+(\d{3})(?:\s|$)""").find(statusLine)?.groupValues?.get(1)?.toInt()
+
+    /** "HTTP 500", or "no HTTP status code" for a line that has none: the log text for [httpStatusCode]'s result. */
+    private fun httpStatusText(code: Int?): String = code?.let { "HTTP $it" } ?: "no HTTP status code"
 }

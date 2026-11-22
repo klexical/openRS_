@@ -134,9 +134,43 @@ class CheckStatusLogRedactionTest {
     }
 
     @Test fun `the status code is read alone from the status line`() {
-        assertEquals("404", WicanApi.httpStatusCode("HTTP/1.1 404 Not Found"))
-        assertEquals("500", WicanApi.httpStatusCode("HTTP/1.0 500"))
-        assertEquals("no status code", WicanApi.httpStatusCode("HTTP/1.1 50x $marker"))
-        assertEquals("no status code", WicanApi.httpStatusCode(marker))
+        assertEquals(404, WicanApi.httpStatusCode("HTTP/1.1 404 Not Found"))
+        assertEquals(500, WicanApi.httpStatusCode("HTTP/1.0 500"))
+        assertEquals(500, WicanApi.httpStatusCode("HTTP/1.1 500 x200"))
+        assertNull(WicanApi.httpStatusCode("HTTP/1.1 50x $marker"))
+        assertNull(WicanApi.httpStatusCode(marker))
+    }
+
+    @Test fun `a 500 reply whose reason text holds 200 is a failure`() {
+        assertNull(checkStatus("HTTP/1.1 500 x200", """{$replyFields}"""))
+        assertEquals("check_status failed: HTTP 500", wicanLines().single().msg)
+    }
+
+    @Test fun `a reply with no status code is logged as such`() {
+        assertNull(checkStatus("200 $marker", """{$replyFields}"""))
+        assertMarkerNeverLogged("no status code")
+        assertEquals("check_status failed: no HTTP status code", wicanLines().single().msg)
+    }
+
+    private fun reboot(port: Int): Boolean =
+        runBlocking { WicanApi.reboot(ApplicationProvider.getApplicationContext(), "127.0.0.1:$port") }
+
+    @Test fun `a failed reboot logs the exception's class name alone, with no throwable`() {
+        val closedPort = ServerSocket(0, 1, InetAddress.getLoopbackAddress()).use { it.localPort }   // nothing listens
+        assertFalse(reboot(closedPort))
+        val line = wicanLines().single()
+        assertEquals("reboot failed: ConnectException", line.msg)
+        assertNull("no throwable is logged", line.throwable)
+    }
+
+    @Test fun `a refused reboot logs the status code alone, and 200 in its reason text is no success`() {
+        assertFalse(reboot(serveOnce("HTTP/1.1 500 $marker x200", "", listOf("Content-Length: 0", "Connection: close"))))
+        assertMarkerNeverLogged("refused reboot")
+        assertEquals("reboot failed: HTTP 500", wicanLines().single().msg)
+    }
+
+    @Test fun `an acknowledged reboot logs nothing`() {
+        assertTrue(reboot(serveOnce("HTTP/1.1 200 OK", "", listOf("Content-Length: 0", "Connection: close"))))
+        assertTrue(wicanLines().isEmpty())
     }
 }
