@@ -6,7 +6,9 @@
 # no pull request text and no event file (privacy-history.yml, run by hand on main). A tip may be any object: each is
 # peeled here, so an annotated tag's own object (message and tagger) is scanned, and so is any tree or blob a tag
 # names, read as a commit's files are. --names <file> (after --places, if given) adds the refs' names, one per line,
-# each scanned as a line of its own and counted. It prints counts by kind only, never a commit, path, name or line:
+# each scanned as a line of its own, judged on its own as a file read whole is (raw MAC bytes and case folding
+# included; a name that matches is a finding by number), and counted. The pull request's branch name is judged on its
+# own the same way. It prints counts by kind only, never a commit, path, name or line:
 # that run's log is public and the history it reads is kept.
 # privacy-scan.sh --history --places <tip sha>... — the same, also printing where each hit is, for a project session's
 # own run whose output stays in the project; it refuses to run when GITHUB_ACTIONS is set, so no workflow prints places.
@@ -32,7 +34,8 @@
 # read whole); the pull request's title, description and branch name. Every entry of 8 letters and digits or more (and
 # every MAC- or VIN-shaped entry) is also matched "bare": with \uXXXX, \xXX, %XX, + and HTML entities decoded, NFKD
 # applied and accents dropped (full-width and accented letters read as plain ones), every character but letters and
-# digits removed and then a 0x before a byte dropped, from the entry and the scanned line alike.
+# digits removed and then a 0x before a byte dropped, from the entry and the scanned line alike. Every entry, of any
+# length, is also matched under Unicode case folding (a sharp s reads as "ss"), on scanned lines and in printed paths.
 # A file git judges binary on either side of a commit (--numstat "-" "-"), whose new content holds a NUL byte anywhere,
 # or that is not UTF-8, is read whole, as bytes and as UTF-16 or UTF-32 in either byte order. A ZIP (found by its
 # structure, at any offset) is unpacked and each member read whole and its name scanned. A ZIP-format file and any
@@ -370,7 +373,7 @@ elif cmd == "blob":       # blob <list> <bare list> <file>: "<1 when the file ho
     ents, bares = entries(sys.argv[2]), entries(sys.argv[3])
     hit, comp = blob(open(sys.argv[4], "rb").read(), ents, bares)
     print(f"{int(hit)}\t{comp or '-'}")
-elif cmd == "names":      # names <list> <bare list> <names> <grep lines>: how many ref names match, never which
+elif cmd == "names":      # names <list> <bare list> <names> <grep lines>: the numbers of the ref names that match
     # Each name is judged on its own exactly as blob judges a one-line file (and grep's line numbers, as blob_hits
     # greps first), so the count is never below one check per name. A base64 run joined across names (and across
     # those names only) that holds a match adds its first name, once, when none of the names it spans matched alone
@@ -385,7 +388,18 @@ elif cmd == "names":      # names <list> <bare list> <names> <grep lines>: how m
         if z > a and not alone.intersection(range(a, z + 1)) and any(
                 hits(d, ents, bares) or ((u := unpack(d)) is not None and hits(u[1], ents, bares)) for d in decodings(run)):
             joined.add(a)
-    print(len(alone | joined))
+    for i in sorted(alone | joined):
+        print(i)
+elif cmd == "fold":       # fold <list> <in>: the numbers of IN's lines that hold an entry once both are case-folded
+    # (Unicode full case folding: a sharp s reads as "ss"), for an entry of any length; grep -i folds one letter to one
+    # letter only, and the letters-and-digits form is for entries of 8 or more. Never what matched
+    ents = sorted({e for e in entries(sys.argv[2]) if e}, key=len, reverse=True)
+    if ents:
+        rx = re.compile("|".join(map(re.escape, ents)))
+        with open(sys.argv[3], "rb") as f:
+            for n, line in enumerate(f, 1):
+                if rx.search(line.decode("utf-8", errors="replace").casefold()):
+                    print(n)
 elif cmd == "bare":       # bare <in> <out>: each line in letters-and-digits-only form, line for line
     with open(sys.argv[3], "w", encoding="utf-8") as out:
         for line in open(sys.argv[2], "rb").read().split(b"\n")[:-1]:
@@ -677,9 +691,10 @@ if [ "$HISTORY" = 1 ]; then
   done
   # each ref's name (a branch, a tag, a pull request head), as a line of its own, by number only: an annotated tag's
   # name is also in its tag object, read above
-  # A CR at a line's end and a blank line are not names. The names that match are counted with one helper start
-  # for them all: each name judged on its own (grep, then the helper, as a file is), and a base64 run joined across
-  # names that holds a match counted once at its first name when no name it spans matched alone
+  # A CR at a line's end and a blank line are not names. The names that match are found with one helper start for
+  # them all: each name judged on its own (grep, then the helper, as a file is), and a base64 run joined across
+  # names that holds a match placed once at its first name when no name it spans matched alone. Each is a finding,
+  # by number, like every other match (a ref name is public), also when only raw MAC bytes or case folding find it
   nnames=0; nmatch=0
   if [ -n "$NAMES" ]; then
     keep "$NAMES" "refs" "in the ref names" ""     # for gitleaks too, as the pull request's branch name is
@@ -691,13 +706,24 @@ if [ "$HISTORY" = 1 ]; then
     if [ "$nnames" -gt 0 ]; then
       rc=0; grep -n -a -i -F -f "$LIST" -- "$T/names.clean" > "$T/raw" || rc=$?; [ "$rc" -le 1 ] || die "grep failed (exit $rc)"
       cut -d: -f1 "$T/raw" > "$T/namegrep"; rm -f "$T/raw"
-      nmatch=$(python3 -I "$H" names "$LIST" "$T/listbare" "$T/names.clean" "$T/namegrep")
-      [[ $nmatch =~ ^[0-9]+$ ]] || die "internal: the helper's ref-name count is unreadable"
+      python3 -I "$H" names "$LIST" "$T/listbare" "$T/names.clean" "$T/namegrep" > "$T/namehits"
+      ! grep -q -v -x -E '[1-9][0-9]*' "$T/namehits" || die "internal: the helper's ref-name answer is unreadable"
+      nmatch=$(wc -l < "$T/namehits")
+      while read -r k; do printf 'refs\tref name #%s, judged on its own\t\t\n' "$k" >> "$T/binhits"; done < "$T/namehits"
     fi
   fi
 fi
 add "" "pull request title" "" "$(jq -r '.pull_request.title // ""' "$GITHUB_EVENT_PATH" | tr '\n' ' ')"
 add "" "pull request branch name" "" "$(jq -r '.pull_request.head.ref // ""' "$GITHUB_EVENT_PATH" | tr '\n' ' ')"
+# the pull request's branch name is a ref name too: judged on its own as the history scan's ref names are
+if [ "$HISTORY" = 0 ]; then
+  jq -r '.pull_request.head.ref // ""' "$GITHUB_EVENT_PATH" | tr '\n' ' ' | sed 's/ $//' > "$T/branch"; echo >> "$T/branch"
+  rc=0; grep -n -a -i -F -f "$LIST" -- "$T/branch" > "$T/raw" || rc=$?; [ "$rc" -le 1 ] || die "grep failed (exit $rc)"
+  cut -d: -f1 "$T/raw" > "$T/namegrep"; rm -f "$T/raw"
+  r=$(python3 -I "$H" names "$LIST" "$T/listbare" "$T/branch" "$T/namegrep")
+  case "$r" in "") ;; 1) printf '\tthe pull request branch name, judged on its own\t\t\n' >> "$T/binhits" ;;
+    *) die "internal: the helper's branch-name answer is unreadable" ;; esac
+fi
 jq -r '.pull_request.body // ""' "$GITHUB_EVENT_PATH" | tr -d '\r' > "$T/body"; keep "$T/body" "" "in the pull request description" ""
 jq -r '(.pull_request.title // ""), (.pull_request.head.ref // "")' "$GITHUB_EVENT_PATH" > "$T/prtext"
 keep "$T/prtext" "" "in the pull request title or branch name" ""
@@ -725,6 +751,8 @@ if [ -s "$T/listbare" ]; then   # any spelling: the same lines in letters-and-di
   rc=0; grep -n -a -i -F -f "$T/listbare" -- "$T/textbare" > "$T/raw" || rc=$?; [ "$rc" -le 1 ] || die "grep failed (exit $rc)"
   cut -d: -f1 "$T/raw" >> "$T/hitlines"; rm -f "$T/raw" "$T/textbare"
 fi
+# and an entry of any length under Unicode case folding (a sharp s against "ss"), which grep -i does not do
+python3 -I "$H" fold "$LIST" "$TEXT" >> "$T/hitlines"
 rc=0; grep -n -a -i -F -e "$ALLOW" -- "$TEXT" > "$T/raw" || rc=$?; [ "$rc" -le 1 ] || die "grep failed (exit $rc)"
 cut -d: -f1 "$T/raw" > "$T/allowlines"; rm -f "$T/raw"
 
@@ -742,6 +770,7 @@ withhold() { # withhold <tsv file>: column 3 (a path) replaced where it matches 
     rc=0; grep -n -a -i -F -f "$T/listbare" -- "$T/wpbare" > "$T/raw" || rc=$?; [ "$rc" -le 1 ] || die "grep failed (exit $rc)"
     cut -d: -f1 "$T/raw" >> "$T/wl"; rm -f "$T/raw" "$T/wpbare"
   fi
+  python3 -I "$H" fold "$LIST" "$T/wp" >> "$T/wl"
   awk -F'\t' -v OFS='\t' 'FILENAME == ARGV[1] { w[$1] = 1; next } { if (FNR in w) $3 = "(a path that matches the list, withheld)"; print }' "$T/wl" "$1"
 }
 fmt() { # one finding per line: commit, what, path:line
