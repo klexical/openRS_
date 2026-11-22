@@ -1,5 +1,9 @@
 package com.openrs.dash.ui.trip
 
+import com.openrs.dash.ui.units.speed
+import com.openrs.dash.ui.units.speedUnitText
+import com.openrs.dash.ui.units.boostUnitText
+import com.openrs.dash.ui.units.boostPsi
 import androidx.core.graphics.createBitmap
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -25,7 +29,6 @@ import com.openrs.dash.ui.Ok
 import com.openrs.dash.ui.Orange
 import com.openrs.dash.ui.Warn
 import com.openrs.dash.ui.effectiveThemeIsDay
-import com.openrs.dash.ui.UnitConversions
 import com.openrs.dash.ui.UserPrefs
 import com.openrs.dash.ui.UserPrefsStore
 import androidx.compose.ui.geometry.Offset
@@ -217,7 +220,7 @@ fun DriveMap(
                 PeakType.RPM -> Warn to "RPM: ${peak.value.toInt()}"
                 PeakType.BOOST -> Accent to "${if (peak.boostSource == com.openrs.dash.data.BoostSource.TIP_033E) "TIP" else "Boost"}: ${boostText(peak.value, prefs)}"
                 PeakType.LATERAL_G -> Orange to "Lat-G: ${"%.2f".format(peak.value)}"
-                PeakType.SPEED -> Frost to "Speed: ${prefs.displaySpeed(peak.value)} ${speedUnitText(prefs)}"
+                PeakType.SPEED -> Frost to "Speed: ${prefs.speed(peak.value).text}"
             }
             Marker(
                 state = MarkerState(position = LatLng(peak.lat, peak.lng)),
@@ -245,7 +248,7 @@ fun DriveMap(
         bookmarks.forEach { bm ->
             val snippet = buildString {
                 if (bm.label.isNotEmpty()) append(bm.label).append(" — ")
-                append("${prefs.displaySpeed(bm.speedKph)} ${speedUnitText(prefs)}")
+                append(prefs.speed(bm.speedKph).text)
                 if (bm.rpm > 0) append(" · ${bm.rpm} RPM")
                 // no boost: a bookmark stores no source (#207), so its value couldn't be named
             }
@@ -411,20 +414,16 @@ internal fun legendLabel(mode: ColorMode, points: List<DrivePointEntity>, oilPtu
 
 /** Unit shown once after the legend's mode label ("SPD mph"); empty for unitless bands. */
 internal fun legendUnit(mode: ColorMode, prefs: UserPrefs): String = when (mode) {
-    ColorMode.SPEED -> speedUnitText(prefs)
-    ColorMode.BOOST -> prefs.displayBoost(UnitConversions.STD_ATM_KPA).second
+    ColorMode.SPEED -> prefs.speedUnitText
+    ColorMode.BOOST -> prefs.boostUnitText
     ColorMode.OIL_TEMP -> prefs.tempLabel
     else -> ""
 }
 
-private fun speedUnitText(prefs: UserPrefs) = if (prefs.speedUnit == "MPH") "mph" else "km/h"
-
 /** Gauge psi (as stored) → the user's boost unit, value only ("8.0", "0.55", "55"). */
-private fun boostValue(psi: Double, prefs: UserPrefs): String =
-    prefs.displayBoost(psi / UnitConversions.KPA_TO_PSI + UnitConversions.STD_ATM_KPA).first
+private fun boostValue(psi: Double, prefs: UserPrefs): String = prefs.boostPsi(psi).value
 
-private fun boostText(psi: Double, prefs: UserPrefs): String =
-    prefs.displayBoost(psi / UnitConversions.KPA_TO_PSI + UnitConversions.STD_ATM_KPA).let { (v, u) -> "$v $u" }
+private fun boostText(psi: Double, prefs: UserPrefs): String = prefs.boostPsi(psi).text
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Marker helpers

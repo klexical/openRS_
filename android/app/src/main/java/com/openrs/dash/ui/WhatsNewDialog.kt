@@ -57,6 +57,8 @@ private val versionHighlights: Map<String, List<String>> = mapOf(
     "2.2.7" to listOf(
         RC_8_NOTE,
         BUILD_38_NOTE,
+        "Units by region: Settings → UNITS starts with Region (Europe & international, UK, US, Canada, Australia & NZ or Custom), and each unit can be set on its own: speed, temperature, boost, tyres, engine pressures, air pressure, altitude, fuel, economy, torque and mixture (AFR or λ). Every screen, the HUD and the Custom Dashboard follow them; drives and exports keep their units.",
+        "Changed: with mph and °F, economy now reads MPG in US gallons. It used UK gallons, which read about 20 % higher.",
         "Changed: the pressure gauge shows throttle-inlet pressure above measured air pressure, labelled TIP, and — when TIP isn't current — never switches to another signal. Drives record TIP or, when TIP isn't current, the car's CAN boost signal, each named by its source; the two are kept apart in peaks, charts and exports. Which pressure each signal measures on the car is not yet confirmed.",
         "Fixed: OIL and PTU temperatures were each other's reading (found on one car's capture) — readiness, alerts, recordings and exports now use the corrected values. Drives recorded before keep their values and are marked as recorded before the fix.",
         "Changed: AWD shows rear left / right torque; the front/rear percentage is withdrawn (it compared torque from different points of the drivetrain). DRIVE no longer shows a clutch-pedal card.",

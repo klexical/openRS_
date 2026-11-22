@@ -1,5 +1,7 @@
 package com.openrs.dash.ui.trip
 
+import com.openrs.dash.ui.units.boostPsi
+import com.openrs.dash.ui.units.speed
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -183,10 +185,10 @@ fun DriveReplayView(
                 "${prefs.displayTemp(currentPoint.oilTempC)}${prefs.tempLabel}" else "\u2014 \u2014"
             val cltText = if (currentPoint.coolantTempC > -90)
                 "${prefs.displayTemp(currentPoint.coolantTempC)}${prefs.tempLabel}" else "\u2014 \u2014"
-            val boost = prefs.displayBoost(currentPoint.boostPsi / UnitConversions.KPA_TO_PSI + UnitConversions.STD_ATM_KPA)
+            val boost = prefs.boostPsi(currentPoint.boostPsi).let { it.value to it.unit }
             ReadoutGrid(
                 rows = listOf(
-                    listOf(Readout("SPEED", v("${prefs.displaySpeed(currentPoint.speedKph)} ${prefs.speedLabel}")),
+                    listOf(Readout("SPEED", v(prefs.speed(currentPoint.speedKph).text)),
                         Readout("RPM", v("${currentPoint.rpm}")),
                         Readout("GEAR", v(currentPoint.gear.ifEmpty { "\u2014 \u2014" })),
                         // #207: the point's own source when recorded (TIP / BOOST); no reading → "— —"; points from

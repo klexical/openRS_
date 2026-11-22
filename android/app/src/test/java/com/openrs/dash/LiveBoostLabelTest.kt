@@ -119,6 +119,6 @@ class LiveBoostLabelTest {
         assertEquals("BOOST: %1\$s %2\$s", fmt)
         rpmFrame(); tip(0x4F1A)
         val (v, u) = prefs.displayGauge(gauge().gaugeKpa!!)
-        assertEquals("BOOST: 8.9 PSI", String.format(fmt, v, u))
+        assertEquals("BOOST: 8.9 psi", String.format(fmt, v, u))   // one spelling (#464)
     }
 }

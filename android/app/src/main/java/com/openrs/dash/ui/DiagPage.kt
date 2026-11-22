@@ -1,6 +1,7 @@
 package com.openrs.dash.ui
 
 import androidx.compose.animation.AnimatedVisibility
+import com.openrs.dash.ui.units.temp
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.expandVertically
@@ -27,6 +28,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -236,6 +238,7 @@ import kotlin.math.roundToInt
                 val battVAvail    = scalarAvailFor(vs.batteryVoltage >= 0, vs.fieldLastUpdateMs["batteryVoltage"]).whenDisconnected(vs.isConnected)
                 val battAAvail    = scalarAvailFor(vs.batteryCurrentA > -900, vs.fieldLastUpdateMs["batteryCurrentA"]).whenDisconnected(vs.isConnected)
                 val battSocAvail  = scalarAvailFor(vs.batterySoc >= 0, vs.fieldLastUpdateMs["batterySoc"]).whenDisconnected(vs.isConnected)
+                val prefs by UserPrefsStore.prefs.collectAsState()
                 val battTempAvail = scalarAvailFor(vs.batteryTempC > -90, vs.fieldLastUpdateMs["batteryTempC"]).whenDisconnected(vs.isConnected)
                 val chgTgtAvail   = scalarAvailFor(vs.batteryChargingVoltageDesired >= 0, vs.fieldLastUpdateMs["batteryChargingVoltageDesired"]).whenDisconnected(vs.isConnected)
                 val socColor = when {
@@ -256,7 +259,7 @@ import kotlin.math.roundToInt
                             Readout("SoC", if (shown(battSocAvail)) "${vs.batterySoc.roundToInt()}%" else "— —", color = socColor, sub = availSub(battSocAvail)),
                         ),
                         listOf(
-                            Readout("TEMP", if (shown(battTempAvail)) "${vs.batteryTempC.roundToInt()}°C" else "— —", sub = availSub(battTempAvail)),
+                            Readout("TEMP", if (shown(battTempAvail)) prefs.temp(vs.batteryTempC) else "— —", sub = availSub(battTempAvail)),
                             Readout("CHARGE TARGET", if (shown(chgTgtAvail)) "${"%.1f".format(vs.batteryChargingVoltageDesired)} V" else "— —", sub = availSub(chgTgtAvail)),
                             null,
                         ),

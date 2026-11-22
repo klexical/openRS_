@@ -1,5 +1,18 @@
 package com.openrs.dash.ui
 
+import com.openrs.dash.ui.units.torque
+import com.openrs.dash.ui.units.torqueUnitText
+import com.openrs.dash.ui.units.torqueValue
+import com.openrs.dash.ui.units.distance
+import com.openrs.dash.ui.units.speed
+import com.openrs.dash.ui.units.economy
+import com.openrs.dash.ui.units.economyUnitText
+import com.openrs.dash.ui.units.fuelFlow
+import com.openrs.dash.ui.units.fuelFlowUnitText
+import com.openrs.dash.ui.units.range
+import com.openrs.dash.ui.units.distanceUnitText
+import com.openrs.dash.ui.units.fuelVolume
+import com.openrs.dash.ui.units.fuelUnitText
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.foundation.background
@@ -320,7 +333,7 @@ import kotlin.math.roundToInt
             VehicleStatusPanel(status, readiness.vehicleAdvisory(), onOpenThermal, Modifier.then(pageEntrance(2, pageEntered)))
 
             // Torque split / G / torque are per-frame dynamics — frozen values mislead once stale.
-            ChassisPanel(if (stale) vs.copy(awdLeftTorque = 0.0, awdRightTorque = 0.0, torqueAtTrans = 0.0) else vs, stale)
+            ChassisPanel(if (stale) vs.copy(awdLeftTorque = 0.0, awdRightTorque = 0.0, torqueAtTrans = 0.0) else vs, stale, p)
 
             // No clutch-pedal readout on DRIVE (#225): it appeared and disappeared with the pedal and pushed ECONOMY
             // out of view. 0x138 is still decoded (diagnostics, SLCAN log).
@@ -338,29 +351,32 @@ import kotlin.math.roundToInt
     // only the user's header tap does). Unavailable metrics read "—" with their unit, not 0.
     // Calculations and validity are FuelEconomy's; this only decides what to print.
     var econExpanded by rememberSectionExpanded("DRIVE_ECONOMY")
-    val mph = p.speedUnit == "MPH"
-    val valid = econState.isValid
-    fun num(v: Double, fmt: String, ok: Boolean) = if (ok) fmt.format(v) else "—"
-    // IDLE only with the engine running (PCM fast-poll rule) and the car stopped, while connected.
-    val idle = vs.isConnected && vs.rpm > ObdConstants.FAST_POLL_MIN_RPM && vs.speedKph < 2.0
-    val instantOk = valid && vs.isConnected && (if (mph) econState.instantMpg else econState.instantL100km) > 0
     EconomyPanel(
         expanded = econExpanded,
         onToggle = { econExpanded = !econExpanded },
         // Session aggregates stay readable offline, dimmed like other last-known values.
         dimmed = !vs.isConnected,
-        cells = listOf(
-            when {
-                idle -> Triple("IDLE", num(econState.idleFuelLPerHr, "%.1f", valid && econState.idleFuelLPerHr > 0), "L/hr")
-                mph  -> Triple("INSTANT", num(econState.instantMpg, "%.1f", instantOk), "MPG")
-                else -> Triple("INSTANT", num(econState.instantL100km, "%.1f", instantOk), "L/100 km")
-            },
-            if (mph) Triple("AVERAGE", num(econState.avgMpg, "%.1f", valid && econState.avgMpg > 0), "MPG")
-            else Triple("AVERAGE", num(econState.avgL100km, "%.1f", valid && econState.avgL100km > 0), "L/100 km"),
-            if (mph) Triple("TO EMPTY", num(econState.distanceToEmptyKm * UnitConversions.KM_TO_MI, "%.0f", valid && econState.distanceToEmptyKm > 0), "mi")
-            else Triple("TO EMPTY", num(econState.distanceToEmptyKm, "%.0f", valid && econState.distanceToEmptyKm > 0), "km"),
-            Triple("FUEL USED", num(econState.fuelUsedL, "%.1f", valid && econState.fuelUsedL > 0), "L"),   // #336: "—" until a figure
-        ),
+        cells = economyCells(vs, econState, p),
+    )
+}
+
+/**
+ * ECONOMY's four cells as (label, value, unit), each through the units formatter (#464): economy is stored in
+ * L/100 km, fuel in L and L/h, distance in km. A cell with no figure reads "—" beside its unit.
+ */
+internal fun economyCells(vs: VehicleState, econState: FuelEconomy.EconomyState, p: UserPrefs): List<Triple<String, String, String>> {
+    val valid = econState.isValid
+    fun econ(l100km: Double, ok: Boolean) = if (ok) p.economy(l100km)?.value ?: "—" else "—"
+    // IDLE only with the engine running (PCM fast-poll rule) and the car stopped, while connected.
+    val idle = vs.isConnected && vs.rpm > ObdConstants.FAST_POLL_MIN_RPM && vs.speedKph < 2.0
+    val instantOk = valid && vs.isConnected && econState.instantL100km > 0
+    return listOf(
+            if (idle) Triple("IDLE", if (valid && econState.idleFuelLPerHr > 0) p.fuelFlow(econState.idleFuelLPerHr).value else "—", p.fuelFlowUnitText)
+            else Triple("INSTANT", econ(econState.instantL100km, instantOk), p.economyUnitText),
+            Triple("AVERAGE", econ(econState.avgL100km, valid && econState.avgL100km > 0), p.economyUnitText),
+            Triple("TO EMPTY", if (valid && econState.distanceToEmptyKm > 0) p.range(econState.distanceToEmptyKm).value else "—", p.distanceUnitText),
+            // #336: "—" until a figure
+            Triple("FUEL USED", if (valid && econState.fuelUsedL > 0) p.fuelVolume(econState.fuelUsedL).value else "—", p.fuelUnitText),
     )
 }
 
@@ -746,7 +762,7 @@ private fun vehicleStatus(vs: VehicleState, p: UserPrefs, knockCount: Int, nowMs
 }
 
 /** AWD rear torque + per-frame dynamics in one panel (was a split card + three separate cells). */
-@Composable private fun ChassisPanel(vs: VehicleState, stale: Boolean) {
+@Composable private fun ChassisPanel(vs: VehicleState, stale: Boolean, p: UserPrefs) {
     Column(
         Modifier.fillMaxWidth()
             .instrumentSurface()
@@ -756,17 +772,17 @@ private fun vehicleStatus(vs: VehicleState, p: UserPrefs, knockCount: Int, nowMs
             // Rear-unit torque left vs right (0x2C0). No front/rear %: rear Nm ÷ engine torque isn't a physical split (#226)
             InstrumentLabel("AWD REAR TORQUE")
             Spacer(Modifier.weight(1f))
-            InstrumentMeta("L / R · Nm")
+            InstrumentMeta("L / R · ${p.torqueUnitText}")
         }
         Spacer(Modifier.height(8.dp))
-        AwdRearTorqueBar(vs, stale)
+        AwdRearTorqueBar(vs, p, stale)
         Spacer(Modifier.height(12.dp))
         Box(Modifier.fillMaxWidth().height(1.dp).background(Brd.copy(alpha = borderAlpha(0.4f))))
         Spacer(Modifier.height(10.dp))
         Row(Modifier.fillMaxWidth()) {
             MiniReadout("LAT G",  if (stale) "— —" else "${"%.2f".format(vs.lateralG)}g",      Modifier.weight(1f))
             MiniReadout("LON G",  if (stale) "— —" else "${"%.2f".format(vs.longitudinalG)}g", Modifier.weight(1f))
-            MiniReadout("TORQUE", if (stale) "— —" else "${vs.torqueAtTrans.roundToInt()} Nm",  Modifier.weight(1f))
+            MiniReadout("TORQUE", if (stale) "— —" else p.torque(vs.torqueAtTrans).text,  Modifier.weight(1f))
         }
     }
 }
@@ -775,7 +791,7 @@ private fun vehicleStatus(vs: VehicleState, p: UserPrefs, knockCount: Int, nowMs
  * Rear-unit torque, left vs right (both 0x2C0 actual fields — the same signal, same reference point): Nm at each end
  * and their share of the rear total as a bar. No front/rear figure (#226). [stale]: dashes and an empty track.
  */
-@Composable fun AwdRearTorqueBar(vs: VehicleState, stale: Boolean = false) {
+@Composable fun AwdRearTorqueBar(vs: VehicleState, p: UserPrefs, stale: Boolean = false) {
     val accent = LocalThemeAccent.current
     val rightColor = accentMid()
     val total = vs.totalRearTorque
@@ -794,7 +810,7 @@ private fun vehicleStatus(vs: VehicleState, p: UserPrefs, knockCount: Int, nowMs
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Column {
             MonoLabel("LEFT", 9.sp, Dim, letterSpacing = 0.3.sp)
-            DataNum(if (stale) "—" else "${vs.awdLeftTorque.roundToInt()}", 18.sp, if (stale) Dim else Frost)
+            DataNum(if (stale) "—" else p.torqueValue(vs.awdLeftTorque), 18.sp, if (stale) Dim else Frost)
         }
         Box(Modifier.weight(1f).padding(horizontal = 12.dp).height(8.dp)) {
             if (!stale && total > 0.5) Row(Modifier.matchParentSize().background(Surf3, RoundedCornerShape(4.dp))) {
@@ -828,7 +844,7 @@ private fun vehicleStatus(vs: VehicleState, p: UserPrefs, knockCount: Int, nowMs
         }
         Column(horizontalAlignment = Alignment.End) {
             MonoLabel("RIGHT", 9.sp, Dim, letterSpacing = 0.3.sp)
-            DataNum(if (stale) "—" else "${vs.awdRightTorque.roundToInt()}", 18.sp, if (stale) Dim else Frost)
+            DataNum(if (stale) "—" else p.torqueValue(vs.awdRightTorque), 18.sp, if (stale) Dim else Frost)
         }
     }
 }
@@ -866,10 +882,9 @@ internal fun RecordingStrip(driveState: com.openrs.dash.data.DriveState, connect
     val timeStr = if (driveState.isPaused) com.openrs.dash.data.DriveLabel.of(driveState, connected)?.text ?: "PAUSED"
                   else "%02d:%02d:%02d".format(h, m, s)
     val distKm = driveState.cumulativeDistanceKm
-    val distStr = if (p.speedUnit == "MPH") "${"%.1f".format(distKm * UnitConversions.KM_TO_MI)} mi"
-                  else "${"%.1f".format(distKm)} km"
+    val distStr = p.distance(distKm).text
     val avgSpd = driveState.avgSpeedKph
-    val avgStr = p.displaySpeed(avgSpd) + " " + p.speedLabel.lowercase()
+    val avgStr = p.speed(avgSpd).text
     val pts = driveState.totalPointCount
 
     // In priority order: the first two always show

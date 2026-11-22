@@ -1,5 +1,6 @@
 package com.openrs.dash.diagnostics
 
+import com.openrs.dash.ui.units.region
 import com.openrs.dash.BuildConfig
 import com.openrs.dash.can.CanDecoder
 import com.openrs.dash.can.NrcTracker
@@ -184,6 +185,15 @@ internal object DiagnosticReportBuilder {
             appendLine("  Temp      : ${p.tempUnit}")
             appendLine("  Boost     : ${p.boostUnit}")
             appendLine("  Tires     : ${p.tireUnit}")
+            // #464, additive: Region (derived from the eleven units) and the seven units added with it
+            appendLine("  Region    : ${p.region.name}")
+            appendLine("  Engine    : ${p.engineUnit}")
+            appendLine("  Air       : ${p.airUnit}")
+            appendLine("  Altitude  : ${p.altitudeUnit}")
+            appendLine("  Fuel      : ${p.fuelUnit}")
+            appendLine("  Economy   : ${p.economyUnit}")
+            appendLine("  Torque    : ${p.torqueUnit}")
+            appendLine("  Mixture   : ${p.mixtureUnit}")
             appendLine("  TireLow   : ${p.tireLowPsi} PSI")
             appendLine("  AutoRecon : ${p.autoReconnect} / ${p.reconnectIntervalSec}s")
             appendLine()
@@ -467,6 +477,15 @@ internal object DiagnosticReportBuilder {
                 put("tempUnit", "${p.tempUnit}")
                 put("boostUnit", "${p.boostUnit}")
                 put("tireUnit", "${p.tireUnit}")
+                // #464, additive (no schema bump): Region and the seven units added with it
+                put("unitRegion", p.region.name)
+                put("engineUnit", p.engineUnit)
+                put("airUnit", p.airUnit)
+                put("altitudeUnit", p.altitudeUnit)
+                put("fuelUnit", p.fuelUnit)
+                put("economyUnit", p.economyUnit)
+                put("torqueUnit", p.torqueUnit)
+                put("mixtureUnit", p.mixtureUnit)
                 put("tireLowPsi", p.tireLowPsi)
                 put("screenOn", p.screenOn)
                 put("autoReconnect", p.autoReconnect)

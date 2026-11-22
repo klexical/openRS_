@@ -43,6 +43,16 @@ import com.openrs.dash.data.VehicleState
 import com.openrs.dash.ui.anim.SparklineData
 import com.openrs.dash.ui.anim.StaggeredColumn
 import com.openrs.dash.ui.anim.pageEntrance
+import com.openrs.dash.ui.units.airAbs
+import com.openrs.dash.ui.units.altitudeFt
+import com.openrs.dash.ui.units.boostGauge
+import com.openrs.dash.ui.units.enginePressureKpa
+import com.openrs.dash.ui.units.enginePressurePsi
+import com.openrs.dash.ui.units.mixtureFromAfr
+import com.openrs.dash.ui.units.mixtureFromLambda
+import com.openrs.dash.ui.units.mixtureOtherFromAfr
+import com.openrs.dash.ui.units.mixtureOtherWord
+import com.openrs.dash.ui.units.mixtureWord
 import kotlin.math.roundToInt
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -136,11 +146,7 @@ import kotlin.math.roundToInt
                 .instrumentSurface().padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            listOf(
-                Triple("AFR ACTUAL", if (hasAfr) "%.2f".format(vs.afrActual) else ph, ":1"),
-                Triple("AFR DESIRED", if (hasAfr) "%.2f".format(vs.afrDesired) else ph, ":1"),
-                Triple("LAMBDA", if (hasAfr) "%.3f".format(vs.lambdaActual) else ph, "λ"),
-            ).forEachIndexed { i, (label, value, unit) ->
+            mixturePanel(p, vs, hasAfr, ph).forEachIndexed { i, (label, value, unit) ->
                 if (i > 0) PanelDivider(Modifier.padding(horizontal = 8.dp))
                 Column(Modifier.weight(1f)) {
                     InstrumentLabel(label)
@@ -157,8 +163,7 @@ import kotlin.math.roundToInt
             Column(verticalArrangement = Arrangement.spacedBy(CardGap)) {
                 // TIP is absolute kPa (~baro at rest); < 50 kPa can only be a bad decode. Shown against measured baro —
                 // the same reference as the TIP gauge on DRIVE (#207); absolute kPa when baro isn't known.
-                fun tipText(abs: Double) = com.openrs.dash.data.BoostRule.gaugeVsBaro(vs, abs)
-                    ?.let { g -> p.displayGauge(g).let { (v, u) -> "$v $u" } } ?: "${"%.0f".format(abs)} kPa abs"
+                fun tipText(abs: Double) = tipText(vs, p, abs)
                 val da = vs.densityAltitudeFt
                 ReadoutGrid(listOf(
                     listOf(
@@ -172,8 +177,8 @@ import kotlin.math.roundToInt
                         null,
                     ),
                     listOf(
-                        cell("HP FUEL", "hpFuelRailPsi", vs.hpFuelRailPsi, engineOnly = false, valid = { it >= 0 }) { "${"%.0f".format(it)} PSI" },
-                        Readout("DENS ALT", if (da != null) "${da} ft" else ph),
+                        cell("HP FUEL", "hpFuelRailPsi", vs.hpFuelRailPsi, engineOnly = false, valid = { it >= 0 }) { hpFuelText(p, it) },
+                        Readout("DENS ALT", densityAltitudeText(p, da) ?: ph),
                         null,
                     ),
                 ))
@@ -244,16 +249,16 @@ import kotlin.math.roundToInt
                 listOf(
                     trim("SHORT FT", stftState, fuelTrimColor(vs.shortFuelTrim), stftSnap),
                     trim("LONG FT", ltftState, ltftColor(vs.longFuelTrim), ltftSnap),
-                    Readout("BARO", "${vs.barometricPressure.roundToInt()} kPa"),
+                    Readout("BARO", baroText(p, vs.barometricPressure)),
                 ),
                 listOf(
-                    cell("CMD AFR", "commandedAfr", vs.commandedAfr, engineOnly = false, valid = { it > 0 }) { "${"%.3f".format(it)}λ" },
-                    cell("AFR SEN1", "afrSensor1", vs.afrSensor1, engineOnly = false, valid = { it > 0 }) { "%.2f".format(it) }
+                    cell("CMD ${p.mixtureWord}", "commandedAfr", vs.commandedAfr, engineOnly = false, valid = { it > 0 }) { p.mixtureFromLambda(it).text },
+                    cell("${p.mixtureWord} SEN1", "afrSensor1", vs.afrSensor1, engineOnly = false, valid = { it > 0 }) { p.mixtureFromAfr(it).text }
                         .copy(spark = afrSnap.takeIf { it.size >= 2 }),
                     cell("O2 VOLT", "o2Voltage", vs.o2Voltage) { "${"%.3f".format(it)}V" },
                 ),
                 listOf(
-                    cell("LP FUEL", "fuelRailPressure", vs.fuelRailPsi, engineOnly = false, valid = { it > 0 }) { "${"%.0f".format(it)} PSI" },
+                    cell("LP FUEL", "fuelRailPressure", vs.fuelRailPressure, engineOnly = false, valid = { it > 0 }) { lpFuelText(p, it) },
                     cell("OIL LIFE", "oilLifePct", vs.oilLifePct, engineOnly = false, valid = { it >= 0 }) { "${it.roundToInt()}%" },
                     null,
                 ),
@@ -282,3 +287,38 @@ private fun ltftColor(trim: Double) = when {
 /** KR in degrees; values that round to zero print as "0.00°" (no "-0.00°" from the /−512 scale). */
 internal fun formatKr(deg: Double): String =
     if (kotlin.math.abs(deg) < 0.005) "0.00°" else "${"%.2f".format(deg)}°"
+
+// ── Unit text (#464) — every value through the units formatter (ui/units/Units.kt) ─────────────────────────────────
+
+/** HP fuel rail (0xF423, stored psi) in the engine-pressure unit. */
+internal fun hpFuelText(p: UserPrefs, psi: Double): String = p.enginePressurePsi(psi).text
+
+/** LP fuel rail (0x0548, stored kPa) in the engine-pressure unit. */
+internal fun lpFuelText(p: UserPrefs, kpa: Double): String = p.enginePressureKpa(kpa).text
+
+/** Barometric pressure (stored kPa absolute) in the air-pressure unit, marked absolute. */
+internal fun baroText(p: UserPrefs, kpaAbs: Double): String = p.airAbs(kpaAbs).text
+
+/** Density altitude (computed in feet) in the altitude unit; null until baro and ambient are known. */
+internal fun densityAltitudeText(p: UserPrefs, ft: Int?): String? = ft?.let { p.altitudeFt(it.toDouble()).text }
+
+/**
+ * TIP (absolute kPa) against measured baro in the boost unit (#207); absolute in the air-pressure unit when baro isn't
+ * known. Shared by POWER and the Custom Dashboard.
+ */
+internal fun tipText(vs: VehicleState, p: UserPrefs, absKpa: Double): String =
+    com.openrs.dash.data.BoostRule.gaugeVsBaro(vs, absKpa)?.let { g -> p.boostGauge(g).text } ?: p.airAbs(absKpa).text
+
+/**
+ * POWER's mixture panel: the chosen mixture unit leads (actual, desired), the other form is the third cell (#464).
+ * Values are (label, value, unit); the unit prints only with a value.
+ */
+internal fun mixturePanel(p: UserPrefs, vs: VehicleState, hasAfr: Boolean, ph: String): List<Triple<String, String, String>> {
+    fun lead(afr: Double) = p.mixtureFromAfr(afr)
+    val actual = lead(vs.afrActual); val desired = lead(vs.afrDesired); val other = p.mixtureOtherFromAfr(vs.afrActual)
+    return listOf(
+        Triple("${p.mixtureWord} ACTUAL", if (hasAfr) actual.value else ph, actual.unit),
+        Triple("${p.mixtureWord} DESIRED", if (hasAfr) desired.value else ph, desired.unit),
+        Triple(p.mixtureOtherWord, if (hasAfr) other.value else ph, other.unit),
+    )
+}

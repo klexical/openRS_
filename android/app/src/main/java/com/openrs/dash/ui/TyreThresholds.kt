@@ -1,5 +1,8 @@
 package com.openrs.dash.ui
 
+import com.openrs.dash.ui.units.UnitIds
+import com.openrs.dash.ui.units.UnitFactors
+import com.openrs.dash.ui.units.tyreToPsi
 import java.util.Locale
 
 /**
@@ -23,15 +26,20 @@ data class TyreThreshold(val psi: Float, val text: String, val edited: Boolean =
     fun resolvePsi(unit: String): Float? {
         if (!edited) return psi
         val v = text.trim().replace(',', '.').toFloatOrNull() ?: return null
-        return if (unit == "BAR") (v / UnitConversions.PSI_TO_BAR).toFloat() else v
+        return tyreToPsi(v.toDouble(), unit).toFloat()
     }
 
     companion object {
         fun of(psi: Float, unit: String) = TyreThreshold(psi, display(psi, unit))
 
-        /** BAR to 2 decimals, PSI to 1 — the same precision the readings use. */
-        fun display(psi: Float, unit: String): String =
-            if (unit == "BAR") "%.2f".format(Locale.ROOT, psi * UnitConversions.PSI_TO_BAR)
-            else "%.1f".format(Locale.ROOT, psi)
+        /**
+         * bar to 2 decimals, kPa to 0, psi to 1 — the same precision the readings use (#464). Locale.ROOT: the field is
+         * parsed back, so it never takes the phone's decimal comma.
+         */
+        fun display(psi: Float, unit: String): String = when (unit) {
+            UnitIds.BAR -> "%.2f".format(Locale.ROOT, psi * UnitFactors.PSI_TO_BAR)
+            UnitIds.KPA -> "%.0f".format(Locale.ROOT, psi / UnitFactors.KPA_TO_PSI)
+            else -> "%.1f".format(Locale.ROOT, psi)
+        }
     }
 }

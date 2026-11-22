@@ -133,11 +133,13 @@ class FuelUsedNoiseTest {
     }
 
     @Test fun `TRIP's compare sheet shows a dash and no difference for a drive with no figure`() {
-        val none = com.openrs.dash.ui.trip.fuelUsedCompare(0.0, 1.25)
-        assertEquals(listOf("—", "1.25 L", ""), listOf(none.valueA, none.valueB, none.delta))
+        // Litres to 1 decimal, the fuel unit's decimals (#464)
+        val litres = com.openrs.dash.ui.UserPrefs(fuelUnit = "L")
+        val none = com.openrs.dash.ui.trip.fuelUsedCompare(0.0, 1.2, litres)
+        assertEquals(listOf("—", "1.2 L", ""), listOf(none.valueA, none.valueB, none.delta))
         assertEquals(false, none.comparable)
-        val both = com.openrs.dash.ui.trip.fuelUsedCompare(1.00, 1.25)
-        assertEquals(listOf("1.00 L", "1.25 L", "+0.25 L"), listOf(both.valueA, both.valueB, both.delta))
+        val both = com.openrs.dash.ui.trip.fuelUsedCompare(1.0, 1.2, litres)
+        assertEquals(listOf("1.0 L", "1.2 L", "+0.2 L"), listOf(both.valueA, both.valueB, both.delta))
     }
 
     @Test fun `no average economy without a fuel-used figure - 1 km on a two-step drop (owner Q165)`() {

@@ -1,11 +1,20 @@
 package com.openrs.dash.ui
 
+import com.openrs.dash.ui.units.UnitIds
 import android.content.Context
 import androidx.compose.ui.graphics.Color
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import com.openrs.dash.ui.units.boostGauge
+import com.openrs.dash.ui.units.speed
+import com.openrs.dash.ui.units.speedUnitText
+import com.openrs.dash.ui.units.tempDeltaIn
+import com.openrs.dash.ui.units.tempIn
+import com.openrs.dash.ui.units.tempUnitText
+import com.openrs.dash.ui.units.tyre
+import com.openrs.dash.ui.units.tyreUnitText
 
 /**
  * User-configurable display and connection preferences.
@@ -23,7 +32,16 @@ data class UserPrefs(
     val speedUnit: String           = AppSettings.DEFAULT_SPEED_UNIT,   // "MPH" | "KPH"
     val tempUnit: String            = AppSettings.DEFAULT_TEMP_UNIT,    // "F"   | "C"
     val boostUnit: String           = AppSettings.DEFAULT_BOOST_UNIT,   // "PSI" | "BAR" | "KPA"
-    val tireUnit: String            = AppSettings.DEFAULT_TIRE_UNIT,    // "PSI" | "BAR"
+    val tireUnit: String            = AppSettings.DEFAULT_TIRE_UNIT,    // "PSI" | "BAR" | "KPA"
+    // #464: the seven units added with Region (ids in ui/units/Units.kt). Defaults = the US preset, matching the
+    // four defaults above; AppSettings.load fills them by the migration rule.
+    val engineUnit: String          = AppSettings.DEFAULT_ENGINE_UNIT,  // "BAR" | "PSI" | "MPA"
+    val airUnit: String             = AppSettings.DEFAULT_AIR_UNIT,     // "HPA" | "KPA" | "INHG"
+    val altitudeUnit: String        = AppSettings.DEFAULT_ALTITUDE_UNIT,// "M" | "FT"
+    val fuelUnit: String            = AppSettings.DEFAULT_FUEL_UNIT,    // "L" | "US_GAL" | "UK_GAL"
+    val economyUnit: String         = AppSettings.DEFAULT_ECONOMY_UNIT, // "L100KM" | "KML" | "MPG_US" | "MPG_UK"
+    val torqueUnit: String          = AppSettings.DEFAULT_TORQUE_UNIT,  // "NM" | "LBFT"
+    val mixtureUnit: String         = AppSettings.DEFAULT_MIXTURE_UNIT, // "AFR" | "LAMBDA"
     val tireLowPsi: Float           = AppSettings.DEFAULT_TIRE_LOW_PSI,
     val tireWarnPsi: Float          = AppSettings.DEFAULT_TIRE_WARN_PSI,
     val tireHighPsi: Float          = AppSettings.DEFAULT_TIRE_HIGH_PSI,
@@ -39,7 +57,7 @@ data class UserPrefs(
     val adapterType: String         = AppSettings.DEFAULT_ADAPTER_TYPE,  // "MEATPI_USB" | "MEATPI_PRO"
     val connectionMethod: String    = AppSettings.DEFAULT_CONNECTION_METHOD, // "WIFI" | "BLUETOOTH"
     val meatPiMicroSdLog: Boolean   = false,                              // MeatPi Pro microSD logging
-    val odomInMiles: Boolean        = speedUnit == "MPH",                 // Odometer display: true=mi, false=km
+    val odomInMiles: Boolean        = speedUnit == UnitIds.MPH,                 // Odometer display: true=mi, false=km
     val edgeShiftLight: Boolean     = AppSettings.DEFAULT_EDGE_SHIFT_LIGHT,  // peripheral edge glow
     val edgeShiftColor: String      = AppSettings.DEFAULT_EDGE_SHIFT_COLOR,  // "accent"|"white"|"progressive"
     val edgeShiftIntensity: String  = AppSettings.DEFAULT_EDGE_SHIFT_INTENSITY, // "low"|"med"|"high"
@@ -56,62 +74,42 @@ data class UserPrefs(
     val gearModeTint: Boolean       = AppSettings.DEFAULT_GEAR_MODE_TINT,     // GEAR label tints to mode color
 ) {
     // ── Unit-conversion helpers used by UI ─────────────────────────────────
+    // Each one goes through the units formatter (ui/units/Units.kt, #464) — the one place a unit is spelled.
 
-    fun displayTemp(celsius: Double): String {
-        return if (tempUnit == "C") "%.0f".format(celsius)
-        else "%.0f".format(celsius * 9.0 / 5.0 + 32)
-    }
+    fun displayTemp(celsius: Double): String = "%.0f".format(tempIn(celsius))
 
-    val tempLabel: String get() = if (tempUnit == "C") "°C" else "°F"
+    val tempLabel: String get() = tempUnitText
 
     /**
      * A limit or target: whole numbers stay whole, others keep one decimal (custom 104.44 °C → "104.4",
      * warn − 2 °C in °F → "244.4") — the same text on gauge legends, THERMAL's reason, the checklist and DRIVE.
      */
     fun displayLimit(celsius: Double): String {
-        val x = if (tempUnit == "C") celsius else celsius * 9.0 / 5.0 + 32
+        val x = tempIn(celsius)
         return (if (kotlin.math.abs(x - Math.round(x)) < 0.05) "%.0f" else "%.1f").format(x)
     }
 
     /** A temperature difference (headroom, margin): °F = Δ°C × 1.8 — no +32 offset. */
-    fun displayTempDelta(deltaC: Double): String =
-        "%.0f".format(if (tempUnit == "C") deltaC else deltaC * 9.0 / 5.0)
+    fun displayTempDelta(deltaC: Double): String = "%.0f".format(tempDeltaIn(deltaC))
 
     /** A rate of change, °C/min or °F/min (× 1.8, no offset), one decimal. */
-    fun displayTempRate(cPerMin: Double): String =
-        "%.1f".format(if (tempUnit == "C") cPerMin else cPerMin * 9.0 / 5.0)
+    fun displayTempRate(cPerMin: Double): String = "%.1f".format(tempDeltaIn(cPerMin))
 
-    fun displaySpeed(kph: Double): String {
-        return if (speedUnit == "KPH") "%.0f".format(kph)
-        else "%.0f".format(kph * UnitConversions.KM_TO_MI)
-    }
+    fun displaySpeed(kph: Double): String = speed(kph).value
 
-    val speedLabel: String get() = speedUnit  // "KPH" or "MPH"
+    /** "km/h" or "mph" — the one spelling (#464). */
+    val speedLabel: String get() = speedUnitText
 
     /** Gauge pressure (kPa relative to ambient, e.g. a [com.openrs.dash.data.BoostReading]) in the boost unit. */
-    fun displayGauge(gaugeKpa: Double): Pair<String, String> = displayBoost(gaugeKpa + UnitConversions.STD_ATM_KPA)
+    fun displayGauge(gaugeKpa: Double): Pair<String, String> = boostGauge(gaugeKpa).let { it.value to it.unit }
 
-    /** Boost pressure from absolute kPa. Returns (value, label) pair. */
-    fun displayBoost(boostKpa: Double): Pair<String, String> {
-        val psi = (boostKpa - UnitConversions.STD_ATM_KPA) * UnitConversions.KPA_TO_PSI
-        return when (boostUnit) {
-            "BAR" -> "%.2f".format(psi * UnitConversions.PSI_TO_BAR) to "BAR"
-            "KPA" -> "%.0f".format(boostKpa - UnitConversions.STD_ATM_KPA) to "kPa"
-            else  -> "%.1f".format(psi) to "PSI"
-        }
-    }
+    /** Boost pressure from absolute kPa (std-atm form). Returns (value, label) pair. */
+    fun displayBoost(boostKpa: Double): Pair<String, String> = displayGauge(boostKpa - UnitConversions.STD_ATM_KPA)
 
-    /** Tire pressure in PSI → display value and label (1 decimal place for accuracy). */
-    fun displayTire(psi: Double): String {
-        return if (tireUnit == "BAR") "%.2f".format(psi * UnitConversions.PSI_TO_BAR)
-        else "%.1f".format(psi)
-    }
+    /** Tire pressure in PSI → display value (psi 1, bar 2, kPa 0 decimals). */
+    fun displayTire(psi: Double): String = tyre(psi).value
 
-    val tireLabel: String get() = tireUnit  // "PSI" or "BAR"
-
-    /** Low-pressure threshold in whichever unit is selected. */
-    val tireLowDisplay: Float
-        get() = if (tireUnit == "BAR") (tireLowPsi * UnitConversions.PSI_TO_BAR.toFloat()) else tireLowPsi
+    val tireLabel: String get() = tyreUnitText
 
     /** Whether a raw PSI value is below the warning threshold. */
     fun isTireLow(psi: Double): Boolean = psi in 0.01..tireLowPsi.toDouble()

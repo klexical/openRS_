@@ -1,5 +1,7 @@
 package com.openrs.dash.service
 
+import com.openrs.dash.ui.units.boostUnitText
+import com.openrs.dash.ui.units.tempUnitText
 import android.annotation.SuppressLint
 import android.app.Service
 import android.content.Intent
@@ -115,9 +117,11 @@ class HudOverlayService : Service() {
             includeFontPadding = false
         }
 
-        boostTv = makeLabel(getString(R.string.hud_boost, "---", "PSI"))
-        rpmTv   = makeLabel("RPM:  ----")
-        oilTv   = makeLabel("OIL:  ---\u00B0")
+        // The first frame already speaks the chosen units (#464); the collector below refreshes them.
+        val startPrefs = com.openrs.dash.ui.UserPrefsStore.prefs.value
+        boostTv = makeLabel(getString(R.string.hud_boost, "---", startPrefs.boostUnitText))
+        rpmTv   = makeLabel(getString(R.string.hud_rpm_none))
+        oilTv   = makeLabel(getString(R.string.hud_oil, "---", startPrefs.tempUnitText))
 
         root.addView(boostTv)
         root.addView(rpmTv)

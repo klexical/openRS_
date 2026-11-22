@@ -115,11 +115,12 @@ class UserPrefsTest {
     }
 
     // ═════════════════════════════════════════════════════════════════════════
-    // tireLowDisplay — threshold conversion for settings display
+    // Tyre threshold text — the formatter's one conversion (#464; tireLowDisplay had no caller)
     // ═════════════════════════════════════════════════════════════════════════
 
-    @Test fun `tireLowDisplay bar converts threshold`() {
-        val expected = 30f * UnitConversions.PSI_TO_BAR.toFloat()
-        assertEquals(expected, prefs(tireUnit = "BAR", tireLowPsi = 30f).tireLowDisplay, 0.01f)
+    @Test fun `tyre threshold in bar converts the stored psi`() {
+        assertEquals("2.07", com.openrs.dash.ui.units.tyreValue(30.0, "BAR"))
+        assertEquals("207", com.openrs.dash.ui.units.tyreValue(30.0, "KPA"))
+        assertEquals("30.0", com.openrs.dash.ui.units.tyreValue(30.0, "PSI"))
     }
 }

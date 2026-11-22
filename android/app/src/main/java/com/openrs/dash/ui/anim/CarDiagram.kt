@@ -1,5 +1,6 @@
 package com.openrs.dash.ui.anim
 
+import com.openrs.dash.ui.units.speed
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
@@ -25,7 +26,6 @@ import com.openrs.dash.ui.Ok
 import com.openrs.dash.ui.Orange
 import com.openrs.dash.ui.TyreView
 import com.openrs.dash.ui.Warn
-import com.openrs.dash.ui.UnitConversions
 import com.openrs.dash.ui.UserPrefs
 import kotlin.math.roundToInt
 
@@ -156,7 +156,5 @@ internal fun formatTirePressure(psi: Double, prefs: UserPrefs): String {
 }
 
 internal fun formatWheelSpeed(kph: Double, prefs: UserPrefs): String {
-    val value = if (prefs.speedUnit == "MPH") kph * UnitConversions.KM_TO_MI else kph
-    val label = if (prefs.speedUnit == "MPH") "mph" else "kph"
-    return "${value.roundToInt()} $label"
+    return prefs.speed(kph).text
 }

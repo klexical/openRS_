@@ -1,5 +1,12 @@
 package com.openrs.dash.ui
 
+import com.openrs.dash.ui.units.UnitIds
+import com.openrs.dash.ui.units.Region
+import com.openrs.dash.ui.units.UnitSet
+import com.openrs.dash.ui.units.UnitSearch
+import com.openrs.dash.ui.units.UnitText
+import com.openrs.dash.ui.units.tyreUnitText
+import com.openrs.dash.ui.units.withUnits
 import androidx.core.net.toUri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -133,10 +140,32 @@ fun SettingsDialog(
     var tempUnit        by remember { mutableStateOf(current.tempUnit) }
     var boostUnit       by remember { mutableStateOf(current.boostUnit) }
     var tireUnit        by remember { mutableStateOf(current.tireUnit) }
+    // The seven units added with Region (#464)
+    var engineUnit      by remember { mutableStateOf(current.engineUnit) }
+    var airUnit         by remember { mutableStateOf(current.airUnit) }
+    var altitudeUnit    by remember { mutableStateOf(current.altitudeUnit) }
+    var fuelUnit        by remember { mutableStateOf(current.fuelUnit) }
+    var economyUnit     by remember { mutableStateOf(current.economyUnit) }
+    var torqueUnit      by remember { mutableStateOf(current.torqueUnit) }
+    var mixtureUnit     by remember { mutableStateOf(current.mixtureUnit) }
     // TPMS thresholds: edited in the staged tyre unit, stored as exact PSI (#219)
     var tireLow         by remember { mutableStateOf(TyreThreshold.of(current.tireLowPsi, current.tireUnit)) }
     var tireWarn        by remember { mutableStateOf(TyreThreshold.of(current.tireWarnPsi, current.tireUnit)) }
     var tireHigh        by remember { mutableStateOf(TyreThreshold.of(current.tireHighPsi, current.tireUnit)) }
+    // Region is not stored: it is whatever preset the eleven staged units equal, else Custom (#464)
+    val stagedUnits = UnitSet(speedUnit, tempUnit, boostUnit, tireUnit, engineUnit, airUnit, altitudeUnit, fuelUnit,
+        economyUnit, torqueUnit, mixtureUnit)
+    fun stageUnits(u: UnitSet) {
+        if (u.tyre != tireUnit) {
+            // Same physical thresholds, shown in the new unit — nothing re-rounded into the saved PSI (#219)
+            tireLow = tireLow.convert(tireUnit, u.tyre)
+            tireWarn = tireWarn.convert(tireUnit, u.tyre)
+            tireHigh = tireHigh.convert(tireUnit, u.tyre)
+        }
+        speedUnit = u.speed; tempUnit = u.temp; boostUnit = u.boost; tireUnit = u.tyre
+        engineUnit = u.engine; airUnit = u.air; altitudeUnit = u.altitude; fuelUnit = u.fuel
+        economyUnit = u.economy; torqueUnit = u.torque; mixtureUnit = u.mixture
+    }
     var screenOn        by remember { mutableStateOf(current.screenOn) }
     var autoReconnect   by remember { mutableStateOf(current.autoReconnect) }
     var reconnectSec    by remember { mutableStateOf(current.reconnectIntervalSec.toString()) }
@@ -385,59 +414,56 @@ fun SettingsDialog(
         NavSection(
             SettingsCategory.UNITS,
             "UNITS",
-            listOf("mph", "kph", "celsius", "fahrenheit", "psi", "bar", "kpa",
-                "speed", "temp", "temperature", "boost", "tire", "pressure"),
+            UnitSearch.UNITS,
         ) {
             SettingsSection("UNITS") {
-                SettingsRow("Speed") {
-                    SettingsPicker(
-                        options = listOf("MPH", "KPH"),
-                        selected = speedUnit,
-                        onSelect = { speedUnit = it },
-                    )
+                val stagedRegion = Region.of(stagedUnits)
+                SettingsRow(
+                    "Region",
+                    stacked = true,
+                    help = "A region sets every unit below. Changing any unit by hand makes it Custom. " +
+                        "Display only: drives and exports keep their units.",
+                ) {
+                    // Two rows of three so the longest names keep one line at 360 dp
+                    val regions = Region.entries.map { it.label }
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        regions.chunked(3).forEach { row ->
+                            SettingsPicker(
+                                options = row,
+                                selected = stagedRegion.label,
+                                onSelect = { label ->
+                                    // Custom changes nothing by itself; a preset stages all eleven units
+                                    Region.entries.first { it.label == label }.units?.let { stageUnits(it) }
+                                },
+                                fill = true,
+                            )
+                        }
+                    }
                 }
                 Spacer(Modifier.height(4.dp))
-                SettingsRow("Temperature") {
-                    SettingsPicker(
-                        options = listOf("°F", "°C"),
-                        selected = if (tempUnit == "F") "°F" else "°C",
-                        onSelect = { tempUnit = if (it == "°F") "F" else "C" },
-                    )
-                }
-                Spacer(Modifier.height(4.dp))
-                SettingsRow("Boost Pressure") {
-                    SettingsPicker(
-                        options = listOf("PSI", "BAR", "kPa"),
-                        selected = when (boostUnit) { "BAR" -> "BAR"; "KPA" -> "kPa"; else -> "PSI" },
-                        onSelect = { boostUnit = when (it) { "BAR" -> "BAR"; "kPa" -> "KPA"; else -> "PSI" } },
-                    )
-                }
-                Spacer(Modifier.height(4.dp))
-                SettingsRow("Tire Pressure") {
-                    SettingsPicker(
-                        options = listOf("PSI", "BAR"),
-                        selected = tireUnit,
-                        onSelect = { unit ->
-                            // Same physical thresholds, shown in the new unit — nothing re-rounded into the saved PSI
-                            tireLow = tireLow.convert(tireUnit, unit)
-                            tireWarn = tireWarn.convert(tireUnit, unit)
-                            tireHigh = tireHigh.convert(tireUnit, unit)
-                            tireUnit = unit
-                        },
-                    )
-                }
+                UnitRow("Speed & distance", UnitText.SPEED, speedUnit) { stageUnits(stagedUnits.copy(speed = it)) }
+                UnitRow("Temperature", UnitText.TEMP, tempUnit) { stageUnits(stagedUnits.copy(temp = it)) }
+                UnitRow("Boost", UnitText.BOOST, boostUnit) { stageUnits(stagedUnits.copy(boost = it)) }
+                UnitRow("Tyres", UnitText.TYRE, tireUnit) { stageUnits(stagedUnits.copy(tyre = it)) }
+                UnitRow("Engine pressures", UnitText.ENGINE, engineUnit) { stageUnits(stagedUnits.copy(engine = it)) }
+                UnitRow("Air pressure", UnitText.AIR, airUnit) { stageUnits(stagedUnits.copy(air = it)) }
+                UnitRow("Altitude", UnitText.ALTITUDE, altitudeUnit) { stageUnits(stagedUnits.copy(altitude = it)) }
+                UnitRow("Fuel volume", UnitText.FUEL, fuelUnit, stacked = true) { stageUnits(stagedUnits.copy(fuel = it)) }
+                UnitRow("Economy", UnitText.ECONOMY, economyUnit, stacked = true) { stageUnits(stagedUnits.copy(economy = it)) }
+                UnitRow("Torque", UnitText.TORQUE, torqueUnit) { stageUnits(stagedUnits.copy(torque = it)) }
+                UnitRow("Mixture", UnitText.MIXTURE, mixtureUnit) { stageUnits(stagedUnits.copy(mixture = it)) }
             }
         },
         NavSection(
             SettingsCategory.UNITS,
             "TPMS THRESHOLDS",
-            listOf("tpms", "tire", "pressure", "low", "warn", "high", "psi"),
+            UnitSearch.TPMS,
         ) {
             SettingsSection("TPMS THRESHOLDS") {
                 SettingsRow("Low (critical)") {
                     OutlinedTextField(
                         value = tireLow.text, onValueChange = { tireLow = tireLow.edit(it); error = null },
-                        label = { Text(tireUnit, fontFamily = ShareTechMono, fontSize = 10.sp) },
+                        label = { Text(tyreUnitText(tireUnit), fontFamily = ShareTechMono, fontSize = 10.sp) },
                         singleLine = true, modifier = Modifier.width(90.dp),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         colors = outlinedFieldColors(),
@@ -448,7 +474,7 @@ fun SettingsDialog(
                 SettingsRow("Warn (getting low)") {
                     OutlinedTextField(
                         value = tireWarn.text, onValueChange = { tireWarn = tireWarn.edit(it); error = null },
-                        label = { Text(tireUnit, fontFamily = ShareTechMono, fontSize = 10.sp) },
+                        label = { Text(tyreUnitText(tireUnit), fontFamily = ShareTechMono, fontSize = 10.sp) },
                         singleLine = true, modifier = Modifier.width(90.dp),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         colors = outlinedFieldColors(),
@@ -459,7 +485,7 @@ fun SettingsDialog(
                 SettingsRow("High (over-inflated)") {
                     OutlinedTextField(
                         value = tireHigh.text, onValueChange = { tireHigh = tireHigh.edit(it); error = null },
-                        label = { Text(tireUnit, fontFamily = ShareTechMono, fontSize = 10.sp) },
+                        label = { Text(tyreUnitText(tireUnit), fontFamily = ShareTechMono, fontSize = 10.sp) },
                         singleLine = true, modifier = Modifier.width(90.dp),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         colors = outlinedFieldColors(),
@@ -469,10 +495,10 @@ fun SettingsDialog(
                 }
                 Spacer(Modifier.height(6.dp))
                 SettingsNote(
-                    "Below Low = critical · below Warn = caution · above High = over-inflated. In ${tireUnit} " +
-                        "(Tire Pressure unit). Defaults ${TyreThreshold.display(AppSettings.DEFAULT_TIRE_LOW_PSI, tireUnit)} / " +
+                    "Below Low = critical · below Warn = caution · above High = over-inflated. In ${tyreUnitText(tireUnit)} " +
+                        "(Tyres unit). Defaults ${TyreThreshold.display(AppSettings.DEFAULT_TIRE_LOW_PSI, tireUnit)} / " +
                         "${TyreThreshold.display(AppSettings.DEFAULT_TIRE_WARN_PSI, tireUnit)} / " +
-                        "${TyreThreshold.display(AppSettings.DEFAULT_TIRE_HIGH_PSI, tireUnit)} ${tireUnit.lowercase()}."
+                        "${TyreThreshold.display(AppSettings.DEFAULT_TIRE_HIGH_PSI, tireUnit)} ${tyreUnitText(tireUnit)}."
                 )
             }
         },
@@ -482,7 +508,7 @@ fun SettingsDialog(
             listOf("thermal", "profile", "street", "track", "race", "custom", "warm-up", "warning", "critical",
                 "oil", "coolant", "ptu", "rdu", "clutch", "intake", "limit", "threshold", "readiness"),
         ) {
-            val unitLabel = if (tempUnit == "C") "°C" else "°F"
+            val unitLabel = if (tempUnit == UnitIds.C) UnitText.DEG_C else UnitText.DEG_F
             val options = listOf("STREET", "TRACK", "RACE") + (if (customCells != null) listOf("CUSTOM") else emptyList())
             // Sections are laid out in a Box — keep this page's blocks in one Column
             Column {
@@ -1115,13 +1141,12 @@ fun SettingsDialog(
                         // previous settings remain intact.
                         host          = AppSettings.DEFAULT_HOST
                         port          = AppSettings.DEFAULT_PORT.toString()
-                        speedUnit     = AppSettings.DEFAULT_SPEED_UNIT
-                        tempUnit      = AppSettings.DEFAULT_TEMP_UNIT
-                        boostUnit     = AppSettings.DEFAULT_BOOST_UNIT
-                        tireUnit      = AppSettings.DEFAULT_TIRE_UNIT
-                        tireLow       = TyreThreshold.of(AppSettings.DEFAULT_TIRE_LOW_PSI, AppSettings.DEFAULT_TIRE_UNIT)
-                        tireWarn      = TyreThreshold.of(AppSettings.DEFAULT_TIRE_WARN_PSI, AppSettings.DEFAULT_TIRE_UNIT)
-                        tireHigh      = TyreThreshold.of(AppSettings.DEFAULT_TIRE_HIGH_PSI, AppSettings.DEFAULT_TIRE_UNIT)
+                        // Units: the phone's own region, as on a new install (#464); thresholds back to defaults
+                        val phoneUnits = Region.unitsForCountry(java.util.Locale.getDefault().country)
+                        stageUnits(phoneUnits)
+                        tireLow       = TyreThreshold.of(AppSettings.DEFAULT_TIRE_LOW_PSI, phoneUnits.tyre)
+                        tireWarn      = TyreThreshold.of(AppSettings.DEFAULT_TIRE_WARN_PSI, phoneUnits.tyre)
+                        tireHigh      = TyreThreshold.of(AppSettings.DEFAULT_TIRE_HIGH_PSI, phoneUnits.tyre)
                         screenOn      = AppSettings.DEFAULT_SCREEN_ON
                         autoReconnect = AppSettings.DEFAULT_AUTO_RECONNECT
                         reconnectSec  = AppSettings.DEFAULT_RECONNECT_INTERVAL.toString()
@@ -1187,11 +1212,8 @@ fun SettingsDialog(
                                 AppSettings.save(ctx, host, p)
                                 bleDraft.commit(save = { a, n -> AppSettings.saveBleDevice(ctx, a, n) },
                                     clear = { AppSettings.clearBleDevice(ctx) })
-                                UserPrefsStore.update(ctx) { it.copy(
-                                    speedUnit            = speedUnit,
-                                    tempUnit             = tempUnit,
-                                    boostUnit            = boostUnit,
-                                    tireUnit             = tireUnit,
+                                // withUnits sets all eleven units (and the odometer unit with speed, #464)
+                                UserPrefsStore.update(ctx) { it.withUnits(stagedUnits).copy(
                                     tireLowPsi           = threshold,
                                     tireWarnPsi          = warnThr,
                                     tireHighPsi          = highThr,
@@ -1575,6 +1597,25 @@ private fun SettingsPicker(
     fill: Boolean = false,
 ) = SegmentedPicker(options, selected, onSelect, fill)
 
+
+/** One unit setting (#464): [options] are (stored id, label) pairs from [UnitText]; [onSelect] gets the id. */
+@Composable
+private fun UnitRow(
+    label: String,
+    options: List<Pair<String, String>>,
+    selectedId: String,
+    stacked: Boolean = false,
+    onSelect: (String) -> Unit,
+) {
+    SettingsRow(label, stacked = stacked) {
+        SettingsPicker(
+            options = options.map { it.second },
+            selected = options.firstOrNull { it.first == selectedId }?.second ?: "",
+            onSelect = { shown -> options.firstOrNull { it.second == shown }?.first?.let(onSelect) },
+            fill = stacked,
+        )
+    }
+}
 
 /** Explanatory text under a setting — one size and colour for every note (were 9–10 sp). */
 @Composable

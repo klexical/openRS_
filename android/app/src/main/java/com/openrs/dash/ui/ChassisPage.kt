@@ -1,5 +1,12 @@
 package com.openrs.dash.ui
 
+import com.openrs.dash.ui.units.speedUnitText
+import com.openrs.dash.ui.units.torque
+import com.openrs.dash.ui.units.torqueUnitText
+import com.openrs.dash.ui.units.torqueValue
+import com.openrs.dash.ui.units.speedDelta
+import com.openrs.dash.ui.units.enginePressureMbar
+import com.openrs.dash.ui.units.engineUnitText
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
@@ -318,7 +325,7 @@ private fun TyreCell(
     val level = tyre.level
     val hasTemp = tempC > -90
     val speedStr = if (live) com.openrs.dash.ui.anim.formatWheelSpeed(wheelSpeedKph, p)
-                   else "— " + (if (p.speedUnit == "MPH") "mph" else "kph")
+                   else "— " + p.speedUnitText
     val animTireTemp by animateColorAsState(tyreTempColor(tempC), tween(400), label = "tireTC")
     val stale = tyre.stale
 
@@ -343,7 +350,7 @@ private fun TyreCell(
         Row(verticalAlignment = Alignment.Bottom) {
             DriveNum(if (psi < 0) "—" else p.displayTire(psi), 26.sp, if (stale) Dim else levelColor(level))
             Spacer(Modifier.width(3.dp))
-            InstrumentMeta(p.tireLabel.lowercase(), Modifier.padding(bottom = 4.dp))
+            InstrumentMeta(p.tireLabel, Modifier.padding(bottom = 4.dp))
         }
         // Always one status line (STALE / WARMING / pressure change / blank) so all four cards match in height.
         InstrumentMeta(tyreStatusText(tyre, deltaText), color = if (stale) WarnInk else Dim)
@@ -374,8 +381,8 @@ private fun AwdMetrics(held: VehicleState, p: UserPrefs) {
     // Precompute labels for the diagram
     // Offline: no live torque — dashes, not an at-rest "F 100 / R 0 · 0 Nm".
     val live = vs.isConnected
-    val leftNm = if (live) "${vs.awdLeftTorque.roundToInt()} Nm" else "— Nm"
-    val rightNm = if (live) "${vs.awdRightTorque.roundToInt()} Nm" else "— Nm"
+    val leftNm = if (live) p.torque(vs.awdLeftTorque).text else "— ${p.torqueUnitText}"
+    val rightNm = if (live) p.torque(vs.awdRightTorque).text else "— ${p.torqueUnitText}"
     // PTU / RDU / clutch temperatures live in THERMAL's DRIVETRAIN panel — the diagram shows torque only.
 
     // Clutch engagement: scale delivered torque against a realistic reference.
@@ -750,25 +757,25 @@ internal fun awdDetailRows(vs: VehicleState, p: UserPrefs, live: Boolean, nowMs:
         Pair<List<List<Triple<String, String, String>>>, Int> {
     val avgF = (vs.wheelSpeedFL + vs.wheelSpeedFR) / 2
     val avgR = (vs.wheelSpeedRL + vs.wheelSpeedRR) / 2
-    val spdLabel = if (p.speedUnit == "MPH") "mph" else "km/h"
-    val lrDisp = (vs.wheelSpeedRR - vs.wheelSpeedRL).let { if (p.speedUnit == "MPH") it * UnitConversions.KM_TO_MI else it }
-    val frDisp = (avgR - avgF).let { if (p.speedUnit == "MPH") it * UnitConversions.KM_TO_MI else it }
+    val spdLabel = p.speedUnitText
+    val lrDisp = p.speedDelta(vs.wheelSpeedRR - vs.wheelSpeedRL).value
+    val frDisp = p.speedDelta(avgR - avgF).value
     fun dyn(v: String) = if (live) v else "—"   // per-frame dynamics: no rest values offline
     fun req(value: Double, tag: String): String {
         val at = vs.fieldLastUpdateMs[tag] ?: return "—"
-        return if (live && nowMs - at in 0L..AWD_POLL_STALE_MS) "${value.roundToInt()}" else "—"
+        return if (live && nowMs - at in 0L..AWD_POLL_STALE_MS) p.torqueValue(value) else "—"
     }
     val reqReported = vs.fieldLastUpdateMs.containsKey("awdReqTorqueL") || vs.fieldLastUpdateMs.containsKey("awdReqTorqueR")
     val rows = buildList {
         add(listOf(
             // L vs R of the rear torque fields (same signal, same reference) — not a front/rear figure
             Triple("REAR L/R", dyn(vs.rearLeftRightBias), ""),
-            Triple("L/R Δ", dyn("%.1f".format(lrDisp)), spdLabel),
-            Triple("F/R Δ", dyn("%.1f".format(frDisp)), spdLabel),
+            Triple("L/R Δ", dyn(lrDisp), spdLabel),
+            Triple("F/R Δ", dyn(frDisp), spdLabel),
         ))
         if (reqReported) add(listOf(
-            Triple("REQ L", req(vs.awdReqTorqueL, "awdReqTorqueL"), "Nm"),
-            Triple("REQ R", req(vs.awdReqTorqueR, "awdReqTorqueR"), "Nm"),
+            Triple("REQ L", req(vs.awdReqTorqueL, "awdReqTorqueL"), p.torqueUnitText),
+            Triple("REQ R", req(vs.awdReqTorqueR, "awdReqTorqueR"), p.torqueUnitText),
             Triple("", "", ""),
         ))
         // Per-clutch hydraulic actuators (0x1E9E/9F current, 0x1ED1/D2 pressure) + pump
@@ -780,8 +787,8 @@ internal fun awdDetailRows(vs: VehicleState, p: UserPrefs, live: Boolean, nowMs:
             Triple("PUMP", if (live && vs.awdPumpCurrent > 0) "%.1f".format(vs.awdPumpCurrent) else "—", "A"),
         ))
         if (hasClutchPres) add(listOf(
-            Triple("PRESSURE L", if (vs.awdClutchPressureL >= 0) "%.1f".format(vs.awdClutchPressureL / 1000.0) else "—", "bar"),
-            Triple("PRESSURE R", if (vs.awdClutchPressureR >= 0) "%.1f".format(vs.awdClutchPressureR / 1000.0) else "—", "bar"),
+            Triple("PRESSURE L", if (vs.awdClutchPressureL >= 0) p.enginePressureMbar(vs.awdClutchPressureL).value else "—", p.engineUnitText),
+            Triple("PRESSURE R", if (vs.awdClutchPressureR >= 0) p.enginePressureMbar(vs.awdClutchPressureR).value else "—", p.engineUnitText),
             Triple("", "", ""),
         ))
     }

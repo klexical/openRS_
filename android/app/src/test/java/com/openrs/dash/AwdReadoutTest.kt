@@ -23,7 +23,7 @@ import org.junit.Test
  * rear-% cell is kept and reads unavailable with the reason.
  */
 class AwdReadoutTest {
-    private val p = UserPrefs()
+    private val p = UserPrefs(torqueUnit = "NM")   // these tests read the torque in Nm (#464: the default is the US preset, lb·ft)
     private val now = 1_000_000L
     private fun rows(vs: VehicleState, live: Boolean = true, at: Long = now) = awdDetailRows(vs, p, live, at)
     private fun cell(rows: List<List<Triple<String, String, String>>>, label: String) =
