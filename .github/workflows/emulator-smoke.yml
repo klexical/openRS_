@@ -1,0 +1,70 @@
+name: Emulator smoke
+
+# A demo-mode smoke of a pull request's debug build on an API 36 emulator (Q139), started by the label `emulator-smoke`:
+# adding the label runs it, and each push to the pull request runs it again while the label stays on. Removing the label
+# stops the re-runs; a newer run cancels an older one of the same pull request.
+# The smoke (android/scripts/demo-smoke.sh) installs the build, cold-starts it into demo mode (no adapter), opens every
+# tab, runs every demo scenario and trip preview, and fails on a crash, ANR, verifier rejection or restart.
+# Uploads nothing: no screenshot, dump, log or APK leaves the runner. The run's log holds step names, counts and fixed
+# names only (demo-smoke.sh's header). No secret is read and the token is read-only, so a fork's pull request runs it the
+# same way; the debug build has no API keys.
+on:
+  pull_request:
+    branches: [ main, staging ]
+    types: [ labeled, synchronize, reopened ]
+
+permissions:
+  contents: read
+
+# One smoke per pull request: a newer push cancels an older smoke. An event that starts nothing (another label added) gets a
+# group of its own, so it never cancels a smoke that is running.
+concurrency:
+  group: emulator-smoke-${{ github.event.pull_request.number }}-${{ (github.event.action != 'labeled' || github.event.label.name == 'emulator-smoke') && 'smoke' || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: Emulator smoke (demo mode, API 36)
+    # Adding this label starts it; another label added starts nothing; a push or a reopen runs it only while it is on
+    if: >-
+      (github.event.action == 'labeled' && github.event.label.name == 'emulator-smoke') ||
+      (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'emulator-smoke'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 40         # the debug build, the emulator's download and boot (up to 420 s), the smoke
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'gradle'
+
+      - name: Test the smoke script
+        run: bash android/scripts/test-demo-smoke.sh
+
+      - name: Build the debug APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      # GitHub's documented step for hardware acceleration on its Linux runners (as nightly.yml's launch job)
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      # The same start as the nightly's launch check (#363): the AVD folder, the boot wait and the swangle renderer check
+      - name: Start an API 36 emulator
+        run: bash android/scripts/start-emulator.sh "system-images;android-36;google_apis;x86_64" 420
+
+      - name: Demo-mode smoke
+        run: bash android/scripts/demo-smoke.sh android/app/build/outputs/apk/debug

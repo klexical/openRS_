@@ -21,6 +21,9 @@ workflows:
         - 'actions/deploy-pages@v4'
         - 'actions/setup-node@v4'
         - 'actions/upload-pages-artifact@v3'
+    '.github/workflows/emulator-smoke.yml':
+        - 'actions/checkout@v4'
+        - 'actions/setup-java@v4'
     '.github/workflows/nightly.yml':
         - 'actions/attest-build-provenance@v2'
         - 'actions/checkout@v4'

@@ -167,6 +167,20 @@ paths:
   workflow is listed under that workflow's key at the ref it names, and that every pin a composite action itself uses
   has its own entry. A job that ran locked logs "Using locked action versions from the workflow's lockfile"; reading
   that line is how a run shows the lockfile was used, and its absence in a job that runs an action means it was not
+- **The emulator smoke on a pull request (Q139)** — `.github/workflows/emulator-smoke.yml` runs when the label
+  `emulator-smoke` is added to a pull request to main or staging, and again on each push while the label stays on (a
+  newer run cancels an older one). It builds the PR's debug APK, starts the nightly's emulator through
+  `scripts/start-emulator.sh` (no inline SDK tools, `test-release-workflows.rb`) and runs `scripts/demo-smoke.sh`: install
+  with `-g` (no permission dialog) and a SHA-256 match of the device's copy, log cleared before a cold start into demo,
+  every tab tapped at the centre its UI-dump node gives (`"<NAME> tab"`) and read back selected with the DEMO label,
+  every demo scenario and trip preview, and after each step the same process and no verifier rejection, fatal exception,
+  ANR or fatal signal. It drives the app through adb only, so it needs no change to a screen. UI reads only while demo is
+  paused (`--es demo at:2.5`): `uiautomator dump` needs an idle screen, which live demo values never give. It uploads
+  nothing (no screenshot, dump, log or APK) and prints fixed names and counts only; screenshots as run artifacts would be
+  the owner's call (what leaves the runner). Read from the UI text tree, not pixels (a covered node still reads as
+  shown). `scripts/test-demo-smoke.sh` pins the script against a fake adb; the workflow runs it before the build, and CI's
+  build job does not (adding it there means the same line in nightly.yml's `checks`, a twin). Whether `uiautomator dump`
+  reads the Compose tabs' `selected` state and the DEMO pill on the API 36 image is shown by the first labelled run
 
 ## Releases: RCs, nightlies, stable and the release checklist
 
