@@ -216,7 +216,7 @@ class UnitsDisplayTest {
     @Test fun `in a locale with its own digits, negatives keep their sign and zero is never -0`() {
         val saved = java.util.Locale.getDefault()
         try {
-            for (tag in listOf("mr", "ar", "fa", "bn")) {
+            for (tag in listOf("mr", "ar", "fa", "bn", "fa-IR", "ar-EG", "bn-BD")) {
                 java.util.Locale.setDefault(java.util.Locale.forLanguageTag(tag))
                 val minus5 = "%.0f".format(-5.0)                 // this locale's own "-5"
                 assertEquals(tag, minus5 + "°C", eu.temp(-5.0))
