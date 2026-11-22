@@ -1,0 +1,142 @@
+name: project-review
+
+# A review thread's verdict on one pull request head, posted as the commit status `project-review` on that head. The
+# project's GitHub proxy refuses a thread's own write to the statuses endpoint, so the review thread starts this
+# workflow instead ("Run workflow" through REST, on main), as the one GitHub write it makes. The status shows that a
+# verdict exists at that head, not who gave it: every project thread acts as the owner's account, so GitHub cannot
+# tell a review thread from the thread that wrote the change. The audit checks each status against the review record.
+#
+# The status is posted by the owner's own GitHub App, so a ruleset can require `project-review` from that app alone: a
+# pull request's own workflow, or a job of that name in one, cannot stand in for it. The app's key is the
+# PROJECT_REVIEW_APP_KEY secret of the environment project-review, whose only deployment branch is main, so a run on any
+# other ref gets no key (and fails in its first step anyway). Its id is that environment's PROJECT_REVIEW_APP_ID variable.
+#
+# What a run does, in its last step: it checks that the pull request is open, that its base is staging or main (or the
+# owner's proof base, below), and that its head is still the reviewed commit; then it posts success for `clear` and
+# failure for `real-gap`. A REAL-GAP on a head stands: a later `clear` on that head is refused (a second reviewer's
+# clear cannot overwrite it; a fix goes forward to a new head), unless the reviewer withdraws its own REAL-GAP with
+# `withdrawn-gap`. The status's text is the verdict and the report's file name only, which must match a short pattern,
+# so no free text reaches the public status.
+#
+# No checkout, no `uses:` and no GITHUB_TOKEN permission: this workflow needs no actions.lock entry, runs nothing of a
+# pull request and no third-party code with the key. Its tests: .github/scripts/test-project-review.rb.
+
+run-name: "project-review: pull request ${{ inputs.pr }}, ${{ inputs.verdict }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "The pull request's number"
+        required: true
+        type: number
+      sha:
+        description: "The reviewed head: the full 40-character commit SHA"
+        required: true
+        type: string
+      verdict:
+        description: "The review's verdict at that head"
+        required: true
+        type: choice
+        options: [ clear, real-gap, withdrawn-gap ]
+      report:
+        description: "The review report's file name (a-z, 0-9, dot, dash, underscore; at most 60)"
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: project-review-${{ inputs.pr }}
+  cancel-in-progress: false
+
+jobs:
+  project-review:
+    name: Post the project-review status
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: project-review
+    permissions: {}                  # the app's own token does every call
+    steps:
+      - name: Main only
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          [ "$REF" = refs/heads/main ] || { echo "::error::project-review runs on main only: fails closed"; exit 1; }
+
+      - name: Check the inputs
+        env:
+          PR: ${{ inputs.pr }}
+          SHA: ${{ inputs.sha }}
+          VERDICT: ${{ inputs.verdict }}
+          REPORT: ${{ inputs.report }}
+        run: |
+          fail() { echo "::error::$1"; exit 1; }
+          [[ "$PR" =~ ^[1-9][0-9]{0,5}$ ]] || fail "pr: a pull request number"
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || fail "sha: the reviewed head, 40 lower-case hex characters"
+          [[ "$REPORT" =~ ^[a-z0-9][a-z0-9._-]{0,59}$ ]] || fail "report: a report file name (a-z, 0-9, . _ -), at most 60"
+          case "$VERDICT" in clear|real-gap|withdrawn-gap) ;; *) fail "verdict: clear, real-gap or withdrawn-gap" ;; esac
+
+      - name: Check the head and post the verdict
+        env:
+          PR: ${{ inputs.pr }}
+          SHA: ${{ inputs.sha }}
+          VERDICT: ${{ inputs.verdict }}
+          REPORT: ${{ inputs.report }}
+          REPO: ${{ github.repository }}
+          API: ${{ github.api_url }}
+          APP_ID: ${{ vars.PROJECT_REVIEW_APP_ID }}
+          APP_KEY: ${{ secrets.PROJECT_REVIEW_APP_KEY }}
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$1"; exit 1; }
+          [[ "${APP_ID:-}" =~ ^[1-9][0-9]*$ ]] && [ -n "${APP_KEY:-}" ] || fail "the environment project-review holds no app id or key"
+          # The app's JWT (RS256, ten minutes at most), signed with the key in a file only this step can read.
+          b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
+          umask 077
+          key="$RUNNER_TEMP/project-review-key.pem"
+          trap 'rm -f "$key"' EXIT
+          printf '%s\n' "$APP_KEY" > "$key"
+          now=$(date +%s)
+          unsigned="$(printf '{"alg":"RS256","typ":"JWT"}' | b64url).$(printf '{"iat":%d,"exp":%d,"iss":"%s"}' "$((now - 60))" "$((now + 540))" "$APP_ID" | b64url)"
+          sig=$(printf '%s' "$unsigned" | openssl dgst -sha256 -sign "$key" -binary | b64url) || fail "the app's key could not sign"
+          rm -f "$key"
+          auth="$unsigned.$sig"
+          echo "::add-mask::$auth"
+          api() {                        # api METHOD PATH [curl args]: GitHub's answer on stdout, nothing on a failure
+            local method=$1 path=$2; shift 2
+            curl -fsS --proto '=https' -X "$method" -H "Authorization: Bearer $auth" \
+              -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" "$@" "$API/$path"
+          }
+          slug=$(api GET app | jq -er '.slug') || fail "the app could not be read with its key"
+          inst=$(api GET "repos/$REPO/installation" | jq -er '.id') || fail "the app is not installed on this repository"
+          scope=$(jq -cn --arg r "${REPO#*/}" '{repositories: [$r], permissions: {statuses: "write", pull_requests: "read"}}')
+          auth=$(api POST "app/installations/$inst/access_tokens" --data "$scope" | jq -er '.token') || fail "the app got no installation token"
+          echo "::add-mask::$auth"
+
+          # The pull request, as it is now
+          pr=$(api GET "repos/$REPO/pulls/$PR") || fail "pull request $PR could not be read"
+          state=$(jq -r '.state' <<< "$pr"); base=$(jq -r '.base.ref' <<< "$pr"); head=$(jq -r '.head.sha' <<< "$pr")
+          [ "$state" = open ] || fail "pull request $PR is not open"
+          # scratch/project-review-proof: the owner's proof that a ruleset takes this app's status (a status there
+          # gates nothing on staging or main)
+          case "$base" in main|staging|scratch/project-review-proof) ;; *) fail "pull request $PR targets neither staging nor main" ;; esac
+          [ "$head" = "$SHA" ] || fail "the head of pull request $PR has moved on from the reviewed commit: review the new head"
+
+          # A REAL-GAP stands on its head: this app's own failure there refuses a later clear
+          gaps=$(api GET "repos/$REPO/commits/$SHA/statuses?per_page=100" |
+            jq -er --arg bot "${slug}[bot]" '[.[] | select(.context == "project-review" and .creator.login == $bot and .state == "failure")] | length') ||
+            fail "the head's statuses could not be read"
+          case "$VERDICT" in
+            clear)
+              [ "$gaps" = 0 ] || fail "this head has a REAL-GAP: a clear needs a new head, or withdrawn-gap from the reviewer who found it"
+              st=success; text="Review clear: $REPORT" ;;
+            real-gap)
+              st=failure; text="Review found a REAL-GAP: $REPORT" ;;
+            withdrawn-gap)
+              [ "$gaps" != 0 ] || fail "this head has no REAL-GAP to withdraw: use clear"
+              st=success; text="Review clear (REAL-GAP withdrawn): $REPORT" ;;
+          esac
+          body=$(jq -cn --arg s "$st" --arg d "$text" '{state: $s, context: "project-review", description: $d}')
+          api POST "repos/$REPO/statuses/$SHA" --data "$body" > /dev/null || fail "the status could not be posted"
+          echo "project-review: $st on ${SHA:0:8} (pull request $PR)"
