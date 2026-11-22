@@ -50,7 +50,8 @@ object CrashTelemetryBuffer {
     }
 
     /**
-     * Serializes the ring buffer + crash metadata to [file] as JSON.
+     * Serializes the ring buffer + crash metadata to [file] as JSON, with the app's memory when the crash was caught
+     * (`heapUsedKb` … `nativeHeapKb`, absent when it could not be read; #510).
      * Called from the uncaught exception handler — must not throw.
      */
     fun flushToFile(
@@ -63,6 +64,7 @@ object CrashTelemetryBuffer {
         buildType: String = ""
     ) {
         try {
+            val heap = HeapSample.read()   // first, before this flush allocates (#510)
             val snapshots: List<Snapshot>
             synchronized(lock) {
                 val start = if (size < CAPACITY) 0 else head
@@ -83,6 +85,12 @@ object CrashTelemetryBuffer {
             sb.append("  \"versionCode\": $versionCode,\n")
             sb.append("  \"sourceCommit\": \"${sourceCommit.jsonEsc()}\",\n")
             sb.append("  \"buildType\": \"${buildType.jsonEsc()}\",\n")
+            if (heap != null) {
+                sb.append("  \"heapUsedKb\": ${heap.usedKb},\n")
+                sb.append("  \"heapTotalKb\": ${heap.totalKb},\n")
+                sb.append("  \"heapMaxKb\": ${heap.maxKb},\n")
+                sb.append("  \"nativeHeapKb\": ${heap.nativeKb},\n")
+            }
             sb.append("  \"snapshotCount\": ${snapshots.size},\n")
             sb.append("  \"snapshots\": [\n")
 

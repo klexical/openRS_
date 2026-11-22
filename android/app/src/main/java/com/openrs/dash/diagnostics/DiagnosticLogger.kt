@@ -18,7 +18,7 @@ import java.io.File
  *    .log file on disk in real-time, capped at MAX_SLCAN_LINES.
  *  - Decode trace: rolling last MAX_TRACE decode events (id, raw, decoded, issue).
  *  - Session events: connection events, errors, firmware probe result.
- *  - FPS timeline: sampled frame-rate across the session.
+ *  - FPS timeline: sampled frame-rate across the session, with heap use beside each sample (#510).
  *  - Snapshot of VehicleState and UserPrefs.
  *
  * All methods are thread-safe. DiagnosticExporter reads from this object to build the ZIP.
@@ -141,7 +141,8 @@ object DiagnosticLogger {
         val message: String
     )
 
-    data class FpsPoint(val relMs: Long, val fps: Double)
+    /** One frame-rate sample; [heap] is the app's memory at the same moment (#510), null when it could not be read. */
+    data class FpsPoint(val relMs: Long, val fps: Double, val heap: HeapSample? = null)
 
     /** A single DID probe result from the DID Prober. */
     data class ProbeResult(val did: Int, val status: String, val responseHex: String)
@@ -579,9 +580,10 @@ object DiagnosticLogger {
         return FrameInfo().also { frameInventory[canId] = it }
     }
 
-    fun fps(value: Double) {
+    /** Records a frame-rate sample with the app's memory beside it (#510); [heap] is read outside the lock. */
+    fun fps(value: Double, heap: HeapSample? = HeapSample.read()) {
         synchronized(lock) {
-            fpsTimelineDeque.addLast(FpsPoint(relativeMs(), value))
+            fpsTimelineDeque.addLast(FpsPoint(relativeMs(), value, heap))
             while (fpsTimelineDeque.size > MAX_FPS_POINTS) {
                 fpsTimelineDeque.removeFirst()
                 fpsDropped++

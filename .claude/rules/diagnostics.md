@@ -159,3 +159,8 @@ paths:
   activity's window only: a dialog window's own frames (Settings, the BLE picker) are not counted; the Custom Dashboard
   overlay's count to the tab beneath; a swipe's frames to the tab it left (`UiTimingTest`, `UiTimingExportTest`,
   `BleTransportTest`, `BleMtuContextExportTest`)
+- **Heap use in the export and the crash record (#510)** — each FPS timeline point (every 3 s) carries `heapUsedKb` /
+  `heapTotalKb` / `heapMaxKb` / `nativeHeapKb` (`HeapSample.read`, KiB), the FPS TIMELINE section one `Heap:` line, and the
+  crash record the same four fields, read first in `flushToFile` before it allocates. Numbers only: no clock time, nothing
+  from the car. Every build, not debug only (owner decision, #510). Additive: absent when the runtime gives no reading, no
+  schema bump, no existing field changed; Sapphire's import ignores them (`import.test.ts` T0B2, `HeapExportTest`)
