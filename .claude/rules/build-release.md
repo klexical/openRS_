@@ -167,6 +167,16 @@ paths:
   workflow is listed under that workflow's key at the ref it names, and that every pin a composite action itself uses
   has its own entry. A job that ran locked logs "Using locked action versions from the workflow's lockfile"; reading
   that line is how a run shows the lockfile was used, and its absence in a job that runs an action means it was not
+- **Dependency verification (talk-list item 5)** — `android/gradle/verification-metadata.xml` holds a SHA-256 for every
+  plugin, library and POM / module file the build resolves; Gradle fails a build whose download has no entry or another
+  hash ("Dependency verification failed"). Any change to a plugin or dependency version (a Dependabot proposal included:
+  Dependabot does not update this file) regenerates it in the same commit, from `android/`:
+  `./gradlew --write-verification-metadata sha256 assembleDebug test lint assembleRelease --no-daemon --continue`
+  (`assembleRelease` fails at `packageRelease` without a keystore; everything is resolved before that). Read the diff:
+  a hash that changed for a version that did not is a tampered or re-published artifact, never accepted by
+  regenerating. `aapt2` is per platform and a Linux run lists only `-linux.jar`; the `-osx.jar` entry is added by hand
+  from Google Maven's `.sha256` file for each new AGP version. Sources and javadoc jars are trusted (an IDE fetches them;
+  the build never does). Robolectric's android-all jars are downloaded by Robolectric itself, outside this file.
 
 ## Releases: RCs, nightlies, stable and the release checklist
 
