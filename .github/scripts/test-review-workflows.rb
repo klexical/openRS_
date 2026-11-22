@@ -231,14 +231,16 @@ phf = phs.find { |s| s["run"].to_s.include?("git fetch") } || {}
 check.(phf["run"].to_s.include?('git show "$GITHUB_SHA:.github/scripts/privacy-scan.sh" > "$RUNNER_TEMP/privacy-scan.sh"') &&
        %w[+refs/heads/*:refs/remotes/origin/* +refs/tags/*:refs/tags/* +refs/pull/*/head:refs/remotes/pull/*].all? { |r| phf["run"].to_s.include?("\"#{r}\"") } &&
        phf["run"].to_s.include?('sort -u "$RUNNER_TEMP/refs" > "$RUNNER_TEMP/tips"') && !phf["run"].to_s.include?("^{commit}") &&
+       phf["run"].to_s.include?(%q{git for-each-ref --format='%(refname)' refs/remotes refs/tags > "$RUNNER_TEMP/names"}) &&
        !phf["run"].to_s.match?(/git (checkout|switch|worktree|reset)|read-tree/),
        "privacy-history: every branch, tag and pull request head fetched as objects, never checked out, each tip once only and unpeeled (the script reads the tag objects); the script comes from the run's own commit")
 phl = phs.last || {}
 check.(phs.select { |s| s.to_s.include?("secrets.") } == [phl] && phtext.scan("secrets.").size == 1 &&
        phl["env"] == { "PRIVACY_IDENTIFIERS" => PSEC, "GITLEAKS" => "${{ runner.temp }}/gitleaks/gitleaks" } &&
        phl["run"].to_s.lines.map(&:strip).reject(&:empty?) ==
-         ['cd "$RUNNER_TEMP/objects"', 'mapfile -t TIPS < "$RUNNER_TEMP/tips"', 'bash "$RUNNER_TEMP/privacy-scan.sh" --history "${TIPS[@]}"'],
-       "privacy-history: the list reaches the last step only, which runs builtins and the script's --history only")
+         ['cd "$RUNNER_TEMP/objects"', 'mapfile -t TIPS < "$RUNNER_TEMP/tips"',
+          'bash "$RUNNER_TEMP/privacy-scan.sh" --history --names "$RUNNER_TEMP/names" "${TIPS[@]}"'],
+       "privacy-history: the list reaches the last step only, which runs builtins and the script's --history (with the ref names) only")
 check.(!phs.empty? && phs.none? { |s| s["run"].to_s.include?("${{") } && phs.find { |s| s["run"].to_s.include?("sha256sum -c") }&.dig("env") == glstep["env"],
        "privacy-history: no ${{ }} in any run, and the same pinned gitleaks as the PR scan")
 

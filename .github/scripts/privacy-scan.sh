@@ -5,8 +5,9 @@
 # privacy-scan.sh --history <tip sha>... — the one-time full-history scan: every commit reachable from the tips, with
 # no pull request text and no event file (privacy-history.yml, run by hand on main). A tip may be any object: each is
 # peeled here, so an annotated tag's own object (message and tagger) is scanned, and so is any tree or blob a tag
-# names. It prints counts by kind only, never a commit, path or line: that run's log is public and the history it
-# reads is kept.
+# names, read as a commit's files are. --names <file> (after --places, if given) adds the refs' names, one per line,
+# each scanned as a line of its own and counted. It prints counts by kind only, never a commit, path, name or line:
+# that run's log is public and the history it reads is kept.
 # privacy-scan.sh --history --places <tip sha>... — the same, also printing where each hit is, for a project session's
 # own run whose output stays in the project; it refuses to run when GITHUB_ACTIONS is set, so no workflow prints places.
 # With no list (the list stays with the owner: no project session is ever given it) it places the gitleaks hits only,
@@ -87,9 +88,16 @@ die() { echo "privacy scan: $1" >&2; exit 2; }
 HISTORY=0; [ "${1:-}" != --history ] || { HISTORY=1; shift; }
 # --places (after --history only): print the finding lines as well; never where GITHUB_ACTIONS is set (a workflow's log)
 PLACES=0; [ "${1:-}" != --places ] || { PLACES=1; shift; }
+# --names <file> (after --history only): the refs' names, one per line, each scanned as a line of its own; counted,
+# never printed
+NAMES=""; if [ "${1:-}" = --names ]; then
+  [ "$HISTORY" = 1 ] || die "--names is for --history only"
+  [ -n "${2:-}" ] && [ -f "$2" ] && [ -r "$2" ] || die "--names needs a readable file of ref names"
+  NAMES=$2; shift 2
+fi
 [ "$PLACES" = 0 ] || [ "$HISTORY" = 1 ] || die "--places is for --history only"
 [ "$PLACES" = 0 ] || [ -z "${GITHUB_ACTIONS+set}" ] || die "--places never runs in a workflow (GITHUB_ACTIONS is set): fails closed"
-if [ "$HISTORY" = 1 ]; then [ $# -ge 1 ] || die "usage: privacy-scan.sh --history [--places] <tip sha>..."
+if [ "$HISTORY" = 1 ]; then [ $# -ge 1 ] || die "usage: privacy-scan.sh --history [--places] [--names <file>] <tip sha>..."
 else [ $# -ge 2 ] || die "usage: privacy-scan.sh <base sha> <head sha> [<also-exclude sha>...]"; fi
 # git 2.40 or later: an older git ignores GIT_ATTR_SOURCE without a word, and a .gitattributes rule could hide lines again
 gv=$(git version | sed -n 's/^git version \([0-9][0-9]*\)\.\([0-9][0-9]*\).*/\1 \2/p')
@@ -584,9 +592,11 @@ for c in $commits; do
   done
   rm -rf "$T/b"
 done
-# --history: each annotated tag object's own text (its tagger, message and any signature), and every blob of a tree
-# or blob a tag names, which no commit reaches: a text blob's lines are scanned, every such blob is read whole, and a
-# compressed or binary one waits for a reviewer like a file in a commit (a ZIP is not unpacked here: it waits too)
+# --history: each annotated tag object's own text (its tagger, message and any signature), and every entry of a tree
+# or blob a tag names, which no commit reaches, read as a commit's files are: every entry's path (a submodule's
+# included) as a line of its own; a text file's lines; a ZIP unpacked and each member read; a Git LFS pointer, a
+# compressed file and any other binary file waiting for a reviewer; every file kept for gitleaks, and a file that is
+# not text read whole against the list
 ntag=0; nother=0
 if [ "$HISTORY" = 1 ]; then
   for t in $(sort -u "$T/tagobjs"); do
@@ -603,22 +613,47 @@ if [ "$HISTORY" = 1 ]; then
     nother=$((nother+1)); o12=${o:0:12}
     if [ "$(git cat-file -t "$o")" = blob ]; then printf '100644 blob %s\t\0' "$o"
     else git ls-tree -r -z "$o"; fi > "$T/tree.z"
+    k=0
     while IFS= read -r -d '' e; do
       meta=${e%%$'\t'*}; p=${e#*$'\t'}; sp=${p//[$'\t\n']/ }; read -r _ otype osha <<< "$meta"
+      k=$((k+1))
+      # the path as a line of its own, by number only, as a commit's changed paths are; a blob a tag names has none
+      [ -z "$p" ] || add "$o12" "a path in a tree a tag names (#$k)" "" "$sp"
       [ "$otype" = blob ] || continue
-      [ -z "$p" ] || add "$o12" "a path in a tree a tag names" "" "$sp"
       git cat-file blob "$osha" > "$T/blob"; classify "$T/blob"
-      if [ "$binary" = 0 ] && [ -z "$kind" ]; then
-        awk -v c="$o12" -v p="$sp" '{ printf "%s\tline of an object a tag names\t%s\t%d\n", c, p, NR }' "$T/blob" >> "$WHERE"
+      # the blob's own class, kept: scan_zip classifies each member and leaves the last member's in kind, binary, zipok
+      bkind=$kind; bbinary=$binary; bzipok=$zipok
+      if [ "$(head -c 40 "$T/blob" | tr -d '\000' 2> /dev/null)" = "version https://git-lfs.github.com/spec/" ]; then
+        printf '%s\ta Git LFS pointer (its file is not in these git objects)\t%s\t\n' "$o12" "$sp" >> "$T/compressed"
+      fi
+      zipread=0
+      if [ "$bkind" = zip ] || [ "$bzipok" = 1 ]; then scan_zip "$o12" "$sp" "$T/blob"; fi
+      if [ -n "$bkind" ] && [ "$bkind" != zip ]; then
+        printf '%s\tcompressed file (%s)\t%s\t\n' "$o12" "$bkind" "$sp" >> "$T/compressed"
+      elif [ "$bbinary" = 1 ] && [ "$zipread" = 0 ] && [ "$bkind" != zip ]; then
+        printf '%s\ta binary file, which may hold compressed data\t%s\t\n' "$o12" "$sp" >> "$T/compressed"
+      fi
+      keep "$T/blob" "$o12" "in an object a tag names" "$sp" "$bkind"
+      if [ "$bbinary" = 0 ] && [ -z "$bkind" ] && [ "$bzipok" = 0 ]; then
+        # a text file: its lines, once (as a commit's added lines are), not read whole as well. The path reaches awk
+        # through the environment: -v would expand a backslash in it
+        P="$sp" awk -v c="$o12" '{ printf "%s\tline of an object a tag names\t%s\t%d\n", c, ENVIRON["P"], NR }' "$T/blob" >> "$WHERE"
         cat "$T/blob" >> "$TEXT"; [ -z "$(tail -c1 "$T/blob")" ] || echo >> "$TEXT"
-      elif [ -n "$kind" ]; then printf '%s\tcompressed file (%s)\t%s\t\n' "$o12" "$kind" "$sp" >> "$T/compressed"
-      else printf '%s\ta binary file, which may hold compressed data\t%s\t\n' "$o12" "$sp" >> "$T/compressed"; fi
-      keep "$T/blob" "$o12" "in an object a tag names" "$sp" "$kind"
+        continue
+      fi
       blob_hits "$T/blob"
       [ "$hit" -eq 0 ] || printf '%s\tbinary content\t%s\t\n' "$o12" "$sp" >> "$T/binhits"
       [ -z "$b64comp" ] || printf '%s\tbase64 in a file read whole, decoding to a compressed file (%s)\t%s\t\n' "$o12" "$b64comp" "$sp" >> "$T/compressed"
     done < "$T/tree.z"
   done
+  # each ref's name (a branch, a tag, a pull request head), as a line of its own, by number only: an annotated tag's
+  # name is also in its tag object, read above
+  nnames=0
+  if [ -n "$NAMES" ]; then
+    while IFS= read -r nm || [ -n "$nm" ]; do
+      nnames=$((nnames+1)); add "refs" "ref name #$nnames" "" "$nm"
+    done < "$NAMES"
+  fi
 fi
 add "" "pull request title" "" "$(jq -r '.pull_request.title // ""' "$GITHUB_EVENT_PATH" | tr '\n' ' ')"
 add "" "pull request branch name" "" "$(jq -r '.pull_request.head.ref // ""' "$GITHUB_EVENT_PATH" | tr '\n' ' ')"
@@ -746,6 +781,8 @@ if [ "$HISTORY" = 1 ]; then
   cut -f2 "$T/glhits" | awk '{ n[$3]++ } END { for (r in n) print r "\t" n[r] }' | sort \
     | awk -F'\t' '{ print "privacy history scan: gitleaks rule " $1 ", " $2 " finding(s)" }'
   echo "privacy history scan: tag objects $ntag, trees and blobs a tag names $nother"
+  if [ "$NOLIST" = 1 ]; then echo "privacy history scan: ref names $nnames, matches not checked (no list)"
+  else echo "privacy history scan: ref names $nnames, $(grep -c -F 'FINDING refs: ref name #' "$T/out.list" || true) matching the list"; fi
   echo "privacy history scan: files for a reviewer (binary, compressed, ZIP members, embedded images) $(wc -l < "$T/out.comp")"
 fi
 if [ "$NOLIST" = 1 ]; then

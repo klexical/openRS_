@@ -563,7 +563,8 @@ expect 1 "the history scan reads an annotated tag's message" $? "privacy history
 expect 1 "--places names the tag object's line" $? "FINDING ${t1:0:12}: tag object line 6"
 repo; put f.txt 'clean\n'; commit "clean"; bl=$(printf 'seen %s here\n' "$ID1" | g hash-object -w --stdin)
 hist "$(sha main)" "$bl"
-expect 1 "the history scan reads a blob a tag names" $? "privacy history scan: identifier matches 1 on scanned lines" \
+expect 1 "the history scan reads a blob a tag names, a text one once (its lines, not read whole as well)" $? \
+  "privacy history scan: identifier matches 1 on scanned lines and 0 in files read whole or decoded" \
   "privacy history scan: tag objects 0, trees and blobs a tag names 1"
 repo; put f.txt 'clean\n'; commit "clean"; put d/b.dat "x\000y $ID1\n"; printf 'packed' | gzip -c > "$T/r/d/p.gz"; g add d/p.gz
 tr=$(g write-tree); g reset -q
@@ -571,6 +572,63 @@ hist "$(sha main)" "$tr"
 expect 1 "the history scan reads every blob of a tree a tag names" $? \
   "privacy history scan: identifier matches 0 on scanned lines and 1 in files read whole or decoded" \
   "privacy history scan: files for a reviewer (binary, compressed, ZIP members, embedded images) 2"
+# an annotated tag of a tag, and annotated tags naming a tree and a blob: each tag object read, and what it ends at
+repo; put f.txt 'clean\n'; commit "clean"
+GIT_COMMITTER_NAME=o GIT_COMMITTER_EMAIL=$OWNER g tag -a -m "inner" ti; GIT_COMMITTER_NAME=o GIT_COMMITTER_EMAIL=$OWNER g tag -a -m "outer $ID1" to ti
+hist "$(g rev-parse to)"
+expect 1 "the history scan reads both objects of a tag of a tag" $? "privacy history scan: tag objects 2, trees and blobs a tag names 0" \
+  "privacy history scan: identifier matches 1 on scanned lines and 0 in files read whole or decoded"
+repo; put f.txt 'clean\n'; commit "clean"; put d/t.txt "seen $ID1 here\n"; tr=$(g write-tree); g reset -q
+bl=$(printf 'seen %s here\n' "$ID1" | g hash-object -w --stdin)
+GIT_COMMITTER_NAME=o GIT_COMMITTER_EMAIL=$OWNER g tag -a -m clean tt "$tr"; GIT_COMMITTER_NAME=o GIT_COMMITTER_EMAIL=$OWNER g tag -a -m clean tb "$bl"
+hist "$(g rev-parse tt)" "$(g rev-parse tb)"
+expect 1 "annotated tags naming a tree and a blob: both tags and both objects read" $? \
+  "privacy history scan: tag objects 2, trees and blobs a tag names 2" \
+  "privacy history scan: identifier matches 2 on scanned lines and 0 in files read whole or decoded"
+# a tree a tag names is read as a commit's files are: each path (a submodule's too), a ZIP's members, an LFS pointer
+repo; put f.txt 'clean\n'; commit "clean"; bl=$(printf 'clean\n' | g hash-object -w --stdin)
+g update-index --add --cacheinfo "100644,$bl,d/$ID1.txt"; tr=$(g write-tree); g reset -q
+hist "$(sha main)" "$tr"
+expect 1 "a path that matches the list, in a tree a tag names" $? "privacy history scan: identifier matches 1 on scanned lines"
+(cd "$T/r" && unset GITHUB_EVENT_PATH GITHUB_ACTIONS && PRIVACY_IDENTIFIERS=$LISTV GITLEAKS=$STUB bash "$SCAN" --history --places "$tr") > "$OUT" 2>&1
+expect 1 "--places places that path by number, never by name" $? "FINDING ${tr:0:12}: a path in a tree a tag names (#1)"
+repo; put f.txt 'clean\n'; commit "clean"
+g update-index --add --cacheinfo "160000,$(sha main),sub/$ID1"; tr=$(g write-tree); g reset -q
+hist "$(sha main)" "$tr"
+expect 1 "a submodule's path in a tree a tag names is scanned" $? "privacy history scan: identifier matches 1 on scanned lines"
+repo; put f.txt 'clean\n'; commit "clean"; mkdir -p "$T/r/z"
+python3 -c 'import sys, zipfile; z = zipfile.ZipFile(sys.argv[1], "w", zipfile.ZIP_DEFLATED); z.writestr("m.txt", "seen " + sys.argv[2] + " here\n" * 20); z.close()' "$T/r/z/a.zip" "$ID1"
+g add z/a.zip; tr=$(g write-tree); g reset -q; rm -rf "$T/r/z"
+hist "$(sha main)" "$tr"
+expect 1 "a ZIP in a tree a tag names is unpacked and its member read" $? \
+  "privacy history scan: identifier matches 0 on scanned lines and 1 in files read whole or decoded"
+repo; put f.txt 'clean\n'; commit "clean"
+put l.bin 'version https://git-lfs.github.com/spec/v1\noid sha256:0000000000000000000000000000000000000000000000000000000000000000\nsize 9\n'
+tr=$(g write-tree); g reset -q
+hist "$(sha main)" "$tr"
+expect 1 "a Git LFS pointer in a tree a tag names waits for a reviewer" $? \
+  "privacy history scan: files for a reviewer (binary, compressed, ZIP members, embedded images) 1"
+# a backslash in a tagged tree's path is the path's own: a backslash-t cannot shift where the path is checked, and a
+# backslash-n cannot break the scanned lines' places
+repo; put f.txt 'clean\n'; commit "clean"; bl=$(printf 'seen %s here\n' "$ID1" | g hash-object -w --stdin)
+g update-index --add --cacheinfo "100644,$bl,d/x\\t$ID1.txt"; tr=$(g write-tree); g reset -q
+(cd "$T/r" && unset GITHUB_EVENT_PATH GITHUB_ACTIONS && PRIVACY_IDENTIFIERS=$LISTV GITLEAKS=$STUB bash "$SCAN" --history --places "$tr") > "$OUT" 2>&1
+expect 1 "a backslash-t path that matches the list is withheld whole" $? "line of an object a tag names (a path that matches the list, withheld):1"
+repo; put f.txt 'clean\n'; commit "clean"; bl=$(printf 'clean\n' | g hash-object -w --stdin)
+g update-index --add --cacheinfo "100644,$bl,C:\\new\\notes.txt"; tr=$(g write-tree); g reset -q
+hist "$(sha main)" "$tr"
+expect 0 "a backslash-n path in a tree a tag names scans cleanly" $? "privacy history scan: tag objects 0, trees and blobs a tag names 1"
+# --names <file>: each ref's name is scanned as a line of its own, counted, and placed by number only
+repo; put f.txt 'clean\n'; commit "clean"; printf 'refs/remotes/origin/main\nrefs/remotes/origin/fix-%s\nrefs/tags/v1\n' "$ID1" > "$T/names"
+hist --names "$T/names" "$(sha main)"
+expect 1 "the history scan counts the ref names that match the list" $? "privacy history scan: ref names 3, 1 matching the list"
+(cd "$T/r" && unset GITHUB_EVENT_PATH GITHUB_ACTIONS && PRIVACY_IDENTIFIERS=$LISTV GITLEAKS=$STUB bash "$SCAN" --history --places --names "$T/names" "$(sha main)") > "$OUT" 2>&1
+expect 1 "--places places a ref name by number, never by name" $? "FINDING refs: ref name #2"
+printf 'refs/remotes/origin/main\n' > "$T/names"; hist --names "$T/names" "$(sha main)"
+expect 0 "clean ref names pass" $? "privacy history scan: ref names 1, 0 matching the list"
+hist --names "$T/no-such-file" "$(sha main)"; expect 2 "--names needs a readable file" $? "--names needs a readable file"
+(cd "$T/r" && PRIVACY_IDENTIFIERS=$LISTV GITLEAKS=$STUB GITHUB_EVENT_PATH=$T/event.json bash "$SCAN" --names "$T/names" "$(sha main)" "$(sha HEAD)") > "$OUT" 2>&1
+expect 2 "--names is for --history only" $? "--names is for --history only"
 
 # ── gitleaks, stubbed: what it is given, and what of its report is printed ──────────────────────────────────────────
 PLANTED=stub-planted-value-9f3e
