@@ -1,0 +1,89 @@
+# Dependabot version updates (talk-list item 5). GitHub reads this file from the default branch (main) only; the
+# target-branch of each entry says where its pull requests go: android/ and the workflows to staging (code goes
+# feature -> staging -> main, CLAUDE.md "Branch / Release Workflow"), web/ and main's own workflows to main.
+#
+# A Dependabot pull request is a proposal, never merged as it stands: its commits are authored by dependabot[bot], so
+# the required commit-identity check fails it (.github/scripts/check-commit-identity.sh). A thread re-commits the change
+# on its own branch as the owner, with whatever else the update needs in the same commit:
+#   - Gradle: regenerate android/gradle/verification-metadata.xml (.claude/rules/build-release.md, "Dependency
+#     verification"); Dependabot does not update it, so its own pull request fails the build.
+#   - Actions: keep Dependabot's actions.lock entries (it regenerates them; never edit by hand), and update the pins in
+#     .github/scripts/test-review-workflows.rb (RESTORED_AT, re-read at the new claude-code-action commit) and, on
+#     staging, android/scripts/test-release-workflows.rb. A change to nightly.yml or release-apk.yml is owner-only;
+#     nightly.yml is a twin, so its two rounds (staging, main) land together.
+# Dependabot then closes its own pull request once the update is on the target branch.
+#
+# Security updates are a repository setting and always target main; this file covers version updates only.
+
+version: 2
+
+updates:
+  # Android app: plugins and libraries in android/*.gradle.kts.
+  - package-ecosystem: gradle
+    directory: /android
+    target-branch: staging
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    labels: [dependencies]
+    groups:
+      # Kotlin, its Compose compiler plugin and KSP are released in step (KSP's version starts with Kotlin's).
+      kotlin:
+        patterns:
+          - "org.jetbrains.kotlin*"
+          - "com.google.devtools.ksp*"
+      androidx-compose:
+        patterns:
+          - "androidx.compose*"
+      gradle-minor-patch:
+        update-types: [minor, patch]
+    ignore:
+      # Pinned on purpose: Robolectric 4.14.1 + androidx.test:core 1.6.1 at sdk=35 run on Java 17
+      # (.claude/rules/build-release.md, "Robolectric tests").
+      - dependency-name: "org.robolectric:robolectric"
+      - dependency-name: "androidx.test:core"
+
+  # Sapphire (web/, npm with package-lock.json).
+  - package-ecosystem: npm
+    directory: /web
+    target-branch: main
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    labels: [dependencies]
+    groups:
+      web-minor-patch:
+        update-types: [minor, patch]
+
+  # Workflow actions, one grouped pull request per branch, majors included (the Node 20 move is the first round).
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: staging
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    labels: [dependencies]
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: main
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    labels: [dependencies]
+    groups:
+      actions:
+        patterns: ["*"]
