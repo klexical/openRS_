@@ -97,22 +97,24 @@ enum class Region(val label: String) {
 
         /**
          * An existing user's units after the update (owner's rule, #464): the four original choices are kept exactly;
-         * the seven added units come from the preset that matches most of those four. A tie goes to the preset that
-         * matches the speed unit, so economy and distance follow the speed the user chose (owner: km/h, °F, psi, psi
-         * goes to Canada, not US); then to the one that also matches temperature; a remaining tie to the first in
-         * [PRESETS]' order.
+         * the other units come from the preset that matches most of those four. A tie goes to the preset that matches
+         * speed and temperature; a remaining tie to the first in [PRESETS]' order. Economy then follows the user's own
+         * speed and temperature, whatever the preset: km/h → L/100 km, mph with °C → MPG (UK), mph with °F → MPG (US).
          */
         fun unitsForExisting(speed: String, temp: String, boost: String, tyre: String): UnitSet {
             fun score(u: UnitSet) = listOf(u.speed == speed, u.temp == temp, u.boost == boost, u.tyre == tyre).count { it }
             fun speedAndTemp(u: UnitSet) = u.speed == speed && u.temp == temp
             val best = PRESETS.values.maxWith(
-                compareBy<UnitSet> { score(it) }
-                    .thenBy { if (it.speed == speed) 1 else 0 }
-                    .thenBy { if (speedAndTemp(it)) 1 else 0 }
+                compareBy<UnitSet> { score(it) }.thenBy { if (speedAndTemp(it)) 1 else 0 }
                     // an earlier preset ranks higher, so list order breaks a remaining tie
                     .thenByDescending { PRESETS.values.indexOf(it) }
             )
-            return best.copy(speed = speed, temp = temp, boost = boost, tyre = tyre)
+            val economy = when {
+                speed == UnitIds.KPH -> UnitIds.L100KM
+                temp == UnitIds.C -> UnitIds.MPG_UK
+                else -> UnitIds.MPG_US
+            }
+            return best.copy(speed = speed, temp = temp, boost = boost, tyre = tyre, economy = economy)
         }
     }
 }

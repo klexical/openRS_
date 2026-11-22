@@ -107,11 +107,12 @@ class UnitsRegionTest {
         return AppSettings.load(ctx)
     }
 
-    private fun assertMigrated(p: UserPrefs, four: List<String>, preset: Region) {
+    /** The four are kept, the other six come from [preset], and economy is [economy] (the preset's unless given). */
+    private fun assertMigrated(p: UserPrefs, four: List<String>, preset: Region, economy: String = preset.units!!.economy) {
         assertEquals("the four choices are kept", four, listOf(p.speedUnit, p.tempUnit, p.boostUnit, p.tireUnit))
         val u = preset.units!!
-        assertEquals("the seven new units come from $preset",
-            listOf(u.engine, u.air, u.altitude, u.fuel, u.economy, u.torque, u.mixture),
+        assertEquals("the seven new units come from $preset, economy $economy",
+            listOf(u.engine, u.air, u.altitude, u.fuel, economy, u.torque, u.mixture),
             listOf(p.engineUnit, p.airUnit, p.altitudeUnit, p.fuelUnit, p.economyUnit, p.torqueUnit, p.mixtureUnit))
     }
 
@@ -149,25 +150,33 @@ class UnitsRegionTest {
         assertEquals(Region.CUSTOM, p.region)
     }
 
-    @Test fun `tie - km per h, F, psi, psi goes to Canada, which matches the speed unit`() {
-        // US and Canada both match 3 of 4 and neither matches speed and temperature; the speed unit decides (owner),
-        // so economy stays L/100 km and distance km beside km/h
+    @Test fun `km per h, F, psi, psi - a tie of US and Canada - takes US's units with L per 100 km`() {
+        // US and Canada both match 3 of 4 and neither matches speed and temperature: list order gives US; economy
+        // follows km/h (owner), so L/100 km beside km/h
         val p = existing("KPH", "F", "PSI", "PSI")
-        assertMigrated(p, listOf("KPH", "F", "PSI", "PSI"), Region.CANADA)
-        assertEquals(UnitIds.L100KM, p.economyUnit)
-        assertEquals(UnitIds.M, p.altitudeUnit)
-        assertEquals(UnitIds.L, p.fuelUnit)
+        assertMigrated(p, listOf("KPH", "F", "PSI", "PSI"), Region.US, economy = UnitIds.L100KM)
         assertEquals(Region.CUSTOM, p.region)
-        // the same tie with boost in kPa
-        prefs.edit(commit = true) { clear() }
-        assertMigrated(existing("KPH", "F", "KPA", "PSI"), listOf("KPH", "F", "KPA", "PSI"), Region.CANADA)
     }
 
-    @Test fun `mph, C, bar, bar goes to Europe and international, 3 of 4, so L per 100 km beside mph`() {
+    @Test fun `mph, C, bar, bar takes Europe and international's units, 3 of 4, with MPG UK`() {
         val p = existing("MPH", "C", "BAR", "BAR")
-        assertMigrated(p, listOf("MPH", "C", "BAR", "BAR"), Region.EUROPE)
-        assertEquals(UnitIds.L100KM, p.economyUnit)
+        assertMigrated(p, listOf("MPH", "C", "BAR", "BAR"), Region.EUROPE, economy = UnitIds.MPG_UK)
+        assertEquals(Region.CUSTOM, p.region)
     }
+
+    // Economy follows the user's own speed and temperature after the preset fill (owner): one test per pair, each
+    // over every boost and tyre unit
+    private fun assertEconomy(speed: String, temp: String, economy: String) {
+        for (boost in listOf("PSI", "BAR", "KPA")) for (tyre in listOf("PSI", "BAR", "KPA")) {
+            prefs.edit(commit = true) { clear() }
+            assertEquals("$speed $temp $boost $tyre", economy, existing(speed, temp, boost, tyre).economyUnit)
+        }
+    }
+
+    @Test fun `economy - km per h with C reads L per 100 km`() = assertEconomy("KPH", "C", UnitIds.L100KM)
+    @Test fun `economy - km per h with F reads L per 100 km`() = assertEconomy("KPH", "F", UnitIds.L100KM)
+    @Test fun `economy - mph with C reads MPG UK`() = assertEconomy("MPH", "C", UnitIds.MPG_UK)
+    @Test fun `economy - mph with F reads MPG US`() = assertEconomy("MPH", "F", UnitIds.MPG_US)
 
     @Test fun `tie on speed and temperature goes to the first preset in list order`() {
         // km/h, C, psi, bar: Europe 3 (speed, temp, tyre), Canada 3 (speed, temp, boost) → Europe (listed first)
