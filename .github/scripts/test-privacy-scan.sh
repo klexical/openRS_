@@ -161,6 +161,27 @@ repo; g checkout -q -b feature; mkzip a.zip doc.txt 'clean\n' notes.txt "deflate
 run 1 "a ZIP member's deflated content fails, by member number" "FINDING $(c12): ZIP member #2 content a.zip"
 repo; g checkout -q -b feature; mkzip a.zip "exports/$ID2.csv" 'x\n'; commit "a ZIP"
 run 1 "a ZIP member's name fails, by number, never printed" "FINDING $(c12): ZIP member name (#1 of the ZIP) a.zip"
+# a ZIP appended to another file: the file is still judged by its own class, not by the ZIP's last member's
+pzip() { # pzip <path> <prefix file>: the prefix, then a ZIP with one clean text member
+  python3 -I - "$T/r/$1" "$2" <<'PY'
+import io, sys, zipfile
+b = io.BytesIO()
+with zipfile.ZipFile(b, "w", zipfile.ZIP_DEFLATED) as zf: zf.writestr("m.txt", "clean\n")
+open(sys.argv[1], "wb").write(open(sys.argv[2], "rb").read() + b.getvalue())
+PY
+  g add -- "$1"
+}
+repo; g checkout -q -b feature; printf '\x89PNG\r\n\x1a\n' > "$T/pre"; head -c 64 /dev/zero >> "$T/pre"; pzip p.png "$T/pre"; commit "a PNG with a ZIP after it"
+run 1 "a PNG with a ZIP appended still needs the OK" "; ok label needed yes; "
+repo; g checkout -q -b feature; printf 'packed\n' | gzip -c > "$T/pre"; pzip g.gz "$T/pre"; commit "a gzip with a ZIP after it"
+run 1 "a gzip with a ZIP appended still needs the OK" "; ok label needed yes; "
+repo; g checkout -q -b feature; { head -c 9000 /dev/zero | tr '\0' 'a'; printf '\n'; python3 -I -c 'import sys; sys.stdout.buffer.write(sys.argv[1].encode("utf-16-le"))' "$ID1"; } > "$T/pre"
+pzip late.dat "$T/pre"
+commit "text, then UTF-16, then a ZIP"
+run 1 "UTF-16 after the first 8000 bytes, with a ZIP appended, is read whole" "FINDING $(c12): binary content late.dat"
+repo; g checkout -q -b feature; { head -c 9000 /dev/zero | tr '\0' 'a'; printf '\n\x02\x5a\x1e\x7c\x3d\x9b\n'; } > "$T/pre"; pzip mac.dat "$T/pre"
+commit "text, then a MAC's raw bytes, then a ZIP"
+LIST=$(printf '%s\n%s\n' "$ID1" "$MAC") run 1 "a MAC's raw bytes, with a ZIP appended, are read whole" "FINDING $(c12): binary content mac.dat"
 repo; g checkout -q -b feature; printf 'inner %s\n' "$ID1" | gzip -c > "$T/inner.gz"
 python3 -I -c 'import sys,zipfile; zipfile.ZipFile(sys.argv[1],"w").write(sys.argv[2],"inner.gz")' "$T/r/b.zip" "$T/inner.gz"
 g add b.zip; commit "a ZIP holding a gzip"
@@ -626,6 +647,8 @@ expect 1 "the history scan counts the ref names that match the list" $? "privacy
 expect 1 "--places places a ref name by number, never by name" $? "FINDING refs: ref name #2"
 printf 'refs/remotes/origin/main\n' > "$T/names"; hist --names "$T/names" "$(sha main)"
 expect 0 "clean ref names pass" $? "privacy history scan: ref names 1, 0 matching the list"
+printf 'refs/remotes/origin/main\nrefs/tags/%s\n' "$(printf '%s' "$ID1" | base64 -w0)" > "$T/names"; hist --names "$T/names" "$(sha main)"
+expect 1 "a ref name holding the list's entry in base64 counts as matching" $? "privacy history scan: ref names 2, 1 matching the list"
 hist --names "$T/no-such-file" "$(sha main)"; expect 2 "--names needs a readable file" $? "--names needs a readable file"
 (cd "$T/r" && PRIVACY_IDENTIFIERS=$LISTV GITLEAKS=$STUB GITHUB_EVENT_PATH=$T/event.json bash "$SCAN" --names "$T/names" "$(sha main)" "$(sha HEAD)") > "$OUT" 2>&1
 expect 2 "--names is for --history only" $? "--names is for --history only"
@@ -698,6 +721,11 @@ if [ -n "${GITLEAKS_REAL:-}" ]; then
   (cd "$T/r" && unset GITHUB_EVENT_PATH GITHUB_ACTIONS PRIVACY_IDENTIFIERS && GITLEAKS=$GITLEAKS_REAL bash "$SCAN" --history --places "$(sha HEAD)") > "$OUT" 2>&1
   expect 1 "--places with no list never prints a path that spells an entry" $? \
     "FINDING $(c12): gitleaks rule aws-access-token (a path, not shown: no list to check it against):2"
+  repo; put f.txt 'clean\n'; commit "clean"; printf 'refs/remotes/origin/main\nrefs/remotes/origin/k-%s\n' "$PLANTED" > "$T/names"
+  GL=$GITLEAKS_REAL hist --names "$T/names" "$(sha HEAD)"
+  expect 1 "the real gitleaks reads the ref names too" $? "privacy history scan: gitleaks rule aws-access-token, 1 finding(s)" \
+    "privacy history scan: ref names 2, 0 matching the list"
+  repo; g checkout -q -b feature; put "at-$ID1/conf.txt" "one\nkey = $PLANTED\n"; commit "a key under a folder named like an entry"
   GL=$GITLEAKS_REAL hist "$(sha HEAD)"
   expect 1 "the history scan counts gitleaks findings by rule, with no place" $? "privacy history scan: gitleaks rule aws-access-token, "
   grep -q -e FINDING -e conf.txt "$OUT" && { fail=$((fail+1)); echo "FAIL the history scan printed a gitleaks place"; } \
