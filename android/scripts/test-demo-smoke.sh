@@ -7,7 +7,10 @@
 # log, another app's resumed activity, a missing DEMO label, a tab that does not select, a dump that never reads, a hash
 # mismatch or an adb call that does not answer, each with a message naming the step. A failure's crash lines drop any
 # line naming a key and redact key-shaped values. A fake adb answers from generated dumps (system bar nodes included, as
-# `uiautomator dump` gives every window) and records the order of calls. Also checks demo-smoke-ui.py on its own.
+# `uiautomator dump` gives every window) and records the order of calls; each of the four log checks fails alone, a
+# failed log or UI read prints none of what it read, and the end's resumed-activity check and a What's New that stays
+# are caught. Also checks demo-smoke-ui.py on its own, and the workflow's shape (label-only start, read-only token, no
+# secret, no upload, no credentials kept, its steps in order).
 # Run from anywhere: bash android/scripts/test-demo-smoke.sh
 set -uo pipefail
 DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -27,7 +30,9 @@ printf 'a\n' > "$WORK/two/a.apk"; printf 'b\n' > "$WORK/two/b.apk"
 #    FAKE_FATAL_AT=<n> puts a fatal exception in the log from the n-th `logcat -d`; FAKE_FOREIGN=1 puts another app's
 #    activity on top; FAKE_IDLE_FAILS=<n> makes the first n dumps find no idle state; FAKE_NO_DEMO=1 drops the DEMO
 #    label; FAKE_DEMO_LABEL=<text> replaces it; FAKE_BAD_HASH=1 answers another SHA-256; FAKE_HANG=<kind> never answers
-#    that call kind (install, start, logcat-d, dump). ──
+#    that call kind (install, start, logcat-d, dump); FAKE_FAIL=<kind> makes that call print raw text and fail (logcat-d,
+#    dump); FAKE_BAD_LINE=<line> is the line FAKE_FATAL_AT adds instead of the fatal exception; FAKE_FOREIGN_AT=<n> puts
+#    another app on top from the n-th resumed-activity read; FAKE_WHATSNEW_STICKY=1 keeps the dialog after GOT IT. ──
 cat > "$WORK/bin/adb" <<'STUB'
 #!/usr/bin/env bash
 S="$FAKE_DIR/state"
@@ -61,10 +66,13 @@ case "$*" in
                               else h=$(sha256sum "$FAKE_APK" | cut -d' ' -f1); fi
                               printf '%s  %s\r\n' "$h" "${*#shell sha256sum }" ;;
   "logcat -c")                : > "$S/cleared" ;;
-  "logcat -d")                hang logcat-d; n=$(count logcat); [ -f "$S/cleared" ] || echo "E AndroidRuntime: FATAL EXCEPTION: before the clear"
+  "logcat -d")                hang logcat-d; n=$(count logcat)
+                              [ "${FAKE_FAIL-}" = logcat-d ] && { echo "I RAW-LOG-TEXT the whole device log"; exit 1; }
+                              [ -f "$S/cleared" ] || echo "E AndroidRuntime: FATAL EXCEPTION: before the clear"
                               echo "I ActivityManager: Start proc 4242:com.openrs.dash.debug/u0a190 for top-activity"
                               if [ -n "${FAKE_FATAL_AT-}" ] && [ "$n" -ge "$FAKE_FATAL_AT" ]; then
-                                echo "E AndroidRuntime: FATAL EXCEPTION: main"; echo "E AndroidRuntime: Process: com.openrs.dash.debug, PID: 4242"
+                                if [ -n "${FAKE_BAD_LINE-}" ]; then echo "$FAKE_BAD_LINE"
+                                else echo "E AndroidRuntime: FATAL EXCEPTION: main"; echo "E AndroidRuntime: Process: com.openrs.dash.debug, PID: 4242"; fi
                               fi ;;
   "logcat -d -b main,system,crash")
                               echo "I ActivityManager: Start proc 4242:com.openrs.dash.debug/u0a190 for top-activity"
@@ -84,18 +92,20 @@ case "$*" in
                               elif [ -n "${FAKE_RESTART_AT-}" ] && [ "$n" -ge "$FAKE_RESTART_AT" ]; then printf '5151\r\n'
                               else printf '4242\r\n'; fi ;;
   "shell dumpsys activity activities | grep -E 'ResumedActivity' || true")
-                              if [ -n "${FAKE_FOREIGN-}" ]; then
+                              n=$(count resumed)
+                              if [ -n "${FAKE_FOREIGN-}" ] || { [ -n "${FAKE_FOREIGN_AT-}" ] && [ "$n" -ge "$FAKE_FOREIGN_AT" ]; }; then
                                 printf '  topResumedActivity=ActivityRecord{1a2b u0 com.google.android.permissioncontroller/com.android.permissioncontroller.permission.ui.GrantPermissionsActivity t9}\r\n'
                               else printf '  topResumedActivity=ActivityRecord{1a2b u0 com.openrs.dash.debug/com.openrs.dash.ui.MainActivity t9}\r\n'; fi ;;
   "exec-out rm -f /data/local/tmp/demo-smoke.xml; uiautomator dump"*)
                               hang dump; n=$(count dump)
+                              [ "${FAKE_FAIL-}" = dump ] && { echo '<node text="RAW-DUMP-TEXT" />'; exit 1; }
                               [ "$n" -gt "${FAKE_IDLE_FAILS:-0}" ] || exit 0      # no idle state: no file, nothing to cat
                               dump ;;
   "shell input tap "*)        set -- $*; x=$4; y=$5; echo "$x $y" >> "$S/taps"
                               if [ "$y" -ge 2252 ] && [ "$y" -le 2348 ]; then
                                 t=${TABS[$((x / 216))]}; [ "${FAKE_NO_SELECT-}" = "$t" ] || echo "$t" > "$S/tab"
                               elif [ -f "$S/whatsnew" ] && [ "$x" -ge 400 ] && [ "$x" -le 680 ] && [ "$y" -ge 1500 ] && [ "$y" -le 1600 ]; then
-                                rm -f "$S/whatsnew"
+                                [ -n "${FAKE_WHATSNEW_STICKY-}" ] || rm -f "$S/whatsnew"
                               fi ;;
   *)                          echo "fake adb: unexpected call: $*" >&2; exit 99 ;;
 esac
@@ -186,6 +196,28 @@ if run_case "a fatal exception in the log fails, with crash lines filtered and r
   grep -q "Emulator smoke failed: in demo idle" "$WORK/summary" || why+="no failure summary; "
   [ -z "$why" ] && pass || bad "$why"
 fi
+# Each of the other three log checks, alone
+run_case "a verifier rejection in the log fails" 1 "$APK" FAKE_FATAL_AT=2 \
+    "FAKE_BAD_LINE=W ziparchive: Verifier rejected class com.openrs.dash.ui.DrivePageKt" \
+  && expect "::error::on DRIVE: Verifier rejected 1, FATAL EXCEPTION 0, ANR in com.openrs.dash.debug 0, Fatal signal (com.openrs.dash.debug) 0"
+run_case "an ANR of the app in the log fails" 1 "$APK" FAKE_FATAL_AT=2 "FAKE_BAD_LINE=E ActivityManager: ANR in com.openrs.dash.debug" \
+  && expect "::error::on DRIVE: Verifier rejected 0, FATAL EXCEPTION 0, ANR in com.openrs.dash.debug 1, Fatal signal (com.openrs.dash.debug) 0"
+run_case "a native fatal signal of the app in the log fails" 1 "$APK" FAKE_FATAL_AT=2 \
+    "FAKE_BAD_LINE=F libc: Fatal signal 11 (SIGSEGV), code 1 in tid 4300 (RenderThread), pid 4242 (com.openrs.dash.debug)" \
+  && expect "::error::on DRIVE: Verifier rejected 0, FATAL EXCEPTION 0, ANR in com.openrs.dash.debug 0, Fatal signal (com.openrs.dash.debug) 1"
+run_case "another app's fatal signal does not count" 0 "$APK" FAKE_FATAL_AT=2 \
+    "FAKE_BAD_LINE=F libc: Fatal signal 6 (SIGABRT), code -1 in tid 900 (binder), pid 900 (com.android.phone)" && pass
+# A failed call that printed raw output: the device log and the UI dump are never printed
+if run_case "a failed log read prints none of the log" 1 "$APK" FAKE_FAIL=logcat-d; then
+  has "::error::reading the log after the cold start: adb logcat -d failed (exit 1" && ! has "RAW-LOG-TEXT" && pass || bad "the log's text was printed, or no error"
+fi
+if run_case "a failed UI read prints none of the dump" 1 "$APK" FAKE_FAIL=dump; then
+  has "::error::the UI read after the cold start (try 1 of 3): adb exec-out" && ! has "RAW-DUMP-TEXT" && pass || bad "the dump's text was printed, or no error"
+fi
+run_case "another app on top at the end fails" 1 "$APK" FAKE_FOREIGN_AT=2 \
+  && expect "::error::at the end: the resumed activity is not com.openrs.dash.debug/com.openrs.dash.ui.MainActivity"
+run_case "What's New still shown after GOT IT fails" 1 "$APK" FAKE_WHATSNEW=1 FAKE_WHATSNEW_STICKY=1 \
+  && expect "::error::What's New is still shown after its GOT IT was tapped"
 run_case "another app's activity on top fails, naming it" 1 "$APK" FAKE_FOREIGN=1 \
   && expect "::error::after the cold start: the resumed activity is not com.openrs.dash.debug/com.openrs.dash.ui.MainActivity (found: com.google.android.permissioncontroller/com.android.permissioncontroller.permission.ui.GrantPermissionsActivity )"
 run_case "no DEMO label fails" 1 "$APK" FAKE_NO_DEMO=1 \
@@ -236,6 +268,42 @@ demo=0
 whatsnew=none
 selected=none'
 ui_case "ui: a dump that is not XML says only the error class" 'ERROR: could not get idle state.' 'unreadable dump (ParseError)'
+
+# ── The workflow's own claims (.github/workflows/emulator-smoke.yml): only the label starts it, read-only token, no
+#    secret, nothing uploaded, no credentials left in the checkout, the nightly's emulator start, then this smoke ──
+WF="$DIR/../../.github/workflows/emulator-smoke.yml"
+ran=$((ran + 1))
+if ! command -v ruby >/dev/null 2>&1; then echo "FAIL the workflow's shape — ruby not found"; failures=$((failures + 1))
+else
+  why=$(ruby -ryaml -e '
+    wf = YAML.safe_load(File.read(ARGV[0])); text = File.read(ARGV[0]); w = []
+    on = wf["on"] || wf[true]
+    w << "triggers #{on.keys.inspect}" unless on.keys == ["pull_request"]
+    w << "types #{on["pull_request"]["types"].inspect}" unless on["pull_request"]["types"] == %w[labeled synchronize reopened]
+    w << "workflow permissions #{wf["permissions"].inspect}" unless wf["permissions"] == { "contents" => "read" }
+    w << "#{wf["jobs"].size} jobs" unless wf["jobs"].keys == ["smoke"]
+    j = wf["jobs"]["smoke"] || {}
+    w << "job permissions #{j["permissions"].inspect}" unless j["permissions"] == { "contents" => "read" }
+    want_if = "(github.event.action == '\''labeled'\'' && github.event.label.name == '\''emulator-smoke'\'') || " \
+              "(github.event.action != '\''labeled'\'' && contains(github.event.pull_request.labels.*.name, '\''emulator-smoke'\''))"
+    w << "condition #{j["if"].inspect}" unless j["if"] == want_if
+    w << "names a secret" if text.include?("secrets.")
+    w << "declares an environment" if j.key?("environment")
+    st = j["steps"] || []
+    w << "uploads an artifact" if st.any? { |x| x["uses"].to_s.start_with?("actions/upload-artifact") }
+    co = st.find { |x| x["uses"].to_s.start_with?("actions/checkout@") }
+    w << "checkout keeps credentials" unless co && co.dig("with", "persist-credentials") == false
+    runs = st.map { |x| x["run"].to_s.strip }
+    order = ["bash android/scripts/test-demo-smoke.sh", "./gradlew assembleDebug --no-daemon",
+             "bash android/scripts/start-emulator.sh \"system-images;android-36;google_apis;x86_64\" 420",
+             "bash android/scripts/demo-smoke.sh android/app/build/outputs/apk/debug"]
+    idx = order.map { |c| runs.index { |r| r.lines.map(&:strip).include?(c) } }
+    w << "steps out of order or missing: #{order.zip(idx).inspect}" unless idx.none?(&:nil?) && idx == idx.sort
+    w << "the smoke is not the last step" unless runs.last == order.last
+    puts w.join("; ")' "$WF" 2>&1)
+  if [ -z "$why" ]; then echo "PASS the workflow's shape: label-only start, read-only, no secret, no upload, its steps in order"
+  else echo "FAIL the workflow's shape — $why"; failures=$((failures + 1)); fi
+fi
 
 [ "$ran" -gt 0 ] || { echo "demo smoke checks: no case ran"; exit 1; }
 if [ "$failures" -eq 0 ]; then echo "demo smoke checks: all $ran passed"; else echo "demo smoke checks: $failures of $ran failed"; exit 1; fi

@@ -3,6 +3,8 @@ name: Emulator smoke
 # A demo-mode smoke of a pull request's debug build on an API 36 emulator (Q139), started by the label `emulator-smoke`:
 # adding the label runs it, and each push to the pull request runs it again while the label stays on. Removing the label
 # stops the re-runs; a newer run cancels an older one of the same pull request.
+# Only this label: the older `emulator` label starts nothing. Read the result from this workflow's runs for the head SHA,
+# the newest run whose job did not skip (another label added makes a skipped run under the same check name).
 # The smoke (android/scripts/demo-smoke.sh) installs the build, cold-starts it into demo mode (no adapter), opens every
 # tab, runs every demo scenario and trip preview, and fails on a crash, ANR, verifier rejection or restart.
 # Uploads nothing: no screenshot, dump, log or APK leaves the runner. The run's log holds step names, counts and fixed
