@@ -194,3 +194,6 @@ paths:
     timeout or a no-protocol answer, any other error names its class.
   Whether the Pro acknowledges `C\r` with a CR: #324 (the owner's parked check). `CHANGE_NETWORK_STATE` is declared for the
   binding (`AdapterProbeTest`, `AdapterNetworkFinderTest`, `AdapterNetworkServiceTest`)
+- **Teardown comes from the reader (#218)** — `SlcanConnection` swallows write errors, so teardown must come from the
+  reader: a transport that has to end the link after a write (BLE closes it on an unacknowledged write) closes its read
+  side, the reader sees EOF and `SlcanConnection` reconnects. A transport that only throws from `write` ends nothing

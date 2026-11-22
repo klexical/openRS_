@@ -26,9 +26,6 @@ paths:
     static state). The MTU-23 path (20 + 2) already depends on that window — pre-existing, hardware-unverified.
   - Throwing on GATT 13 caused the DID prober crash (#249) and never-attributed NRCs over BLE (#216); since #333 a link slower
     than the gap again leaves them unattributed, by the ledger's rule, never charged to the wrong DID.
-- **BLE write timeout = link closed (#218)** — Android's `onCharacteristicWrite` names no write; after a 2 s timeout a late
-  callback would complete the next write. `BleGattCore` invalidates + closes the link (reader EOF → SlcanConnection
-  reconnects); later writes fail at once. `SlcanConnection` swallows write errors, so teardown must come from the reader.
 - **BLE GATT layouts (#218)** — upstream WiCAN Pro v4.45p–v4.48p: FFF0, write FFF2, notify FFF1; USB v4.13u–v4.21u: FEE0, FEE1
   write + notify; both need an encrypted, MITM-authenticated (bonded) link (upstream source reading, not a capture).
   - FFE0/FFE1/FFE2 is declared only: `firmware/components/ble_transport/ble_transport.h` is a forward declaration;
