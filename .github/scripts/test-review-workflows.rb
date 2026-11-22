@@ -360,6 +360,35 @@ ok, out, = decide.("pull_request") do |git, put|
   { "BASE_REF" => "newbase", "BASE_SHA" => git.("rev-parse", "newbase").strip, "HEAD_SHA" => head }
 end
 check.(!ok && !out.include?("run="), "web-ci decision: a retarget onto a base the old base contains, changing web/ => the step fails (the merge commit is not on the new base branch)")
+# a retarget onto a base that already contains the old one (main holding staging's tip and more, right after a release
+# merge): the merge commit's base is on the new base branch, but behind the event's base commit
+ok, out, = decide.("pull_request") do |git, put|
+  git.("checkout", "-q", "-b", "head"); put.("web/a.txt", "y"); git.("commit", "-qam", "head")
+  head = git.("rev-parse", "HEAD").strip
+  git.("checkout", "-q", "-b", "newbase", "base"); put.("docs/n.txt"); git.("add", "-A"); git.("commit", "-qm", "new base: the old base and more")
+  newbase = git.("rev-parse", "HEAD").strip
+  git.("checkout", "-q", "base"); git.("merge", "-q", "--no-ff", "-m", "stale test merge", "head")
+  { "BASE_REF" => "newbase", "BASE_SHA" => newbase, "HEAD_SHA" => head }
+end
+check.(!ok && !out.include?("run="), "web-ci decision: a retarget onto a base that contains the old base, changing web/ => the step fails (the merge commit is behind the event's base commit)")
+# the checked-out commit must be GitHub's merge of the event's head
+ok, out, = decide.("pull_request") do |git, put|
+  git.("checkout", "-q", "-b", "head"); put.("web/a.txt", "y"); git.("commit", "-qam", "head 1")
+  first = git.("rev-parse", "HEAD").strip
+  put.("web/a.txt", "z"); git.("commit", "-qam", "head 2")
+  git.("checkout", "-q", "base"); git.("merge", "-q", "--no-ff", "-m", "test merge", "head")
+  { "HEAD_SHA" => first }
+end
+check.(!ok && !out.include?("run="), "web-ci decision: a merge commit of another head than the event's, changing web/ => the step fails")
+ok, out, = decide.("pull_request") do |git, put|
+  base = git.("rev-parse", "HEAD").strip
+  git.("checkout", "-q", "-b", "head"); put.("web/a.txt", "y"); git.("commit", "-qam", "head")
+  head = git.("rev-parse", "HEAD").strip
+  git.("checkout", "-q", "base"); git.("merge", "-q", "--no-ff", "-m", "test merge", "head")
+  git.("checkout", "-q", "--detach", "head")
+  { "BASE_SHA" => base, "HEAD_SHA" => head }
+end
+check.(!ok && !out.include?("run="), "web-ci decision: the checkout is not a merge commit, changing web/ => the step fails")
 ok, out, = decide.("pull_request", &pr.() { |_, put| put.("web/a.txt", "y") }.then { |b| ->(g, p) { b.(g, p); { "DROP_BRANCH" => "base" } } })
 check.(!ok && !out.include?("run="), "web-ci decision: a web/ change but the checkout has no copy of the base branch => the step fails")
 ok, out, = decide.("pull_request", &pr.() { |_, put| put.("web/a.txt", "y") }.then { |b| ->(g, p) { b.(g, p); { "BASE_REF" => "" } } })
