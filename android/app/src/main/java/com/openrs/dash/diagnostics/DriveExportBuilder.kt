@@ -36,7 +36,7 @@ internal object DriveExportBuilder {
 
     /**
      * The namespace of the GPX's `openrs:` extension elements: this repository's URL (#390; builds before it declared a URL
-     * under another account). An identifier, not a link: nothing in the app or Sapphire reads it.
+     * under another account). An identifier, not a link: nothing in the app or Sapphire reads it as of this change.
      */
     const val GPX_EXTENSION_NAMESPACE = "https://github.com/klexical/openRS_"
 
