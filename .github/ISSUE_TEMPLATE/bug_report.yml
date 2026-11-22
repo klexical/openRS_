@@ -31,8 +31,8 @@ body:
   - type: input
     id: android
     attributes:
-      label: Android version
-      description: Your phone's settings show it, usually under About phone. Add the API level if you know it. The phone's model is not needed; add it under "What happened" only if you think it matters.
+      label: Android release and API level
+      description: Your phone's settings show the Android release, usually under About phone. Add the API level if you know it. The phone's model is not needed; add it under "What happened" only if you think it matters.
       placeholder: "e.g. Android 15"
     validations:
       required: true
@@ -116,10 +116,10 @@ body:
       label: Diagnostic export
       description: |
         A diagnostic export helps most: GARAGE → DIAG → CAPTURE & SHARE SNAPSHOT (the DIAG tab in v2.2.6), then attach the ZIP here.
-        What it holds: the car's raw CAN traffic, the app's logs, and the date and time of the export.
-        If a drive was recording when you exported, the ZIP also holds that drive, with its route (GPS positions and times).
-        From v2.2.7-rc.8 on, the app masks the VIN and removes the adapter's Bluetooth address and name, as far as it can
-        recognise them. v2.2.6 and the earlier v2.2.7 release candidates do not. Leave out anything you do not want public.
+        What it holds: the car's raw CAN traffic, the app's logs, and the date and time the session started and the export was made.
+        If a drive was recording or paused when you exported, the ZIP also holds that drive, with its route (GPS positions and times).
+        From v2.2.7-rc.8 on, the app masks the VIN and removes the adapter's Bluetooth address and name, as far as it can recognise them.
+        v2.2.6 and the earlier v2.2.7 release candidates do not. Leave out anything you do not want public.
 
   - type: checkboxes
     id: privacy
@@ -128,7 +128,7 @@ body:
       options:
         - label: I know that anything attached here is public and stays public.
           required: true
-        - label: I made the export with no drive recording, or I am fine with that drive's route being public.
+        - label: If I attached an export, no drive was recording or paused, or I am fine with that drive's route being public.
           required: true
         - label: This is not a security weakness (those go to the private security report).
           required: true
