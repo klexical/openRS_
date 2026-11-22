@@ -167,6 +167,13 @@ paths:
   workflow is listed under that workflow's key at the ref it names, and that every pin a composite action itself uses
   has its own entry. A job that ran locked logs "Using locked action versions from the workflow's lockfile"; reading
   that line is how a run shows the lockfile was used, and its absence in a job that runs an action means it was not
+- **Never open two pull requests from one head** — GitHub attaches check runs to the head commit, not to a pull
+  request, and a required check takes any run of its name on that commit. A second pull request from the same head
+  into another base leaves its own runs beside the first's: Sapphire's skip run (decided against staging, where the
+  pull request changes no `web/`) then counts for the pull request to main, whose diff may change `web/`. The same holds
+  for every required check. One head, one pull request: a twin gets a branch of its own (the `-staging` branch beside
+  the main one), and a retargeted pull request is decided again (`web-ci.yml` runs on `edited`; the review of
+  #473 / #474).
 
 ## Releases: RCs, nightlies, stable and the release checklist
 
