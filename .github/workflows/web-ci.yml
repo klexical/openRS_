@@ -12,6 +12,7 @@ name: Sapphire Web CI
 on:
   pull_request:
     branches: [ main, staging ]
+    types: [ opened, synchronize, reopened, edited ]   # edited: a pull request retargeted onto another base
   workflow_dispatch:
 
 permissions:
@@ -38,23 +39,26 @@ jobs:
           fetch-depth: 2             # GitHub's test merge commit and its two parents
 
       # On a pull request HEAD is GitHub's test merge commit of the head into the base tip, its first parent, so
-      # HEAD^1..HEAD is what the pull request changes now. --no-renames lists both sides of a move, so a file moved out
-      # of web/ still counts.
+      # HEAD^1..HEAD is what the pull request changes now. git itself matches the paths (no listing of names, which git
+      # quotes when they are not ASCII); --no-renames counts both sides of a move, so a file moved out of web/ counts.
+      # git diff --quiet: 1 = a change (run), 0 = none (skip), anything else = an error (the step fails).
       - name: Does this pull request change web/ or this workflow?
         id: diff
         working-directory: .
+        shell: bash
         env:
           EVENT: ${{ github.event_name }}
         run: |
           if [ "$EVENT" != pull_request ]; then echo run=true >> "$GITHUB_OUTPUT"; exit 0; fi
           git rev-parse --verify -q 'HEAD^2' > /dev/null || { echo "::error::HEAD is not the test merge commit"; exit 1; }
-          files=$(git diff --no-renames --name-only 'HEAD^1' HEAD)
-          if grep -qE '^(web/|\.github/workflows/web-ci\.yml$)' <<< "$files"; then
-            echo run=true >> "$GITHUB_OUTPUT"
-          else
-            echo run=false >> "$GITHUB_OUTPUT"
-            echo "No change under web/ or to this workflow: the Sapphire steps are skipped."
-          fi
+          rc=0
+          git diff --quiet --no-renames 'HEAD^1' HEAD -- web .github/workflows/web-ci.yml || rc=$?
+          case "$rc" in
+            1) echo run=true >> "$GITHUB_OUTPUT" ;;
+            0) echo run=false >> "$GITHUB_OUTPUT"
+               echo "No change under web/ or to this workflow: the Sapphire steps are skipped." ;;
+            *) echo "::error::git diff failed (exit $rc)"; exit 1 ;;
+          esac
 
       - name: Setup Node
         if: steps.diff.outputs.run == 'true'
