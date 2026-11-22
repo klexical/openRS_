@@ -42,7 +42,7 @@ paths:
     `scripts/test-release-apk.sh` checks the build step; `scripts/test-release-workflows.rb` checks the workflows' shape
     (each tag job's exact condition and permissions, the recipe's one output, the digest check before attest and attach,
     no expression in any `run` line); CI's build job runs both, and the identity and verify-release tests.
-  - **The nightly (#363):** `.github/workflows/nightly.yml` is scheduled for 08:17 UTC and runs from main's copy only
+  - **The nightly (#363):** `.github/workflows/nightly.yml` is scheduled for 05:50 UTC and runs from main's copy only
     (schedule and "Run workflow" exist only on the default branch), so every script and Gradle step runs in a checkout of staging's tip, the SHA the gate records,
     never the run's own commit or ref. Jobs: `mode` (the publish output from the file's `PUBLISH`, with no checkout and
     no repository code), `gate` (`scripts/nightly-gate.sh`: build only when `android/` changed since
@@ -167,6 +167,14 @@ paths:
   workflow is listed under that workflow's key at the ref it names, and that every pin a composite action itself uses
   has its own entry. A job that ran locked logs "Using locked action versions from the workflow's lockfile"; reading
   that line is how a run shows the lockfile was used, and its absence in a job that runs an action means it was not
+  used.
+- **Never open two pull requests from one head** — GitHub attaches check runs to the head commit, not to a pull
+  request, and a required check takes any run of its name on that commit. A second pull request from the same head
+  into another base leaves its own runs beside the first's: Sapphire's skip run (decided against staging, where the
+  pull request changes no `web/`) then counts for the pull request to main, whose diff may change `web/`. The same holds
+  for every required check. One head, one pull request: a twin gets a branch of its own (the `-staging` branch beside
+  the main one), and a retargeted pull request is decided again (`web-ci.yml` runs on `edited`; the review of
+  #473 / #474).
 - **The emulator smoke on a pull request (Q139)** — `.github/workflows/emulator-smoke.yml` runs
   `scripts/demo-smoke.sh` (what it checks and prints: its header; `scripts/test-demo-smoke.sh` pins it and the workflow's
   shape) only for the label `emulator-smoke`; the older label `emulator` starts nothing. Read its result from the Actions
@@ -190,7 +198,7 @@ RC label, SHA-256, `gh attestation verify`. Never force-move a tag or delete an 
 
 No further RC is cut after rc.8: builds after it are nightlies, published by the nightly pipeline (#363).
 
-**Nightlies (#363).** `.github/workflows/nightly.yml` is scheduled for 08:17 UTC and can be run by hand ("Run
+**Nightlies (#363).** `.github/workflows/nightly.yml` is scheduled for 05:50 UTC and can be run by hand ("Run
 workflow"), but GitHub runs it only from the copy on main: it builds staging's tip through the shared
 recipe `release-apk.yml`. Its gate
 builds only when files under `android/` changed since the newest published nightly (rc.8 for the first) and today's UTC

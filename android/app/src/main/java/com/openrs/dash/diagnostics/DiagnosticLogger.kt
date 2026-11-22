@@ -24,9 +24,9 @@ import java.io.File
  * All methods are thread-safe. DiagnosticExporter reads from this object to build the ZIP.
  *
  * SLCAN log format (candump-style lines; the app's requests are `# TX` comment lines, #209):
- *   (   0.000) can0 0F8#0102030405060708
- *   (  30.512) can0 190#AABBCCDDEE001122
- *   # TX (  30.600) can0 7E0#0322033E00000000 sent
+ *   (0.000) can0 0F8#0102030405060708
+ *   (30.512) can0 190#AABBCCDDEE001122
+ *   # TX (30.600) can0 7E0#0322033E00000000 sent
  */
 object DiagnosticLogger {
 
@@ -835,10 +835,13 @@ object DiagnosticLogger {
             else "Request capture off: $reason"))
     }
 
-    /** Build a candump-format line outside the lock to keep hot-path holds short. Always `.` decimals (candump). */
+    /**
+     * Build a candump-format line outside the lock to keep hot-path holds short. Always `.` decimals (candump). The time
+     * has no width (#403): a reader that splits on spaces (SavvyCAN's loader) needs `(12.345)` as one token.
+     */
     internal fun buildSlcanLine(relMs: Long, canId: Int, compactHex: String): String {
         val seconds = relMs / 1000.0
-        return "(%10.3f) can0 %03X#%s\n".format(java.util.Locale.ROOT, seconds, canId, compactHex)
+        return "(%.3f) can0 %03X#%s\n".format(java.util.Locale.ROOT, seconds, canId, compactHex)
     }
 
     /**
