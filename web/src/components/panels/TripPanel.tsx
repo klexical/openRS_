@@ -12,6 +12,7 @@ import { GForceScatter } from '../charts/GForceScatter'
 import { TempStackChart } from '../charts/TempStackChart'
 import { Histogram } from '../charts/Histogram'
 import { ThermalProgressionChart } from '../charts/ThermalProgressionChart'
+import { ThermalRecordCard } from '../ui/ThermalRecordCard'
 import { useUnitFormatters } from '../../lib/format'
 import { tripChartData } from '../../lib/readings'
 import {
@@ -68,6 +69,7 @@ export function TripPanel() {
   }
 
   const peakEvents = trip.summary.peakEvents
+  const thermalRecord = trip.profile?.thermalRecord
 
   const fmtTime = (sec: number) => {
     const m = Math.floor(sec / 60)
@@ -113,6 +115,14 @@ export function TripPanel() {
         <>
           <SectionLabel>Thermal Progression</SectionLabel>
           <ThermalProgressionChart data={trip.thermalProgression} />
+        </>
+      )}
+      {/* #315: the thermal record saved with the drive (limits per profile, peaks, TEMP flags); a drive imported before
+          Sapphire read it has none to show */}
+      {!range && thermalRecord && (
+        <>
+          <SectionLabel>Thermal Record</SectionLabel>
+          <ThermalRecordCard record={thermalRecord} progression={trip.thermalProgression} />
         </>
       )}
 

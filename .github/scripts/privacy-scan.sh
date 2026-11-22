@@ -34,13 +34,15 @@
 # applied and accents dropped (full-width and accented letters read as plain ones), every character but letters and
 # digits removed and then a 0x before a byte dropped, from the entry and the scanned line alike.
 # A file git judges binary on either side of a commit (--numstat "-" "-"), whose new content holds a NUL byte anywhere,
-# or that is not UTF-8, is read whole, as bytes and as UTF-16 or UTF-32 in either byte order; a binary file that is not
-# a ZIP is also a finding until a reviewer's OK, as it may hold compressed data. A ZIP (found by its structure, at any
-# offset) is unpacked and each member read whole and its name scanned. Any other compressed file (gzip, bzip2,
-# xz, zstd, tar, PNG, JPEG, PDF, 7z and the like, found by its magic at the start), a compressed or binary ZIP member,
-# a Git LFS pointer, a workflow or action file that names the privacy-scan check, and an image or attachment in the
-# pull request's title or description are each a finding until a reviewer's OK: the label privacy-ok-compressed being
-# added to the pull request (that label event's run only, so a later push needs a new OK).
+# or that is not UTF-8, is read whole, as bytes and as UTF-16 or UTF-32 in either byte order. A ZIP (found by its
+# structure, at any offset) is unpacked and each member read whole and its name scanned. A ZIP-format file and any
+# other binary file (a ZIP after a prefix included: the prefix bytes are read whole, but compressed data in them cannot
+# be opened) are also a finding until a reviewer's OK, as bytes outside the members may hold compressed data. Any other
+# compressed file (gzip, bzip2, xz, zstd, tar, PNG, JPEG, PDF, 7z and the like, found by its magic at the start), a
+# compressed or binary ZIP member, a Git LFS pointer, a workflow or action file that names the privacy-scan check, and
+# an image or attachment in the pull request's title or description are each a finding until a reviewer's OK: the
+# label privacy-ok-compressed being added to the pull request (that label event's run only, so a later push needs a
+# new OK).
 # Base64 on any scanned line, a run of 8 characters or more (or wrapped over several lines, the last one short), is
 # decoded, padded rather than cut, and decoded again if it is base64 itself; gzip, zlib, bzip2, xz and lzma found in
 # it by their checksummed formats are decompressed. Wrapped base64 whose pieces share their lines with other text is
@@ -245,22 +247,23 @@ def expand(path, barepath):
 
 B64 = rb"[A-Za-z0-9+/_-]"
 B64SKIP = rb"[#/*;\"'`,+&.()\[\]{}\\<>!-]{1,4}"   # a token that is only comment marks, quotes or joiners
-def b64runs(data):
+def b64runs(data, spans=False):
     # base64 runs of DATA (bytes), by line: a run inside a line (20 characters or more, or 8 or more that mix cases or
     # hold a digit or + /), or lines of base64 and nothing else joined (wrapped base64, its last line of any length);
     # each reported at its first line. Then a second pass for wrapped base64 whose pieces are not on lines of their
     # own: the text is split on escaped line ends (\n, \r), bare CRs and white space; each token's longest base64
     # run (so quotes, commas, brackets and tags around it drop away) is a piece, a token of comment marks or quotes
     # alone is passed over, and pieces of 16 or more characters are joined as wrapped lines are, the last of any
-    # length. A joined run is kept only when it spans two or more pieces and the first pass did not find it
+    # length. A joined run is kept only when it spans two or more pieces and the first pass did not find it. With
+    # spans, each run also carries its last line: [first line, run, last line]
     lines = data.split(b"\n")
     runs, cur = [], None
     for n, line in enumerate(lines, 1):
         t = line.strip()
         if re.fullmatch(B64 + rb"{16,}={0,2}", t) or (cur is not None and re.fullmatch(B64 + rb"+={0,2}", t)):
             if cur is None:
-                cur = [n, b""]; runs.append(cur)
-            cur[1] += t
+                cur = [n, b"", n]; runs.append(cur)
+            cur[1] += t; cur[2] = n
             if t.endswith(b"=") or len(t) < 16:
                 cur = None
             continue
@@ -268,11 +271,11 @@ def b64runs(data):
         for m in re.finditer(B64 + rb"{8,}={0,2}", line):
             r = m.group()
             if len(r) >= 20 or re.search(rb"[0-9+/]", r) or (re.search(rb"[a-z]", r) and re.search(rb"[A-Z]", r)):
-                runs.append([n, r])
-    first, chain, joined = {r for _, r in runs}, None, []
+                runs.append([n, r, n])
+    first, chain, joined = {r[1] for r in runs}, None, []
     def close():
         if chain and chain[2] >= 2 and chain[1] not in first:
-            joined.append([chain[0], chain[1]])
+            joined.append([chain[0], chain[1], chain[3]])
     for n, line in enumerate(lines, 1):
         for tok in re.split(rb"\\[nr]|\s+", line):
             if not tok or re.fullmatch(B64SKIP, tok):
@@ -281,15 +284,15 @@ def b64runs(data):
             # from every start, quadratic on a long data URI)
             piece = max(re.findall(B64 + rb"+={0,2}", tok), key=len, default=b"")
             if chain is not None and piece:
-                chain[1] += piece; chain[2] += 1
+                chain[1] += piece; chain[2] += 1; chain[3] = n
                 if piece.endswith(b"=") or len(piece) < 16:
                     close(); chain = None
                 continue
             close(); chain = None
             if len(piece) >= 16 and not piece.endswith(b"="):
-                chain = [n, piece, 1]
+                chain = [n, piece, 1, n]
     close()
-    return runs + joined
+    return runs + joined if spans else [r[:2] for r in runs + joined]
 
 def decodings(run, depth=0):
     for urlsafe in (False, True):
@@ -327,6 +330,21 @@ def unpack(d):
             pass
     return None
 
+def blob(data, ents, bares):   # (a match in DATA read whole, the kind of a compressed file a base64 run decodes to)
+    hit, comp = hits(data, ents, bares), ""
+    # base64 in the bytes as they are, and in each UTF-16 / UTF-32 reading (base64 written in UTF-16 has a NUL
+    # between its characters, so it is no run in the raw bytes)
+    for n, run in (r for x in [data] + [t.encode("utf-8") for t in decoded_texts(data)] for r in b64runs(x)):
+        for d in decodings(run):
+            u = unpack(d)
+            comp = comp or (u[0] if u else (kind(d) if len(d) >= 32 else ""))
+            hit = hit or hits(d, ents, bares) or bool(u and hits(u[1], ents, bares))
+            if hit and comp:
+                break
+        if hit and comp:
+            break
+    return hit, comp
+
 cmd = sys.argv[1]
 # the other modules only where they are used: classify runs once per file, and its start-up time is most of the run
 if cmd not in ("classify", "kind", "texts"):
@@ -350,20 +368,24 @@ elif cmd == "texts":      # texts <file> <out>: its UTF-16 / UTF-32 readings, if
 elif cmd == "blob":       # blob <list> <bare list> <file>: "<1 when the file holds a match, else 0>\t<the kind of a
     # compressed file a base64 run in it decodes to, or ->"; base64 is decoded as on a scanned line; never what matched
     ents, bares = entries(sys.argv[2]), entries(sys.argv[3])
-    data = open(sys.argv[4], "rb").read()
-    hit, comp = hits(data, ents, bares), ""
-    # base64 in the bytes as they are, and in each UTF-16 / UTF-32 reading (base64 written in UTF-16 has a NUL
-    # between its characters, so it is no run in the raw bytes)
-    for n, run in (r for x in [data] + [t.encode("utf-8") for t in decoded_texts(data)] for r in b64runs(x)):
-        for d in decodings(run):
-            u = unpack(d)
-            comp = comp or (u[0] if u else (kind(d) if len(d) >= 32 else ""))
-            hit = hit or hits(d, ents, bares) or bool(u and hits(u[1], ents, bares))
-            if hit and comp:
-                break
-        if hit and comp:
-            break
+    hit, comp = blob(open(sys.argv[4], "rb").read(), ents, bares)
     print(f"{int(hit)}\t{comp or '-'}")
+elif cmd == "names":      # names <list> <bare list> <names> <grep lines>: how many ref names match, never which
+    # Each name is judged on its own exactly as blob judges a one-line file (and grep's line numbers, as blob_hits
+    # greps first), so the count is never below one check per name. A base64 run joined across names (and across
+    # those names only) that holds a match adds its first name, once, when none of the names it spans matched alone
+    ents, bares = entries(sys.argv[2]), entries(sys.argv[3])
+    names = open(sys.argv[4], "rb").read().split(b"\n")[:-1]
+    alone = {int(x) for x in open(sys.argv[5]).read().split()}
+    for i, nm in enumerate(names, 1):
+        if i not in alone and blob(nm + b"\n", ents, bares)[0]:
+            alone.add(i)
+    joined = set()
+    for a, run, z in b64runs(b"".join(nm + b"\n" for nm in names), spans=True):
+        if z > a and not alone.intersection(range(a, z + 1)) and any(
+                hits(d, ents, bares) or ((u := unpack(d)) is not None and hits(u[1], ents, bares)) for d in decodings(run)):
+            joined.add(a)
+    print(len(alone | joined))
 elif cmd == "bare":       # bare <in> <out>: each line in letters-and-digits-only form, line for line
     with open(sys.argv[3], "w", encoding="utf-8") as out:
         for line in open(sys.argv[2], "rb").read().split(b"\n")[:-1]:
@@ -439,9 +461,8 @@ keep() {
   if [ -s "$T/texts" ]; then nw=$((nw+1)); cp "$T/texts" "$WHOLE/$nw"; printf '%s\t%s\t%s\n' "$2" "$3" "$4" >> "$T/whole.idx"; fi
 }
 # scan_zip <c12> <path> <file>: each member's name and content against the list (by number, never by name); a member
-# that is itself compressed is listed for a reviewer's OK; an encrypted, oversized or unreadable one is a finding. Sets
-# zipread: 1 once its members are read, 0 for a ZIP that cannot be read (a finding of its own). kind, binary and
-# zipok are its own: each member is classified, and the caller still judges the file by the file's own class
+# that is itself compressed is listed for a reviewer's OK; an encrypted, oversized or unreadable one is a finding. Its
+# kind, binary and zipok are local: each member is classified, and the caller still judges the file by its own class
 scan_zip() {
   local c12=$1 sp=$2 z=$3 d=$T/zip idx status name kind binary zipok
   rm -rf "$d"; mkdir "$d"
@@ -490,7 +511,7 @@ PY
     [ "$hit" -eq 0 ] || printf '%s\tZIP member #%s content\t%s\t\n' "$c12" "$idx" "$sp" >> "$T/binhits"
     [ -z "$b64comp" ] || printf '%s\tbase64 in ZIP member #%s, decoding to a compressed file (%s)\t%s\t\n' "$c12" "$idx" "$b64comp" "$sp" >> "$T/compressed"
   done < "$d/index"
-  rm -rf "$d"; zipread=1
+  rm -rf "$d"
 }
 # raw_header <commit object>: its header lines as the formatted fields do not show them: every header, and for the
 # author and committer lines only what follows the address (the name and address are scanned as fields)
@@ -575,15 +596,21 @@ for c in $commits; do
       if grep -q -a -i -E 'privacy[-_ ]?scan' "$T/blob"; then
         printf '%s\ta workflow file that names the privacy-scan check\t%s\t\n' "$c12" "$sp" >> "$T/compressed"
       fi ;; esac
-    # scan_zip sets zipread; it is never a condition, since inside one bash ignores set -e and the ERR trap
-    zipread=0
+    # scan_zip is never a condition: inside one, bash ignores set -e and the ERR trap
     if [ "$kind" = zip ] || [ "$zipok" = 1 ]; then scan_zip "$c12" "$sp" "$T/blob"; fi
+    # a ZIP-format file waits for the OK too, its members still read: bytes outside the members (before the first
+    # entry, in the archive comment, after the end record) can hold compressed data that nothing here opens
     if [ -n "$kind" ] && [ "$kind" != zip ]; then
       printf '%s\tcompressed file (%s)\t%s\t\n' "$c12" "$kind" "$sp" >> "$T/compressed"
-    elif [ "$binary" = 1 ] && [ "$zipread" = 0 ] && [ "$kind" != zip ]; then
+    elif [ "$kind" = zip ]; then
+      printf '%s\ta ZIP file, whose bytes outside its members may hold compressed data\t%s\t\n' "$c12" "$sp" >> "$T/compressed"
+    elif [ "$binary" = 1 ]; then
       # a binary file the scan cannot open: compressed data needs no known header (zlib, raw deflate, lzma, data
-      # after a prefix), so any binary file waits for the OK
+      # after a prefix), so any binary file waits for the OK, a ZIP found after a prefix included: the prefix bytes
+      # are read whole and the ZIP's members are read, but compressed data in the prefix cannot be opened
       printf '%s\ta binary file, which may hold compressed data\t%s\t\n' "$c12" "$sp" >> "$T/compressed"
+    elif [ "$zipok" = 1 ]; then
+      printf '%s\ta ZIP file, whose bytes outside its members may hold compressed data\t%s\t\n' "$c12" "$sp" >> "$T/compressed"
     fi
     [ "$binary" = 1 ] || [ -n "$kind" ] || [ "$zipok" = 1 ] || in_binpaths "$p" || continue
     keep "$T/blob" "$c12" "in a file read whole" "$sp" "$kind"
@@ -625,12 +652,15 @@ if [ "$HISTORY" = 1 ]; then
       if [ "$(head -c 40 "$T/blob" | tr -d '\000' 2> /dev/null)" = "version https://git-lfs.github.com/spec/" ]; then
         printf '%s\ta Git LFS pointer (its file is not in these git objects)\t%s\t\n' "$o12" "$sp" >> "$T/compressed"
       fi
-      zipread=0
       if [ "$kind" = zip ] || [ "$zipok" = 1 ]; then scan_zip "$o12" "$sp" "$T/blob"; fi
       if [ -n "$kind" ] && [ "$kind" != zip ]; then
         printf '%s\tcompressed file (%s)\t%s\t\n' "$o12" "$kind" "$sp" >> "$T/compressed"
-      elif [ "$binary" = 1 ] && [ "$zipread" = 0 ] && [ "$kind" != zip ]; then
+      elif [ "$kind" = zip ]; then
+        printf '%s\ta ZIP file, whose bytes outside its members may hold compressed data\t%s\t\n' "$o12" "$sp" >> "$T/compressed"
+      elif [ "$binary" = 1 ]; then
         printf '%s\ta binary file, which may hold compressed data\t%s\t\n' "$o12" "$sp" >> "$T/compressed"
+      elif [ "$zipok" = 1 ]; then
+        printf '%s\ta ZIP file, whose bytes outside its members may hold compressed data\t%s\t\n' "$o12" "$sp" >> "$T/compressed"
       fi
       keep "$T/blob" "$o12" "in an object a tag names" "$sp" "$kind"
       if [ "$binary" = 0 ] && [ -z "$kind" ] && [ "$zipok" = 0 ]; then
@@ -647,12 +677,23 @@ if [ "$HISTORY" = 1 ]; then
   done
   # each ref's name (a branch, a tag, a pull request head), as a line of its own, by number only: an annotated tag's
   # name is also in its tag object, read above
-  nnames=0
+  # A CR at a line's end and a blank line are not names. The names that match are counted with one helper start
+  # for them all: each name judged on its own (grep, then the helper, as a file is), and a base64 run joined across
+  # names that holds a match counted once at its first name when no name it spans matched alone
+  nnames=0; nmatch=0
   if [ -n "$NAMES" ]; then
     keep "$NAMES" "refs" "in the ref names" ""     # for gitleaks too, as the pull request's branch name is
+    : > "$T/names.clean"
     while IFS= read -r nm || [ -n "$nm" ]; do
-      nnames=$((nnames+1)); add "refs" "ref name #$nnames" "" "$nm"
+      nm=${nm%$'\r'}; [ -n "$nm" ] || continue
+      nnames=$((nnames+1)); add "refs" "ref name #$nnames" "" "$nm"; printf '%s\n' "$nm" >> "$T/names.clean"
     done < "$NAMES"
+    if [ "$nnames" -gt 0 ]; then
+      rc=0; grep -n -a -i -F -f "$LIST" -- "$T/names.clean" > "$T/raw" || rc=$?; [ "$rc" -le 1 ] || die "grep failed (exit $rc)"
+      cut -d: -f1 "$T/raw" > "$T/namegrep"; rm -f "$T/raw"
+      nmatch=$(python3 -I "$H" names "$LIST" "$T/listbare" "$T/names.clean" "$T/namegrep")
+      [[ $nmatch =~ ^[0-9]+$ ]] || die "internal: the helper's ref-name count is unreadable"
+    fi
   fi
 fi
 add "" "pull request title" "" "$(jq -r '.pull_request.title // ""' "$GITHUB_EVENT_PATH" | tr '\n' ' ')"
@@ -782,7 +823,7 @@ if [ "$HISTORY" = 1 ]; then
     | awk -F'\t' '{ print "privacy history scan: gitleaks rule " $1 ", " $2 " finding(s)" }'
   echo "privacy history scan: tag objects $ntag, trees and blobs a tag names $nother"
   if [ "$NOLIST" = 1 ]; then echo "privacy history scan: ref names $nnames, matches not checked (no list)"
-  else echo "privacy history scan: ref names $nnames, $(cat "$T/out.list" "$T/out.bin" | { grep -c -E '^FINDING refs: ' || true; }) matching the list"; fi
+  else echo "privacy history scan: ref names $nnames, $nmatch matching the list"; fi
   echo "privacy history scan: files for a reviewer (binary, compressed, ZIP members, embedded images) $(wc -l < "$T/out.comp")"
 fi
 if [ "$NOLIST" = 1 ]; then

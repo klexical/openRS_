@@ -9,6 +9,7 @@ import { parseBoostSource, type BoostSource } from './boost'
 import { parseExportSchemaVersion } from './exportSchema'
 import { haversine, recordedDistanceKm } from './distance'
 import { parseDidInventory } from './didInventory'
+import { parseThermalRecord } from './thermalRecord'
 
 /** Thrown when an imported ZIP cannot be parsed — named with its file by the import action (lib/importFiles.ts). */
 export class ImportError extends Error {
@@ -403,7 +404,14 @@ async function mergeProfileJson(zip: JSZip, profileFile: string, trip: TripData)
     if (d.maxSpeedKph > 0) s.peakSpeedKph = d.maxSpeedKph
     if (d.peakOilTempC > -90) s.peakOilTempC = d.peakOilTempC
     if (d.peakCoolantTempC > -90) s.peakCoolantC = d.peakCoolantTempC
+    // #443: a drive JSON that states its fuel used as a number is the app's figure; 0 is no figure (the level fell by
+    // fewer than four gauge steps, #336), so the CSV's level difference and an economy from it are dropped
+    const statedFuel = (data.drive as Record<string, unknown> | undefined)?.fuelUsedL
     if (d.fuelUsedL > 0) s.fuelUsedL = d.fuelUsedL
+    else if (typeof statedFuel === 'number' && Number.isFinite(statedFuel)) {
+      s.fuelUsedL = 0
+      s.avgFuelEconomy = 0
+    }
     // #284: the app's distance leaves out what it did not record (a pause, a link loss); the point sum does not.
     // A drive without coordinates keeps no distance, as on the app's TRIP (it shows DIST only with GPS)
     const recorded = recordedDistanceKm((data.drive as Record<string, unknown> | undefined)?.distanceKm)
@@ -518,7 +526,10 @@ function parseProfile(data: Record<string, unknown>): DriveProfile {
     ...(typeof b.kind === 'string' && b.kind ? { kind: b.kind } : {}),
   }))
 
-  return { version: Number(data.version || 1), drive, peaks, thermalProgression, modeTimeline, bookmarks }
+  // #315: the drive's thermal record; a missing or empty block reads as none, a damaged one as unreadable
+  const thermalRecord = parseThermalRecord(data.thermalRecord)
+
+  return { version: Number(data.version || 1), drive, peaks, thermalProgression, thermalRecord, modeTimeline, bookmarks }
 }
 
 // ── Summary computation ──
