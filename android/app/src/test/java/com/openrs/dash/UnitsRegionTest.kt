@@ -150,12 +150,17 @@ class UnitsRegionTest {
         assertEquals(Region.CUSTOM, p.region)
     }
 
-    @Test fun `km per h, F, psi, psi - a tie of US and Canada - takes US's units with L per 100 km`() {
-        // US and Canada both match 3 of 4 and neither matches speed and temperature: list order gives US; economy
-        // follows km/h (owner), so L/100 km beside km/h
+    @Test fun `tie - km per h, F, psi, psi takes Canada's whole set of units, which matches the speed unit`() {
+        // US and Canada both match 3 of 4 and neither matches speed and temperature; the speed unit decides (owner),
+        // so all of Canada's units, and economy L/100 km by the economy rule
         val p = existing("KPH", "F", "PSI", "PSI")
-        assertMigrated(p, listOf("KPH", "F", "PSI", "PSI"), Region.US, economy = UnitIds.L100KM)
+        assertMigrated(p, listOf("KPH", "F", "PSI", "PSI"), Region.CANADA)
+        assertEquals(listOf(UnitIds.L, UnitIds.M, UnitIds.KPA, UnitIds.L100KM),
+            listOf(p.fuelUnit, p.altitudeUnit, p.airUnit, p.economyUnit))
         assertEquals(Region.CUSTOM, p.region)
+        // the same tie with boost in kPa
+        prefs.edit(commit = true) { clear() }
+        assertMigrated(existing("KPH", "F", "KPA", "PSI"), listOf("KPH", "F", "KPA", "PSI"), Region.CANADA)
     }
 
     @Test fun `mph, C, bar, bar takes Europe and international's units, 3 of 4, with MPG UK`() {
