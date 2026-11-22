@@ -244,6 +244,10 @@ object WicanApi {
     /**
      * Query the device's `/check_status` endpoint.
      * Returns null on any failure (timeout, parse error, not on WiFi).
+     *
+     * The reply carries the adapter's Wi-Fi and MQTT passwords in plain text, so no part of it is logged (#370): a
+     * failure logs the HTTP status code or the exception's class name, never the exception, its message or the status
+     * line's reason text. Android's `org.json` repeats its whole input in a parse error's message.
      */
     suspend fun checkStatus(ctx: Context, host: String): DeviceStatus? =
         withContext(Dispatchers.IO) {
@@ -270,7 +274,11 @@ object WicanApi {
 
                     val reader = BufferedReader(InputStreamReader(s.getInputStream()))
                     val statusLine = reader.readLine() ?: return@withContext null
-                    if (!statusLine.contains("200")) return@withContext null
+                    val code = httpStatusCode(statusLine)
+                    if (code != 200) {
+                        logFailure("check_status", httpStatusText(code))
+                        return@withContext null
+                    }
 
                     // Skip headers until blank line
                     var contentLength = -1
@@ -298,7 +306,7 @@ object WicanApi {
                     DeviceStatus.fromJson(JSONObject(body))
                 }
             } catch (e: Exception) {
-                android.util.Log.d("WicanApi", "check_status failed", e)
+                logFailure("check_status", e.javaClass.simpleName)
                 null
             }
         }
@@ -333,11 +341,30 @@ object WicanApi {
 
                     val reader = BufferedReader(InputStreamReader(s.getInputStream()))
                     val statusLine = reader.readLine() ?: return@withContext false
-                    statusLine.contains("200")
+                    val code = httpStatusCode(statusLine)
+                    if (code != 200) logFailure("reboot", httpStatusText(code))
+                    code == 200
                 }
             } catch (e: Exception) {
-                android.util.Log.d("WicanApi", "reboot failed", e)
+                logFailure("reboot", e.javaClass.simpleName)
                 false
             }
         }
+
+    /**
+     * The one log line for a failed adapter request (#370): [what] is the HTTP status code's three digits or an
+     * exception's class name, never other text the adapter sent. No throwable: its message can repeat the reply.
+     */
+    private fun logFailure(request: String, what: String) =
+        android.util.Log.d("WicanApi", "$request failed: $what")
+
+    /**
+     * The status line's three-digit code, or null when the line has none. Only the code is read: the reason text after
+     * it comes from the adapter, and a "200" inside it (`HTTP/1.1 500 x200`) is not a success.
+     */
+    internal fun httpStatusCode(statusLine: String): Int? =
+        Regex("""^HTTP/\S+\s+(\d{3})(?:\s|$)""").find(statusLine)?.groupValues?.get(1)?.toInt()
+
+    /** "HTTP 500", or "no HTTP status code" for a line that has none: the log text for [httpStatusCode]'s result. */
+    private fun httpStatusText(code: Int?): String = code?.let { "HTTP $it" } ?: "no HTTP status code"
 }

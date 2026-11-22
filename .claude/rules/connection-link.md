@@ -197,3 +197,14 @@ paths:
 - **Teardown comes from the reader (#218)** — `SlcanConnection` swallows write errors, so teardown must come from the
   reader: a transport that has to end the link after a write (BLE closes it on an unacknowledged write) closes its read
   side, the reader sees EOF and `SlcanConnection` reconnects. A transport that only throws from `write` ends nothing
+- **No adapter reply text reaches a log (#370)** — the adapter's `/check_status` reply carries its Wi-Fi and MQTT passwords
+  in plain text, and Android's `org.json` repeats its whole input in a parse error's message. `WicanApi` logs a failure
+  through `logFailure` only: the HTTP status code's three digits or the exception's class name, never the exception, its
+  message or the status line's reason text; success is the status code 200, never a "200" found in the line
+  (`CheckStatusLogRedactionTest`). Any new request to the adapter's web pages follows the same rule: no body, no
+  throwable, no `e.message` in `Log`, an event or an export.
+  - Two accepted exceptions, kept so the export's text does not change in #370: `FirmwareApi.post` (`/api/frs`) fails
+    with the reply's status line, which reaches the DM_CMD / ESC events, the export and the screen; the WebSocket upgrade
+    (`WebSocketSlcanTransport`) fails with up to 80 characters of the reply's headers, which reach the STATE event and
+    the export. Both carry no body, both pass through `LogText.sanitize` before an event, and no credential has been seen
+    in either. Cutting them to the status code changes export text and is a change of its own
