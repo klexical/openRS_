@@ -1,6 +1,6 @@
 import { useUnitFormatters } from '../../lib/format'
 import {
-  SENSOR_LABEL, THERMAL_SENSORS, profileName, segmentNames, thermalRows, type ThermalLevel, type ThermalRecord,
+  SENSOR_LABEL, THERMAL_SENSORS, profileName, segmentNames, thermalRows, type ThermalLevel, type ThermalRecord, type ThermalSensor,
 } from '../../lib/thermalRecord'
 import type { ThermalProgression } from '../../types/session'
 import { colors } from '../../styles/tokens'
@@ -13,6 +13,9 @@ const HEAD = 'px-2 py-1 text-right font-normal text-dim'
 function levelColor(l: ThermalLevel | null): string | undefined {
   return l === 'CRIT' ? colors.orange : l === 'WARN' ? colors.warnText : undefined
 }
+
+/** The level word, in the words of the limit columns beside it. */
+const LEVEL_WORD: Record<ThermalLevel, string> = { NORMAL: 'Normal', WARN: 'Warn', CRIT: 'Critical' }
 
 const offset = (ms: number) => {
   const sec = Math.floor(ms / 1000)
@@ -27,6 +30,9 @@ const offset = (ms: number) => {
 export function ThermalRecordCard({ record, progression }: { record: ThermalRecord; progression?: ThermalProgression }) {
   const fmt = useUnitFormatters()
   const temp = (c: number | null) => (c == null ? '—' : fmt.temp(c))
+  // a reading beside limits keeps the decimals that put it on the correct side of each (the app's tVs, #315)
+  const vs = (c: number, limits: (number | null | undefined)[]) =>
+    fmt.tempVs(c, limits.filter((l): l is number => typeof l === 'number'))
 
   if (record.basis === 'none') {
     return (
@@ -57,9 +63,9 @@ export function ThermalRecordCard({ record, progression }: { record: ThermalReco
               return (
                 <tr key={s}>
                   <td className="px-2 py-1 text-left">{SENSOR_LABEL[s]}</td>
-                  <td className={CELL}>{temp(r.driveEndC)}</td>
-                  <td className={CELL}>{temp(r.fixedLimitC)}</td>
-                  <td className={CELL}>{r.flagThresholdC == null ? '—' : fmt.tempTenths(r.flagThresholdC)}</td>
+                  <td className={CELL}>{vs(r.driveEndC, [r.fixedLimitC, r.flagThresholdC])}</td>
+                  <td className={CELL}>{r.fixedLimitC == null ? '—' : fmt.tempLimit(r.fixedLimitC)}</td>
+                  <td className={CELL}>{r.flagThresholdC == null ? '—' : fmt.tempLimit(r.flagThresholdC)}</td>
                 </tr>
               )
             })}
@@ -69,7 +75,7 @@ export function ThermalRecordCard({ record, progression }: { record: ThermalReco
           const r = record.sensors[s]!
           return (
             <p key={s} className="text-xs font-mono text-warn-text">
-              TEMP FLAG {SENSOR_LABEL[s]} {temp(r.driveEndC)} at drive end · flag threshold {fmt.tempTenths(r.flagThresholdC!)} · old fixed limit
+              TEMP FLAG {SENSOR_LABEL[s]} {vs(r.driveEndC, [r.flagThresholdC])} at drive end · flag threshold {fmt.tempLimit(r.flagThresholdC!)} · old fixed limit
             </p>
           )
         })}
@@ -79,6 +85,11 @@ export function ThermalRecordCard({ record, progression }: { record: ThermalReco
 
   const names = segmentNames(record.segments)
   const rows = thermalRows(record, progression)
+  const limitsOf = (s: ThermalSensor) => record.segments.flatMap((seg) => {
+    const l = seg.limits[s]
+    return l ? [l.warnC, l.critC, l.flagThresholdC] : []
+  })
+  const flagLines = THERMAL_SENSORS.filter((s) => record.sensors[s]?.flag)
   return (
     <div className="rounded-lg border border-brd bg-surf2 p-4 space-y-3" data-testid="thermal-record">
       <p className={LINE}>
@@ -98,9 +109,9 @@ export function ThermalRecordCard({ record, progression }: { record: ThermalReco
               <tr key={r.sensor}>
                 <td className="px-2 py-1 text-left">{SENSOR_LABEL[r.sensor]}</td>
                 <td className={CELL}>{temp(r.startC)}</td>
-                <td className={CELL} style={{ color: levelColor(r.level) }}>{temp(r.peakC)}</td>
+                <td className={CELL} style={{ color: levelColor(r.level) }}>{vs(r.peakC, limitsOf(r.sensor))}</td>
                 <td className={CELL}>{temp(r.endC)}</td>
-                <td className="px-2 py-1 text-left" style={{ color: levelColor(r.level) }}>{r.level ?? '—'}</td>
+                <td className="px-2 py-1 text-left" style={{ color: levelColor(r.level) }}>{r.level ? LEVEL_WORD[r.level] : '—'}</td>
               </tr>
             ))}
           </tbody>
@@ -124,10 +135,10 @@ export function ThermalRecordCard({ record, progression }: { record: ThermalReco
                     return (
                       <tr key={s}>
                         <td className="px-2 py-1 text-left">{SENSOR_LABEL[s]}</td>
-                        <td className={CELL}>{temp(seg.peaksC[s] ?? null)}</td>
-                        <td className={CELL}>{temp(l.warnC)}</td>
-                        <td className={CELL}>{temp(l.critC)}</td>
-                        <td className={CELL}>{fmt.tempTenths(l.flagThresholdC)}</td>
+                        <td className={CELL}>{seg.peaksC[s] == null ? '—' : vs(seg.peaksC[s]!, [l.warnC, l.critC, l.flagThresholdC])}</td>
+                        <td className={CELL}>{fmt.tempLimit(l.warnC)}</td>
+                        <td className={CELL}>{fmt.tempLimit(l.critC)}</td>
+                        <td className={CELL}>{fmt.tempLimit(l.flagThresholdC)}</td>
                       </tr>
                     )
                   })}
@@ -138,16 +149,18 @@ export function ThermalRecordCard({ record, progression }: { record: ThermalReco
         )
       })}
 
-      {THERMAL_SENSORS.map((s) => {
-        const f = record.sensors[s]?.flag
-        if (!f) return null
+      {flagLines.map((s) => {
+        const f = record.sensors[s]!.flag!
         return (
           <p key={s} className="text-xs font-mono text-warn-text">
-            TEMP FLAG {SENSOR_LABEL[s]} {temp(f.readingC)} · flag threshold {fmt.tempTenths(f.flagThresholdC)}
+            TEMP FLAG {SENSOR_LABEL[s]} {vs(f.readingC, [f.flagThresholdC])} · flag threshold {fmt.tempLimit(f.flagThresholdC)}
             {f.profile ? ` · ${profileName(f.profile)}` : ''}
           </p>
         )
       })}
+      {record.flagged && flagLines.length === 0 && (
+        <p className="text-xs font-mono text-warn-text">Flagged, but the reading behind the flag could not be read.</p>
+      )}
     </div>
   )
 }

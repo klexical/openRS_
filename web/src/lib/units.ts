@@ -56,10 +56,30 @@ export function fmtTemp(c: number, unit: UnitSystem): string {
   return `${Math.round(v)}${tempUnit(unit)}`
 }
 
-/** A limit to a tenth (a flag threshold such as 104.5 °C), so a reading just under it never reads as at it. */
-export function fmtTempTenths(c: number, unit: UnitSystem): string {
+/**
+ * A limit, bound or threshold: a whole value stays whole, others keep one decimal (the app's `UserPrefs.displayLimit`):
+ * a 114 °C flag threshold reads "114°C", 104.5 °C reads "104.5°C".
+ */
+export function fmtTempLimit(c: number, unit: UnitSystem): string {
   if (c <= -90) return '—'
-  return `${convertTemp(c, unit).toFixed(1)}${tempUnit(unit)}`
+  const x = convertTemp(c, unit)
+  return `${Math.abs(x - Math.round(x)) < 0.05 ? Math.round(x) : x.toFixed(1)}${tempUnit(unit)}`
+}
+
+/**
+ * Reading [c] beside [limits]: the fewest decimals (0 to 2) that keep it on the correct side of every one of them (the
+ * app's `UserPrefs.tVs`), so a reading at or above a limit never prints below it, nor one below it at it (#315).
+ */
+export function fmtTempVs(c: number, limits: number[], unit: UnitSystem): string {
+  if (c <= -90) return '—'
+  const x = convertTemp(c, unit)
+  const ls = limits.filter((l) => Number.isFinite(l) && l > -90).map((l) => convertTemp(l, unit))
+  for (let d = 0; d <= 2; d++) {
+    const k = 10 ** d
+    const shown = Math.round(x * k) / k
+    if (ls.every((l) => (x < l) === (shown < l))) return `${shown.toFixed(d)}${tempUnit(unit)}`
+  }
+  return `${x.toFixed(2)}${tempUnit(unit)}`
 }
 
 // ── Boost pressure ──

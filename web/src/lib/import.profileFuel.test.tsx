@@ -80,6 +80,13 @@ describe('#443 fuel used: the drive JSON\'s figure, when it states one', () => {
     expect(econ.diff).toBeNull()
   })
 
+  it('fuelUsedL 0.0 with no recorded distance, on a CSV with coordinates: no economy from the CSV figure', async () => {
+    const s = (await imported(csv(IDLE_LEVELS), profile({ fuelUsedL: 0.0, distanceKm: undefined }))).trip!.summary
+    expect(s.distanceSource).toBe('estimate')                     // the point sum, not a recorded distance
+    expect(s.fuelUsedL).toBe(0)
+    expect(s.avgFuelEconomy).toBe(0)
+  })
+
   it('a figure above 0 is shown as today, with its economy over the recorded distance', async () => {
     const s = (await imported(csv(IDLE_LEVELS), profile({ fuelUsedL: 0.9 }))).trip!.summary
     expect(s.fuelUsedL).toBe(0.9)

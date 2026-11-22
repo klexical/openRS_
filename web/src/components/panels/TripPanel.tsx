@@ -110,7 +110,7 @@ export function TripPanel() {
 
       {/* Thermal Progression (T2B): a start, peak and end of the whole drive, left out while a range is set (#416 ticket 2),
           and Trip's own line says so */}
-      {range && (trip.thermalProgression || thermalRecord) && <p className="text-xs font-mono text-mid px-1">{TRIP_WHOLE_DRIVE_ONLY}</p>}
+      {range && trip.thermalProgression && <p className="text-xs font-mono text-mid px-1">{TRIP_WHOLE_DRIVE_ONLY}</p>}
       {!range && trip.thermalProgression && (
         <>
           <SectionLabel>Thermal Progression</SectionLabel>
