@@ -156,7 +156,7 @@ PY
   g add -- "$z"
 }
 repo; g checkout -q -b feature; mkzip a.zip doc.txt 'clean text\n' sub/two.txt 'more\n'; commit "a clean ZIP"
-run 0 "a clean ZIP passes: its members are unpacked and scanned"
+ACTION=labeled LABEL=privacy-ok-compressed run 0 "a clean ZIP passes with the OK: its members are unpacked and scanned"
 repo; g checkout -q -b feature; mkzip a.zip doc.txt 'clean\n' notes.txt "deflated $ID1 inside\n"; commit "a ZIP"
 run 1 "a ZIP member's deflated content fails, by member number" "FINDING $(c12): ZIP member #2 content a.zip"
 repo; g checkout -q -b feature; mkzip a.zip "exports/$ID2.csv" 'x\n'; commit "a ZIP"
@@ -185,6 +185,28 @@ LIST=$(printf '%s\n%s\n' "$ID1" "$MAC") run 1 "a MAC's raw bytes, with a ZIP app
 repo; g checkout -q -b feature; { printf '\x00\x01\x02\x03'; head -c 60 /dev/urandom; } > "$T/pre"; pzip raw.dat "$T/pre"; commit "a binary of no named kind, then a ZIP"
 run 1 "a binary of no named kind with a ZIP appended still needs the OK" \
   "FINDING $(c12): a binary file, which may hold compressed data raw.dat (needs a reviewer's OK"
+# every ZIP-format file waits for the OK, its members still read: bytes outside the members (after the end record,
+# in the archive comment, before the first entry) can hold compressed data that nothing here opens
+zfix() { # zfix <path> <how>: a ZIP with one clean member, and a zlib stream or a PNG placed outside its members
+  python3 -I - "$T/r/$1" "$2" <<'PY'
+import io, sys, zipfile, zlib
+b = io.BytesIO()
+with zipfile.ZipFile(b, "w", zipfile.ZIP_DEFLATED) as zf:
+    zf.writestr("m.txt", "clean\n")
+    if sys.argv[2] == "comment": zf.comment = zlib.compress(b"hidden stream " * 8)
+z = b.getvalue()
+out = {"plain": z, "comment": z, "zlib": z + zlib.compress(b"hidden stream " * 8),
+       "png": z + b"\x89PNG\r\n\x1a\n" + bytes(64), "pk": b"PK\x03\x04\x00\x01\x02\x03" + bytes(60) + z}[sys.argv[2]]
+open(sys.argv[1], "wb").write(out)
+PY
+  g add -- "$1"
+}
+for how in plain zlib png pk comment; do
+  repo; g checkout -q -b feature; zfix "z-$how.zip" "$how"; commit "a ZIP ($how)"
+  run 1 "a ZIP-format file waits for the OK ($how)" "FINDING $(c12): a ZIP file, whose bytes outside its members may hold compressed data z-$how.zip" "; ok label needed yes; "
+done
+repo; g checkout -q -b feature; zfix z.zip plain; commit "a ZIP"
+ACTION=labeled LABEL=privacy-ok-compressed run 0 "a ZIP-format file passes with the OK" "; ok label needed yes; "
 repo; g checkout -q -b feature; printf 'inner %s\n' "$ID1" | gzip -c > "$T/inner.gz"
 python3 -I -c 'import sys,zipfile; zipfile.ZipFile(sys.argv[1],"w").write(sys.argv[2],"inner.gz")' "$T/r/b.zip" "$T/inner.gz"
 g add b.zip; commit "a ZIP holding a gzip"
@@ -229,7 +251,7 @@ repo; g checkout -q -b feature; mkzip a.zip notes.txt "data: $GZB64\n"; commit "
 run 1 "base64 of a compressed file in a text ZIP member needs the OK" \
   "FINDING $(c12): base64 in ZIP member #1, decoding to a compressed file (gzip) a.zip (needs a reviewer's OK"
 repo; g checkout -q -b feature; mkzip a.zip notes.txt "data: $(printf 'nothing to see here at all' | base64 -w0)\n"; commit "a ZIP"
-run 0 "clean base64 in a text ZIP member passes"
+ACTION=labeled LABEL=privacy-ok-compressed run 0 "clean base64 in a text ZIP member passes with the OK"
 # base64 written in UTF-16 or UTF-32 (a NUL between its characters) is decoded in each reading, with the OK or not
 for enc in UTF-16LE UTF-16BE UTF-32LE; do
   repo; g checkout -q -b feature; printf 'blob: %s\n' "$B64ID" | iconv -t "$enc" > "$T/r/u.txt"; g add u.txt; commit "base64 in $enc"
@@ -637,6 +659,9 @@ tr=$(g write-tree); g reset -q
 hist "$(sha main)" "$tr"
 expect 1 "a binary of no named kind with a ZIP appended, in a tree a tag names, waits for a reviewer" $? \
   "privacy history scan: files for a reviewer (binary, compressed, ZIP members, embedded images) 1"
+repo; put f.txt 'clean\n'; commit "clean"; zfix z.zip zlib; tr=$(g write-tree); g reset -q; hist "$(sha main)" "$tr"
+expect 1 "a ZIP-format file in a tree a tag names waits for a reviewer" $? \
+  "privacy history scan: files for a reviewer (binary, compressed, ZIP members, embedded images) 1"
 # a backslash in a tagged tree's path is the path's own: a backslash-t cannot shift where the path is checked, and a
 # backslash-n cannot break the scanned lines' places
 repo; put f.txt 'clean\n'; commit "clean"; bl=$(printf 'seen %s here\n' "$ID1" | g hash-object -w --stdin)
@@ -659,6 +684,9 @@ printf 'refs/remotes/origin/main\nrefs/tags/%s\n' "$(printf '%s' "$ID1" | base64
 expect 1 "a ref name holding the list's entry in base64 counts as matching" $? "privacy history scan: ref names 2, 1 matching the list"
 printf 'refs/tags/x-%s-%s\n' "$ID1" "$(printf '%s' "$ID1" | base64 -w0)" > "$T/names"; hist --names "$T/names" "$(sha main)"
 expect 1 "a ref name that matches twice counts once" $? "privacy history scan: ref names 1, 1 matching the list"
+printf 'refs/remotes/origin/main\r\n\r\nrefs/tags/%s\r\nrefs/tags/x-%s\r\n\n' "$(printf '%s' "$ID1" | base64 -w0)" "$ID1" > "$T/names"
+hist --names "$T/names" "$(sha main)"
+expect 1 "ref names with CRLF and blank lines: each real name counted once" $? "privacy history scan: ref names 3, 2 matching the list"
 hist --names "$T/no-such-file" "$(sha main)"; expect 2 "--names needs a readable file" $? "--names needs a readable file"
 (cd "$T/r" && PRIVACY_IDENTIFIERS=$LISTV GITLEAKS=$STUB GITHUB_EVENT_PATH=$T/event.json bash "$SCAN" --names "$T/names" "$(sha main)" "$(sha HEAD)") > "$OUT" 2>&1
 expect 2 "--names is for --history only" $? "--names is for --history only"
