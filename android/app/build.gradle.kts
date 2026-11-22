@@ -205,7 +205,7 @@ dependencies {
     ksp("androidx.room:room-compiler:$roomVersion")
 
     // ── Haze (Backdrop Blur / Glassmorphism) ──────────────────
-    implementation("dev.chrisbanes.haze:haze:1.5.1")
+    implementation("dev.chrisbanes.haze:haze:2.1.0")
 
     // ── Maps & Location ───────────────────────────────────────
     implementation("com.google.android.gms:play-services-maps:19.0.0")
