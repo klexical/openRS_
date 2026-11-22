@@ -16,6 +16,9 @@ name: project-review
 # the verdict) to complete, and only then reads the head's statuses back. It succeeded: one of the app's statuses on
 # the head names its report and verdict. It was cancelled or never started (replaced while it waited): dispatch again.
 # It failed because a REAL-GAP stands or the head moved: that is the answer, final for that head; do not dispatch again.
+# A withdrawal while another report's REAL-GAP stands posts a failure ("Review REAL-GAP withdrawn: <report>"): that run
+# succeeded. Any other failure (no REAL-GAP of that report stands, the app not installed, a transport error): name it in
+# the report and do not loop.
 #
 # The status is posted by the owner's own GitHub App, so a ruleset can require `project-review` from that app alone: a
 # pull request's own workflow, or a job of that name in one, cannot stand in for it. The app's key is the

@@ -49,8 +49,9 @@ check.(lrun.include?("curl -fsS --proto '=https' -X") && !lrun.match?(/curl[^\n]
        lrun.index("unset APP_KEY").to_i > lrun.index('printf \'%s\\n\' "$APP_KEY" > "$key"').to_i && lrun.scan("$APP_KEY").size == 1,
        "curl: https only, no redirects followed; the key file under umask 077; the key leaves the environment once written")
 check.(text.include?("waits for its own run") && text.include?("to complete, and only then reads the head's statuses back") &&
-       text.include?("that is the answer, final for that head; do not dispatch again"),
-       "the header tells the reviewer to wait for its run, then read back, and to stop on a refusal")
+       text.include?("that is the answer, final for that head; do not dispatch again") &&
+       text.include?("that run\n# succeeded") && text.include?("name it in\n# the report and do not loop"),
+       "the header tells the reviewer to wait for its run, then read back, to stop on a refusal or any other failure, and that a partial withdrawal's failure is a success")
 check.(text.include?("a mismatch counts as no status"), "the header says a status that names another pull request or base counts as none")
 check.(text.scan("${{ inputs.").size == text.scan(/^\s+(PR|SHA|VERDICT|REPORT): \$\{\{ inputs\.\w+ \}\}$/).size + 3,
        "inputs appear only in env, the run's name and the concurrency group")
