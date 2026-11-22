@@ -1,0 +1,134 @@
+name: Bug report
+description: Report a bug or unexpected behaviour in the openRS_ Android app
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Everything on this page, attachments included, is public and stays public.
+        This form is for the Android app. For Sapphire or the adapter firmware, open a blank issue instead.
+        A security weakness does not belong here: use the [private security report](https://github.com/klexical/openRS_/security/advisories/new).
+
+  - type: input
+    id: version
+    attributes:
+      label: openRS_ version and build
+      description: Settings shows it.
+      placeholder: "e.g. 2.2.7-nightly.20261120 · Build 2611200"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: channel
+    attributes:
+      label: Where the app came from
+      options:
+        - Stable
+        - Nightly
+        - Release candidate
+        - Built myself
+
+  - type: input
+    id: android
+    attributes:
+      label: Android release and API level
+      description: Your phone's settings show the Android release, usually under About phone. Add the API level if you know it. The phone's model is not needed; add it under "What happened" only if you think it matters.
+      placeholder: "e.g. Android 15"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: adapter
+    attributes:
+      label: Adapter
+      options:
+        - MeatPi USB (C3)
+        - MeatPi Pro (S3)
+        - Other
+
+  - type: input
+    id: adapter_fw
+    attributes:
+      label: Adapter firmware
+      description: Stock or openRS_, and its version.
+      placeholder: "e.g. openRS_ PRO v1.2"
+
+  - type: dropdown
+    id: connection
+    attributes:
+      label: Connection
+      options:
+        - Wi-Fi
+        - Bluetooth
+        - Not connected
+
+  - type: dropdown
+    id: seen_on
+    attributes:
+      label: Seen while
+      options:
+        - Driving
+        - Car parked
+        - Adapter on a bench
+        - Emulator
+
+  - type: dropdown
+    id: how_often
+    attributes:
+      label: How often
+      options:
+        - Every time
+        - Sometimes
+        - Once
+
+  - type: markdown
+    attributes:
+      value: |
+        In the boxes below, words are enough. Please do not paste log lines or raw CAN frames: the diagnostic export carries those.
+        A screenshot must not show a map, your VIN or a device name.
+
+  - type: textarea
+    id: what_happened
+    attributes:
+      label: What happened
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected instead
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Connect to the adapter over …
+        2. Open …
+        3. See …
+
+  - type: textarea
+    id: export
+    attributes:
+      label: Diagnostic export
+      description: |
+        A diagnostic export helps most: GARAGE → DIAG → CAPTURE & SHARE SNAPSHOT (the DIAG tab in v2.2.6), then attach the ZIP here.
+        What it holds: the car's raw CAN traffic, the app's logs, and the date and time the session started and the export was made.
+        If a drive was recording or paused when you exported, the ZIP also holds that drive, with its route (GPS positions and times).
+        From v2.2.7-rc.8 on, the app masks the VIN and removes the adapter's Bluetooth address and name, as far as it can recognise them.
+        v2.2.6 and the earlier v2.2.7 release candidates do not. Leave out anything you do not want public.
+
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Before you submit
+      options:
+        - label: I know that anything attached here is public and stays public.
+          required: true
+        - label: If I attached an export, no drive was recording or paused, or I am fine with that drive's route being public.
+          required: true
+        - label: This is not a security weakness (those go to the private security report).
+          required: true
