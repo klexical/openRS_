@@ -12,6 +12,7 @@ import { GForceScatter } from '../charts/GForceScatter'
 import { TempStackChart } from '../charts/TempStackChart'
 import { Histogram } from '../charts/Histogram'
 import { ThermalProgressionChart } from '../charts/ThermalProgressionChart'
+import { ThermalRecordCard } from '../ui/ThermalRecordCard'
 import { useUnitFormatters } from '../../lib/format'
 import { tripChartData } from '../../lib/readings'
 import {
@@ -68,6 +69,7 @@ export function TripPanel() {
   }
 
   const peakEvents = trip.summary.peakEvents
+  const thermalRecord = trip.profile?.thermalRecord
 
   const fmtTime = (sec: number) => {
     const m = Math.floor(sec / 60)
@@ -108,11 +110,19 @@ export function TripPanel() {
 
       {/* Thermal Progression (T2B): a start, peak and end of the whole drive, left out while a range is set (#416 ticket 2),
           and Trip's own line says so */}
-      {range && trip.thermalProgression && <p className="text-xs font-mono text-mid px-1">{TRIP_WHOLE_DRIVE_ONLY}</p>}
+      {range && (trip.thermalProgression || thermalRecord) && <p className="text-xs font-mono text-mid px-1">{TRIP_WHOLE_DRIVE_ONLY}</p>}
       {!range && trip.thermalProgression && (
         <>
           <SectionLabel>Thermal Progression</SectionLabel>
           <ThermalProgressionChart data={trip.thermalProgression} />
+        </>
+      )}
+      {/* #315: the thermal record saved with the drive (limits per profile, peaks, TEMP flags); a drive imported before
+          Sapphire read it has none to show */}
+      {!range && thermalRecord && (
+        <>
+          <SectionLabel>Thermal Record</SectionLabel>
+          <ThermalRecordCard record={thermalRecord} progression={trip.thermalProgression} />
         </>
       )}
 

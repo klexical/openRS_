@@ -56,6 +56,12 @@ export function fmtTemp(c: number, unit: UnitSystem): string {
   return `${Math.round(v)}${tempUnit(unit)}`
 }
 
+/** A limit to a tenth (a flag threshold such as 104.5 °C), so a reading just under it never reads as at it. */
+export function fmtTempTenths(c: number, unit: UnitSystem): string {
+  if (c <= -90) return '—'
+  return `${convertTemp(c, unit).toFixed(1)}${tempUnit(unit)}`
+}
+
 // ── Boost pressure ──
 
 export type BoostUnit = 'PSI' | 'bar' | 'kPa'

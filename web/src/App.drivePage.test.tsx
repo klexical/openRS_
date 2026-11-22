@@ -207,7 +207,7 @@ describe('#416 ticket 2: one selection, held in the address', () => {
 // #416 ticket 2: while a range is set, thermal progression (a start, peak and end of the whole drive) is
 // left out on Trip as on the Dashboard. Trip says so in its own line: its tyre-pressure charts follow
 // the range, so the Dashboard's line, which names tyre pressures, would be wrong there.
-const TRIP_LINE = 'Thermal progression is for the whole drive.'
+const TRIP_LINE = 'Thermal progression and the thermal record are for the whole drive.'   // #315 names the record too
 describe('#416 ticket 2: thermal progression is whole-drive on both views', () => {
   const thermal = { oil: { startC: 40, peakC: 101, endC: 96 }, coolant: { startC: 35, peakC: 92, endC: 90 } }
   const withThermal = () => { const d = drive('a', 'Invented loop'); d.trip!.thermalProgression = thermal; return d }

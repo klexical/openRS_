@@ -1,4 +1,5 @@
 import type { BoostSource } from '../lib/boost'
+import type { ThermalRecord } from '../lib/thermalRecord'
 /** A stored driving session with trip + diagnostic data. */
 export interface Session {
   id: string
@@ -151,6 +152,11 @@ export interface DriveProfile {
   drive: DriveProfileSummary
   peaks: ProfilePeak[]
   thermalProgression: ThermalProgression
+  /**
+   * The export's thermal record (#315): limits per profile segment, per-sensor peaks, TEMP flags. Absent = imported
+   * before Sapphire read it; an export without one reads as basis 'none'.
+   */
+  thermalRecord?: ThermalRecord
   modeTimeline: ModeTimelineEntry[]
   bookmarks: Bookmark[]
 }

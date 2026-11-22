@@ -8,7 +8,8 @@ import { ThermalProgressionChart } from '../components/charts/ThermalProgression
 
 // Complete per-drive exports written by the Android app's export builders (DriveExportThermalTest with
 // OPENRS_EXPORT_SAMPLES) — drive CSV, GPX, summary, profile JSON with `thermalRecord`, manifest. Checks that the
-// rc.6 profile format imports: omitted curves read as no data and the additive `thermalRecord` block is ignored.
+// rc.6 profile format imports: omitted curves read as no data. The additive `thermalRecord` block is read by
+// lib/thermalRecord.ts and shown on Trip (#315, thermalRecord.test.tsx).
 const ROOT = join(process.cwd(), 'src/lib/__fixtures__/android-export-rc6/')   // vitest root = web/
 
 async function exportZip(name: string): Promise<File> {

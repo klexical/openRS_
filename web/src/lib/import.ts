@@ -9,6 +9,7 @@ import { parseBoostSource, type BoostSource } from './boost'
 import { parseExportSchemaVersion } from './exportSchema'
 import { haversine, recordedDistanceKm } from './distance'
 import { parseDidInventory } from './didInventory'
+import { parseThermalRecord } from './thermalRecord'
 
 /** Thrown when an imported ZIP cannot be parsed — named with its file by the import action (lib/importFiles.ts). */
 export class ImportError extends Error {
@@ -525,7 +526,10 @@ function parseProfile(data: Record<string, unknown>): DriveProfile {
     ...(typeof b.kind === 'string' && b.kind ? { kind: b.kind } : {}),
   }))
 
-  return { version: Number(data.version || 1), drive, peaks, thermalProgression, modeTimeline, bookmarks }
+  // #315: the drive's thermal record; a missing or empty block reads as none, a damaged one as unreadable
+  const thermalRecord = parseThermalRecord(data.thermalRecord)
+
+  return { version: Number(data.version || 1), drive, peaks, thermalProgression, thermalRecord, modeTimeline, bookmarks }
 }
 
 // ── Summary computation ──
