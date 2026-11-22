@@ -76,7 +76,7 @@ evidence apart:
 | PCM 0xF40B MAP | SAE J1979 PID 0x0B (1 byte, kPa absolute, 255 ceiling); not in either catalog | `ObdResponseParser`: `A` kPa → `genericValues["mapKpa"]` (fast group, its own stamp); drive CSV `map_f40b_kpa_abs` + `map_f40b_saturated` beside `tip_actual_kpa`. Not shown on any screen | None yet: whether this PCM answers 0xF40B is not established | The #271 check: engine off / key on (TIP = MAP = baro → offset) and wide-open-throttle samples below 255 kPa (a TIP − MAP difference growing with pressure, ratio ≈ 1.024, points to scale) |
 | HS-CAN 0x090 byte 2 baro | DigiCluster HS-CAN | `B2 × 0.5` kPa, a reference only within 60–115 kPa | 96.5 kPa on the owner's car | None |
 
-The combined catalog also lists strategy-specific DMR "Boost Pressure (Gauge)" and MAP entries marked `verified`. That
+The combined catalog (`android/docs/combined_catalog.json`, a reference only: the app does not ship or read it, #391) also lists strategy-specific DMR "Boost Pressure (Gauge)" and MAP entries marked `verified`. That
 flag is the upstream's; none were checked on this PCM, so the app doesn't poll them.
 
 ## TPMS — BCM Mode 22 (current method, v1.1.6+)

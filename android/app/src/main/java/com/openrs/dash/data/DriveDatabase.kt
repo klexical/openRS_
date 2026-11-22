@@ -5,7 +5,7 @@ import androidx.room.*
 import androidx.room.migration.Migration
 
 // ═══════════════════════════════════════════════════════════════════════════
-// DRIVE HISTORY — Room entities, DAO, and database (replaces SessionDatabase)
+// DRIVE HISTORY — Room entities, DAO, and database (the legacy session tables: SessionEntities.kt)
 // ═══════════════════════════════════════════════════════════════════════════
 
 @Entity(tableName = "drives")
