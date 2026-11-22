@@ -167,6 +167,38 @@ paths:
   workflow is listed under that workflow's key at the ref it names, and that every pin a composite action itself uses
   has its own entry. A job that ran locked logs "Using locked action versions from the workflow's lockfile"; reading
   that line is how a run shows the lockfile was used, and its absence in a job that runs an action means it was not
+- **Dependency verification (#482)** — `android/gradle/verification-metadata.xml` holds a SHA-256 for every plugin,
+  library and POM / module file the build resolves; Gradle fails a build whose download has no entry or another hash
+  ("Dependency verification failed"). Any change to a plugin or dependency version (a Dependabot proposal included:
+  Dependabot does not update this file) regenerates it in the same commit, from `android/`:
+  `./gradlew --write-verification-metadata sha256 assembleDebug test lint assembleRelease --no-daemon --continue`
+  (`assembleRelease` fails at `packageRelease` without a keystore; everything is resolved before that).
+  - **Generate as CI resolves.** A cloud thread's default Gradle home has an init script (`init.d/`) that puts a Maven
+    Central mirror before the project's `google()`; CI reads `google()` first. Google Maven and Central publish
+    different bytes under some coordinates (AGP's `transform-api`), so a run with the mirror records Central's hash and
+    turns CI red. Run with a fresh `GRADLE_USER_HOME` that has no `init.d/` (copy `wrapper/` in to skip the download).
+    Central rate-limits cloud containers (HTTP 429), so such a run can come back short: compare its entries with a
+    mirror run's, do not take it alone. Where the two differ, `<also-trust>` is allowed only after fetching both
+    copies and matching each against its own repository's `.sha1` (Google Maven's for Google's copy, Central's for
+    Central's): then the entry carries Google's hash with Central's as `<also-trust>`, so cloud threads still build.
+  - **Read the diff before committing.** Regenerating over an existing file does not change a hash: a mismatch is added as
+    a new `<also-trust>` line and the build goes green. A new `<also-trust>` line, or a hash that changed for a version
+    that did not, is a tampered or re-published artifact until shown otherwise: stop and ask. Gradle keeps entries for
+    versions no longer used: delete the old version's components by hand.
+  - **Hand entries.** `aapt2` is per platform and a Linux run lists only `-linux.jar`; the `-osx.jar` entry (one jar for
+    every Mac) is added by hand from Google Maven's `.sha256` file for each new AGP version. Sources and javadoc jars are
+    trusted in `<trusted-artifacts>` (an IDE fetches them; the build never does). Regeneration drops XML comments, so
+    reasons live here, not in the file.
+  - Outside this file: Robolectric's android-all jars (Robolectric's own downloader) and the Gradle distribution
+    (`gradle-wrapper.properties` has no `distributionSha256Sum`).
+- **Dependabot (owner decision, #481)** — `.github/dependabot.yml` (on main): its staging proposals (Gradle, Actions)
+  stay untouched until after stable 2.2.7, while the outing build is tested; Sapphire's (npm, main) go ahead as normal
+  PRs. A Dependabot pull request is a proposal: its commits fail the commit-identity check, so a thread re-commits each
+  update as the owner. The owner's rules for that: each Actions update regenerates `actions.lock` (keep Dependabot's own
+  entries; when its PR does not change the lockfile, the round waits for the owner's Mac, where
+  `gh actions-lock --no-narrow` runs); each Gradle update regenerates `verification-metadata.xml` in the same commit
+  (above); a Gradle wrapper update changes `gradle-wrapper.jar`, a ZIP, so it waits for the privacy scan's OK label and
+  the owner's words naming the PR.
 
 ## Releases: RCs, nightlies, stable and the release checklist
 
