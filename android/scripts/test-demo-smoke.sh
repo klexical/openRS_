@@ -92,7 +92,12 @@ case "$*" in
                               echo "E AndroidRuntime: java.lang.IllegalStateException: maps key $FAKE_MAPS_VALUE"
                               echo "E AndroidRuntime: Caused by: denied for $FAKE_MAPS_VALUE"
                               echo "I ActivityManager: Process com.openrs.dash.debug (pid 4242) has died: id $FAKE_HEX_VALUE"
-                              echo "I Zygote: unrelated" ;;
+                              echo "I Zygote: unrelated"
+                              echo "I ActivityManager: Start proc 3300:com.example.other/u0a99 for broadcast"
+                              echo "I lowmemorykiller: Kill 'com.example.other' (3300), uid 10099"
+                              echo "I lowmemorykiller: Kill 'com.openrs.dash.debug' (4242), uid 10190"
+                              echo "D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 2000 <<<<<<"
+                              echo "D AndroidRuntime: Shutting down VM" ;;
   "shell am start -S -W "*)   hang start; [ -f "$S/cleared" ] || : > "$S/started-before-clear"
                               [ -z "${FAKE_WHATSNEW-}" ] || : > "$S/whatsnew"
                               printf 'Status: ok\r\nActivity: com.openrs.dash.debug/com.openrs.dash.ui.MainActivity\r\nComplete\r\n' ;;
@@ -211,7 +216,10 @@ run_case "a process gone during the scenarios fails" 1 "$APK" FAKE_GONE_AT=8 \
 if run_case "a fatal exception in the log fails, with crash lines filtered and redacted" 1 "$APK" FAKE_FATAL_AT=7; then
   why=""
   has "::error::in demo idle: Verifier rejected 0, FATAL EXCEPTION 1, ANR in com.openrs.dash.debug 0" || why+="no counts; "
-  has "--- the device log's process and crash lines (the last 40)" || why+="no crash lines; "
+  has "--- the device log's crash lines and the app's own process lines (the last 40)" || why+="no crash lines; "
+  ! has "com.example.other" || why+="another app's process line was shown; "
+  has "lowmemorykiller: Kill 'com.openrs.dash.debug'" || why+="the app's own kill line is missing; "
+  { ! has "Shutting down VM" && ! has ">>>>>> START"; } || why+="the shell's runtime lines were shown; "
   has "E AndroidRuntime: FATAL EXCEPTION: main" || why+="the crash line is missing; "
   ! has "maps key" || why+="a line naming a key reached the output; "
   ! has "$MAPS_VALUE" || why+="a Maps-key-shaped value reached the output; "

@@ -10,14 +10,15 @@
 #      change many times a second. A What's New dialog is closed by its GOT IT button.
 #   4. Each bottom-nav tab (DRIVE, PERF, THERMAL, TRIP, GARAGE) is tapped at the centre the UI dump gives for its node
 #      ("<NAME> tab"), and the next dump must show that tab selected (its selected flag, else the only tab not
-#      clickable: Compose exposes a selected tab so) and the header's DEMO label.
+#      clickable, as Compose's source exposes a selected tab; the runs so far read the flag) and the header's DEMO label.
 #   5. On DRIVE, each demo scenario runs live for a while (idle, driving, warning, loss, cooldown, launch); on TRIP, each
 #      sample state (`--es trippreview` history … export), then off.
 #   6. After every step: the app's process is the one started (not gone, not restarted), and the log since the cold start
 #      has no verifier rejection, fatal exception, ANR or native fatal signal of the app. The app's activity must be the
 #      resumed one after the start and at the end.
 # What it prints: step names, tab and scenario names, counts, coordinates, package names. Never a dump, a screenshot or
-# the whole device log: a failure prints only the log's process and crash lines (the last 40), with any line naming a key
+# the whole device log: a failure prints only the log's crash lines and the app's own process lines (the last 40), with
+# any line naming a key
 # left out and key-shaped values redacted, as launch-check.sh does. Nothing is written outside a temporary folder, which
 # is removed. Every adb call runs under `timeout` with a step name. One line goes to $GITHUB_STEP_SUMMARY when set.
 # It reads the UI text tree, not pixels: a node shown in a dump can still be covered (.claude/rules/ui-compose.md).
@@ -48,10 +49,14 @@ redact() {
 }
 crash_lines() {
   local out st=0
-  echo "--- the device log's process and crash lines (the last 40)"
+  echo "--- the device log's crash lines and the app's own process lines (the last 40)"
   out=$(timeout 10 adb logcat -d -b main,system,crash 2>/dev/null) || st=$?
   if [ "$st" -ne 0 ] && [ -z "$out" ]; then echo "(could not read: adb logcat, exit $st)"; return; fi
-  out=$(grep -E 'AndroidRuntime|Fatal signal|Verifier rejected|ActivityManager: (Process|Killing|Start proc|ANR)|lowmemorykiller|lmkd' <<<"$out" \
+  # Crash lines of any process, and process lines (starts, deaths, kills) only when they name the app: other apps'
+  # starts and the low-memory killer's kills filled the 40 lines of a red run. The shell's own runtime lines (each
+  # uiautomator call starts one) are left out.
+  out=$(grep -E "AndroidRuntime|Fatal signal|Verifier rejected|ANR in|$PKG" <<<"$out" \
+    | grep -v -E 'AndroidRuntime: (>>>>>> START|Using default boot image|Leaving lock profiling|Calling main entry|Shutting down VM)' \
     | grep -v -i 'key' | redact | tail -n 40 || true)
   if [ -z "$out" ]; then echo "(no matching lines)"; else printf '%s\n' "$out"; fi
   echo "--- end of the crash lines"
