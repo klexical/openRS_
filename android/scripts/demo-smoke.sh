@@ -9,8 +9,8 @@
 #   3. Demo is paused (`--es demo at:2.5`) for the UI reads: `uiautomator dump` needs an idle screen, and live demo values
 #      change many times a second. A What's New dialog is closed by its GOT IT button.
 #   4. Each bottom-nav tab (DRIVE, PERF, THERMAL, TRIP, GARAGE) is tapped at the centre the UI dump gives for its node
-#      ("<NAME> tab"), and the next dump must show that tab selected (its selected flag, else the only tab not clickable: Compose exposes a
-#      selected tab so) and the header's DEMO label.
+#      ("<NAME> tab"), and the next dump must show that tab selected (its selected flag, else the only tab not
+#      clickable: Compose exposes a selected tab so) and the header's DEMO label.
 #   5. On DRIVE, each demo scenario runs live for a while (idle, driving, warning, loss, cooldown, launch); on TRIP, each
 #      sample state (`--es trippreview` history … export), then off.
 #   6. After every step: the app's process is the one started (not gone, not restarted), and the log since the cold start
@@ -22,12 +22,16 @@
 # is removed. Every adb call runs under `timeout` with a step name. One line goes to $GITHUB_STEP_SUMMARY when set.
 # It reads the UI text tree, not pixels: a node shown in a dump can still be covered (.claude/rules/ui-compose.md).
 # SMOKE_ADB_LIMIT_S (60), SMOKE_SETTLE_S (10, after the cold start), SMOKE_STEP_S (3, after a tap or an intent) and
-# SMOKE_FRAME_S (6, after a pause request) are for the tests (scripts/test-demo-smoke.sh).
+# SMOKE_FRAME_S (6, after a pause request) and SMOKE_RETRY_S (10, between UI read tries) are for the tests
+# (scripts/test-demo-smoke.sh).
 set -euo pipefail
 PKG=com.openrs.dash.debug; ACTIVITY=com.openrs.dash.ui.MainActivity; COMPONENT="$PKG/$ACTIVITY"
 ADB_LIMIT_S="${SMOKE_ADB_LIMIT_S:-60}"; SETTLE_S="${SMOKE_SETTLE_S:-10}"; STEP_S="${SMOKE_STEP_S:-3}"
 FRAME_S="${SMOKE_FRAME_S:-6}"   # after `at:2.5`: the replay runs from 0 in real time before it pauses
-DUMP_TRIES=3
+RETRY_S="${SMOKE_RETRY_S:-10}"
+# Six tries, 10 s apart: on the runner's API 36 image the app's first UI reads can find no window ("null root node")
+# for about 15 s although it is resumed and focused; a read that works takes up to 40 s there
+DUMP_TRIES=6
 TABS="DRIVE PERF THERMAL TRIP GARAGE"
 SCENARIOS="idle driving warning loss cooldown launch"
 PREVIEWS="history selected recording paused summary compare replay export"
@@ -144,7 +148,7 @@ ui() {
     st=0; python3 -I "$DIR/demo-smoke-ui.py" "$WORK/dump.xml" "$PKG" > "$WORK/facts" 2> "$WORK/ui-err" || st=$?
     if [ "$st" -eq 0 ] && [ "$(fact ours)" != 0 ]; then return 0; fi
     echo "UI read $1, try $i of $DUMP_TRIES: uiautomator said '${msg:-nothing}'; $bytes bytes; $(tr -d '\n' < "$WORK/ui-err" | cut -c1-200); $(screen)"
-    [ "$i" -eq "$DUMP_TRIES" ] || pause "before UI read $((i + 1))" "$STEP_S"
+    [ "$i" -eq "$DUMP_TRIES" ] || pause "before UI read $((i + 1))" "$RETRY_S"
   done
   if [ "$st" -ne 0 ]; then fail "$1: no readable UI dump in $DUMP_TRIES tries (uiautomator said '${msg:-nothing}'; $(tr -d '\n' < "$WORK/ui-err" | cut -c1-200))"; fi
   fail "$1: the UI dump holds no node of $PKG in $DUMP_TRIES tries (other packages: $(fact others))"

@@ -131,7 +131,7 @@ run_case() {
   local args=(); [ "$arg" = - ] || args=("$arg")
   env -i PATH="$WORK/bin:$PATH" HOME="$HOME" FAKE_DIR="$WORK" TMPDIR="$WORK/tmp" FAKE_APK="$APK" GITHUB_STEP_SUMMARY="$WORK/summary" \
     FAKE_MAPS_VALUE="$MAPS_VALUE" FAKE_HEX_VALUE="$HEX_VALUE" \
-    SMOKE_SETTLE_S=0 SMOKE_STEP_S=0 SMOKE_FRAME_S=0 SMOKE_ADB_LIMIT_S=5 "$@" bash "$SCRIPT" "${args[@]}" > "$WORK/out" 2>&1
+    SMOKE_SETTLE_S=0 SMOKE_STEP_S=0 SMOKE_FRAME_S=0 SMOKE_RETRY_S=0 SMOKE_ADB_LIMIT_S=5 "$@" bash "$SCRIPT" "${args[@]}" > "$WORK/out" 2>&1
   GOT=$?
   ran=$((ran + 1)); CASE="$name"
   if [ "$GOT" -ne "$want" ]; then
@@ -186,7 +186,7 @@ fi
 
 run_case "the DEMO label with a link state (DEMO · RCN) counts" 0 "$APK" "FAKE_DEMO_LABEL=DEMO · RCN" && pass
 run_case "two dumps with no idle state, then a readable one" 0 "$APK" FAKE_IDLE_FAILS=2 \
-  && expect "Emulator smoke OK" "UI read after the cold start, try 1 of 3: uiautomator said 'ERROR: could not get idle state.'; 0 bytes; unreadable dump (no XML in 0 characters); screen Awake, focus com.openrs.dash.debug/com.openrs.dash.ui.MainActivity"
+  && expect "Emulator smoke OK" "UI read after the cold start, try 1 of 6: uiautomator said 'ERROR: could not get idle state.'; 0 bytes; unreadable dump (no XML in 0 characters); screen Awake, focus com.openrs.dash.debug/com.openrs.dash.ui.MainActivity"
 run_case "a control character in a node's text does not stop the reader" 0 "$APK" FAKE_CTRL_CHAR=1 && expect "Emulator smoke OK"
 run_case "with no tab node marked selected, the only tab not clickable is the selected one" 0 "$APK" FAKE_SELECT_BY=clickable \
   && expect "Emulator smoke OK" "Tab GARAGE: selected (the only tab not clickable), DEMO shown, process 4242, log clean"
@@ -232,7 +232,7 @@ if run_case "a failed log read prints none of the log" 1 "$APK" FAKE_FAIL=logcat
   has "::error::reading the log after the cold start: adb logcat -d failed (exit 1" && ! has "RAW-LOG-TEXT" && pass || bad "the log's text was printed, or no error"
 fi
 if run_case "a failed UI read prints none of the dump" 1 "$APK" FAKE_FAIL=dump; then
-  has "::error::the UI read after the cold start (try 1 of 3): adb exec-out" && ! has "RAW-DUMP-TEXT" && pass || bad "the dump's text was printed, or no error"
+  has "::error::the UI read after the cold start (try 1 of 6): adb exec-out" && ! has "RAW-DUMP-TEXT" && pass || bad "the dump's text was printed, or no error"
 fi
 run_case "another app on top at the end fails" 1 "$APK" FAKE_FOREIGN_AT=2 \
   && expect "::error::at the end: the resumed activity is not com.openrs.dash.debug/com.openrs.dash.ui.MainActivity"
@@ -242,14 +242,14 @@ run_case "another app's activity on top fails, naming it" 1 "$APK" FAKE_FOREIGN=
   && expect "::error::after the cold start: the resumed activity is not com.openrs.dash.debug/com.openrs.dash.ui.MainActivity (found: com.google.android.permissioncontroller/com.android.permissioncontroller.permission.ui.GrantPermissionsActivity )"
 run_case "no DEMO label fails" 1 "$APK" FAKE_NO_DEMO=1 \
   && expect "::error::after the cold start: no DEMO label in the UI dump"
-run_case "a dump that never reads fails after three tries" 1 "$APK" FAKE_IDLE_FAILS=99 \
-  && expect "::error::after the cold start: no readable UI dump in 3 tries (uiautomator said 'ERROR: could not get idle state.'; unreadable dump (no XML in 0 characters))"
+run_case "a dump that never reads fails after six tries" 1 "$APK" FAKE_IDLE_FAILS=99 \
+  && expect "::error::after the cold start: no readable UI dump in 6 tries (uiautomator said 'ERROR: could not get idle state.'; unreadable dump (no XML in 0 characters))"
 run_case "an installed APK that hashes differently fails" 1 "$APK" FAKE_BAD_HASH=1 \
   && expect "::error::the installed APK's SHA-256 is 0000000000000000000000000000000000000000000000000000000000000000"
 run_case "an install that does not answer fails, naming the step" 1 "$APK" FAKE_HANG=install SMOKE_ADB_LIMIT_S=1 \
   && expect "::error::installing the APK: adb install -r -g $APK did not answer within 1 s"
 run_case "a dump that does not answer fails, naming the step" 1 "$APK" FAKE_HANG=dump SMOKE_ADB_LIMIT_S=1 \
-  && expect "::error::the UI read after the cold start (try 1 of 3): adb exec-out"
+  && expect "::error::the UI read after the cold start (try 1 of 6): adb exec-out"
 
 # ── Arguments ──
 run_case "no argument is refused" 1 - && expect "::error::usage: demo-smoke.sh"
