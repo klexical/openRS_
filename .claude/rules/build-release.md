@@ -187,6 +187,11 @@ paths:
   on the fake first child Compose adds to a merging node (`SemanticsNode.emitFakeNodes`), and the tab's `selected` state
   on that child's parent; a dump takes up to about 40 s there. CI's build job does not run its test (that line would
   need the nightly.yml twin, the exact-commands check)
+- **Unit-test heap is 1 GB (#505)** — `android/app/build.gradle.kts` sets `maxHeapSize = "1g"` on the unit-test JVM: the
+  Robolectric suite keeps about 490 MB live by its end (Robolectric themes and Compose layout nodes never freed), and at
+  Gradle's default 512 MB one more Compose test made the run thrash in GC and fail (`OutOfMemoryError`, CI's release run
+  failing after 46 minutes). A run that slows to tens of minutes is this, not a hang in the test: take a
+  `jcmd <pid> GC.class_histogram` before raising the limit further
 
 ## Releases: RCs, nightlies, stable and the release checklist
 
@@ -268,8 +273,3 @@ Release notes are a **condensed highlight reel**, not a copy of the changelog.
 - Link back to `android/CHANGELOG.md` for full detail
 
 **Rule:** `CHANGELOG.md` is the authoritative record. Release notes summarize it. Never put detail in release notes that isn't in the changelog.
-- **Unit-test heap is 1 GB (#505)** — `android/app/build.gradle.kts` sets `maxHeapSize = "1g"` on the unit-test JVM: the
-  Robolectric suite keeps about 490 MB live by its end (Robolectric themes and Compose layout nodes never freed), and at
-  Gradle's default 512 MB one more Compose test made the run thrash in GC and fail (`OutOfMemoryError`, CI's release run
-  failing after 46 minutes). A run that slows to tens of minutes is this, not a hang in the test: take a
-  `jcmd <pid> GC.class_histogram` before raising the limit further
