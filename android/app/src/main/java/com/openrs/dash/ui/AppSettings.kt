@@ -404,8 +404,8 @@ object AppSettings {
 
     /**
      * #464: stores the eleven units once, before anything reads them. A settings file that already holds any key is an
-     * existing install: its four original choices are kept exactly and the seven new units come from the closest
-     * preset ([Region.unitsForExisting]). An empty file is a new install: all eleven come from the phone's country
+     * existing install: its four original choices are kept exactly, economy follows its speed and temperature, and the
+     * other six new units come from the closest preset ([Region.unitsForExisting]). An empty file is a new install: all eleven come from the phone's country
      * setting ([Region.unitsForCountry]). After it runs, [KEY_UNITS_VERSION] is set and it never runs again.
      */
     fun migrateUnits(ctx: Context, country: String = java.util.Locale.getDefault().country) =

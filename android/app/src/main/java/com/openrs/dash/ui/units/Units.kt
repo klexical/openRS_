@@ -195,7 +195,7 @@ object UnitFactors {
  * every real sign.
  */
 private fun f(decimals: Int, v: Double): String {
-    val zero = v.isFinite() && java.math.BigDecimal.valueOf(v).setScale(decimals, java.math.RoundingMode.HALF_UP).signum() == 0
+    val zero = v < 0 && v.isFinite() && java.math.BigDecimal.valueOf(v).setScale(decimals, java.math.RoundingMode.HALF_UP).signum() == 0
     return "%.${decimals}f".format(if (zero) 0.0 else v)
 }
 

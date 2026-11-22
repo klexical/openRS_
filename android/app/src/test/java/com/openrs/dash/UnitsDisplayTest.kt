@@ -36,6 +36,7 @@ import com.openrs.dash.ui.units.Region
 import com.openrs.dash.ui.units.UnitIds
 import com.openrs.dash.ui.units.altitudeM
 import com.openrs.dash.ui.units.boostGauge
+import com.openrs.dash.ui.units.speedDelta
 import com.openrs.dash.ui.units.temp
 import com.openrs.dash.ui.units.tempDeltaText
 import com.openrs.dash.ui.units.withUnits
@@ -228,7 +229,8 @@ class UnitsDisplayTest {
             java.util.Locale.setDefault(saved)
         }
         // f() tests zero half-up, as the formatter rounds: a half stays a signed value
-        assertEquals("%.1f".format(-0.05), "-" + "%.1f".format(0.1))
+        assertEquals("-1 m", eu.altitudeM(-0.5).text)
+        assertEquals("%.1f".format(-0.05), eu.speedDelta(-0.05).value)
     }
 
     @Test fun `a fuel difference that rounds to zero shows no text, else a signed difference`() {
