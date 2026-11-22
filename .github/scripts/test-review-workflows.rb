@@ -336,7 +336,19 @@ ok, out, = decide.("pull_request") do |git, put|
   git.("checkout", "-q", "base"); git.("merge", "-q", "--no-ff", "-m", "stale test merge", "head")
   { "BASE_SHA" => newbase, "HEAD_SHA" => head }
 end
-check.(ok && out.lines.map(&:strip) == ["run=true"], "web-ci decision: a retarget whose merge commit is on the old base => decided against the event's base (run=true)")
+check.(!ok && !out.include?("run="), "web-ci decision: a retarget whose merge commit is on the old base, changing web/ against the new base => the step fails (it would build the wrong tree)")
+# the same stale merge commit when the pull request changes no web/ against the new base: nothing is built, so it skips
+ok, out, = decide.("pull_request") do |git, put|
+  root = git.("rev-parse", "HEAD").strip
+  put.("android/b.txt", "old base"); git.("commit", "-qam", "old base moves on")
+  git.("checkout", "-q", "-b", "head"); put.("docs/h.txt"); git.("add", "-A"); git.("commit", "-qm", "head")
+  head = git.("rev-parse", "HEAD").strip
+  git.("checkout", "-q", "-b", "newbase", root); put.("docs/n.txt"); git.("add", "-A"); git.("commit", "-qm", "new base")
+  newbase = git.("rev-parse", "HEAD").strip
+  git.("checkout", "-q", "base"); git.("merge", "-q", "--no-ff", "-m", "stale test merge", "head")
+  { "BASE_SHA" => newbase, "HEAD_SHA" => head }
+end
+check.(ok && out.lines.map(&:strip) == ["run=false"], "web-ci decision: a stale merge commit, no web/ change against the new base => run=false")
 ok, out, = decide.("pull_request", &pr.() { |_, put| put.("web/a.txt", "y") }.then { |b| ->(g, p) { b.(g, p); { "BASE_SHA" => "" } } })
 check.(!ok && !out.include?("run="), "web-ci decision: the event names no base commit => the step fails, nothing decided")
 ok, out, = decide.("pull_request") do |git, put|
