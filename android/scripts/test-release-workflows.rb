@@ -333,11 +333,11 @@ SH
 nightly = nil
 check('nightly.yml parses') { nightly = load('nightly.yml'); nil }
 
-check('nightly.yml runs at 08:17 UTC and by hand, nothing else, in one never-cancelled group') do
+check('nightly.yml runs at 05:50 UTC and by hand, nothing else, in one never-cancelled group') do
   on = nightly['on'] || nightly[true]
   why = []
   why << "triggers #{triggers(nightly).inspect}" unless triggers(nightly).sort == %w[schedule workflow_dispatch]
-  why << "schedule #{on['schedule'].inspect}" unless on['schedule'] == [{ 'cron' => '17 8 * * *' }]
+  why << "schedule #{on['schedule'].inspect}" unless on['schedule'] == [{ 'cron' => '50 5 * * *' }]
   why << 'workflow_dispatch takes inputs (a ref or a commit must never be given)' unless on['workflow_dispatch'].nil? || on['workflow_dispatch'] == {}
   why << "concurrency #{nightly['concurrency'].inspect}" unless nightly['concurrency'] == { 'group' => 'nightly', 'cancel-in-progress' => false }
   why
