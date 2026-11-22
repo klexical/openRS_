@@ -173,10 +173,12 @@ paths:
   runs of `emulator-smoke.yml` for the PR's head SHA, the newest run whose job did not skip: adding any other label (the
   privacy label included) starts a run whose job is skipped, under the same check name, and the PR's check list can show
   that "skipped" over a red smoke. It uploads nothing; screenshots as run artifacts are the owner's call (what leaves
-  the runner). It reads the UI text tree, not pixels, so a covered node still reads as shown. Unverified until its first
-  labelled run: that `uiautomator dump` on the API 36 image finds an idle screen with demo paused and reports the Compose
-  tabs' `selected` state and the DEMO pill. CI's build job does not run its test (that line would need the nightly.yml
-  twin, the exact-commands check)
+  the runner). It reads the UI text tree, not pixels, so a covered node still reads as shown. What #472's labelled runs
+  on GitHub's API 36 image showed: the screen must be woken and unlocked first; the active-window dump often finds no
+  root ("null root node"), so it reads every window (`uiautomator dump --windows`); a tab's "<NAME> tab" description is
+  on the fake first child Compose adds to a merging node (`SemanticsNode.emitFakeNodes`), and the tab's `selected` state
+  on that child's parent; a dump takes up to about 40 s there. CI's build job does not run its test (that line would
+  need the nightly.yml twin, the exact-commands check)
 
 ## Releases: RCs, nightlies, stable and the release checklist
 
