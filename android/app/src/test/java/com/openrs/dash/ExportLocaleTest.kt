@@ -117,7 +117,7 @@ class ExportLocaleTest {
 
     @Test fun `SLCAN log timestamps use a decimal point in every locale`() = eachLocale { loc ->
         val line = DiagnosticLogger.buildSlcanLine(90L, 0x090, "0000C1FF617D0000")
-        assertEquals("$loc", "(     0.090) can0 090#0000C1FF617D0000\n", line)
+        assertEquals("$loc", "(0.090) can0 090#0000C1FF617D0000\n", line)
         assertTrue(Regex("""^\(\s*\d+\.\d{3}\) can0 [0-9A-F]{3}#[0-9A-F]*\n$""").matches(line))
     }
 
