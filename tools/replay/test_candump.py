@@ -16,7 +16,9 @@ def run(text, **kw):
 
 class CandumpToSlcanTest(unittest.TestCase):
     def test_app_line_format_converts(self):
-        # The app writes "(%10.3f) can0 %03X#%s" (DiagnosticLogger.buildSlcanLine)
+        # The app writes "(%.3f) can0 %03X#%s" (DiagnosticLogger.buildSlcanLine, #403); builds before it padded the
+        # time to "(%10.3f)", and both forms convert alike
+        self.assertEqual(convert_line("(1.250) can0 0F8#0102030405060708"), "t0F880102030405060708")
         self.assertEqual(convert_line("(     1.250) can0 0F8#0102030405060708"), "t0F880102030405060708")
         self.assertEqual(convert_line("(     1.250) can0 0F8#0102", timestamps=True), "t0F82010204E2")  # 1,250 ms = 0x04E2
 

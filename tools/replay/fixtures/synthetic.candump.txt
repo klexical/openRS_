@@ -1,7 +1,7 @@
 # openRS_ SLCAN log — 198.51.100.7:35000 (TCP SLCAN (198.51.100.7:35000))
 # Session started: 1000000000000 ms epoch
 # Format: (relative_seconds) can0 ID#DATA
-# Compatible with candump, SavvyCAN, Kayak
+# Read by can-utils' canplayer and log2asc, which skip the # lines
 (     0.000) can0 321#0A0B
 (     0.004) can0 321#0A0B
 # TX (     0.006) can0 7E0#0322123400000000
