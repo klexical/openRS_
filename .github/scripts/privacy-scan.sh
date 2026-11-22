@@ -34,13 +34,15 @@
 # applied and accents dropped (full-width and accented letters read as plain ones), every character but letters and
 # digits removed and then a 0x before a byte dropped, from the entry and the scanned line alike.
 # A file git judges binary on either side of a commit (--numstat "-" "-"), whose new content holds a NUL byte anywhere,
-# or that is not UTF-8, is read whole, as bytes and as UTF-16 or UTF-32 in either byte order; a binary file that is not
-# a ZIP is also a finding until a reviewer's OK, as it may hold compressed data. A ZIP (found by its structure, at any
-# offset) is unpacked and each member read whole and its name scanned. Any other compressed file (gzip, bzip2,
-# xz, zstd, tar, PNG, JPEG, PDF, 7z and the like, found by its magic at the start), a compressed or binary ZIP member,
-# a Git LFS pointer, a workflow or action file that names the privacy-scan check, and an image or attachment in the
-# pull request's title or description are each a finding until a reviewer's OK: the label privacy-ok-compressed being
-# added to the pull request (that label event's run only, so a later push needs a new OK).
+# or that is not UTF-8, is read whole, as bytes and as UTF-16 or UTF-32 in either byte order. A ZIP (found by its
+# structure, at any offset) is unpacked and each member read whole and its name scanned. A ZIP-format file and any
+# other binary file (a ZIP after a prefix included: the prefix bytes are read whole, but compressed data in them cannot
+# be opened) are also a finding until a reviewer's OK, as bytes outside the members may hold compressed data. Any other
+# compressed file (gzip, bzip2, xz, zstd, tar, PNG, JPEG, PDF, 7z and the like, found by its magic at the start), a
+# compressed or binary ZIP member, a Git LFS pointer, a workflow or action file that names the privacy-scan check, and
+# an image or attachment in the pull request's title or description are each a finding until a reviewer's OK: the
+# label privacy-ok-compressed being added to the pull request (that label event's run only, so a later push needs a
+# new OK).
 # Base64 on any scanned line, a run of 8 characters or more (or wrapped over several lines, the last one short), is
 # decoded, padded rather than cut, and decoded again if it is base64 itself; gzip, zlib, bzip2, xz and lzma found in
 # it by their checksummed formats are decompressed. Wrapped base64 whose pieces share their lines with other text is
@@ -439,9 +441,8 @@ keep() {
   if [ -s "$T/texts" ]; then nw=$((nw+1)); cp "$T/texts" "$WHOLE/$nw"; printf '%s\t%s\t%s\n' "$2" "$3" "$4" >> "$T/whole.idx"; fi
 }
 # scan_zip <c12> <path> <file>: each member's name and content against the list (by number, never by name); a member
-# that is itself compressed is listed for a reviewer's OK; an encrypted, oversized or unreadable one is a finding. Sets
-# zipread: 1 once its members are read, 0 for a ZIP that cannot be read (a finding of its own). kind, binary and
-# zipok are its own: each member is classified, and the caller still judges the file by the file's own class
+# that is itself compressed is listed for a reviewer's OK; an encrypted, oversized or unreadable one is a finding. Its
+# kind, binary and zipok are local: each member is classified, and the caller still judges the file by its own class
 scan_zip() {
   local c12=$1 sp=$2 z=$3 d=$T/zip idx status name kind binary zipok
   rm -rf "$d"; mkdir "$d"
@@ -490,7 +491,7 @@ PY
     [ "$hit" -eq 0 ] || printf '%s\tZIP member #%s content\t%s\t\n' "$c12" "$idx" "$sp" >> "$T/binhits"
     [ -z "$b64comp" ] || printf '%s\tbase64 in ZIP member #%s, decoding to a compressed file (%s)\t%s\t\n' "$c12" "$idx" "$b64comp" "$sp" >> "$T/compressed"
   done < "$d/index"
-  rm -rf "$d"; zipread=1
+  rm -rf "$d"
 }
 # raw_header <commit object>: its header lines as the formatted fields do not show them: every header, and for the
 # author and committer lines only what follows the address (the name and address are scanned as fields)
@@ -575,15 +576,21 @@ for c in $commits; do
       if grep -q -a -i -E 'privacy[-_ ]?scan' "$T/blob"; then
         printf '%s\ta workflow file that names the privacy-scan check\t%s\t\n' "$c12" "$sp" >> "$T/compressed"
       fi ;; esac
-    # scan_zip sets zipread; it is never a condition, since inside one bash ignores set -e and the ERR trap
-    zipread=0
+    # scan_zip is never a condition: inside one, bash ignores set -e and the ERR trap
     if [ "$kind" = zip ] || [ "$zipok" = 1 ]; then scan_zip "$c12" "$sp" "$T/blob"; fi
+    # a ZIP-format file waits for the OK too, its members still read: bytes outside the members (before the first
+    # entry, in the archive comment, after the end record) can hold compressed data that nothing here opens
     if [ -n "$kind" ] && [ "$kind" != zip ]; then
       printf '%s\tcompressed file (%s)\t%s\t\n' "$c12" "$kind" "$sp" >> "$T/compressed"
-    elif [ "$binary" = 1 ] && [ "$zipread" = 0 ] && [ "$kind" != zip ]; then
+    elif [ "$kind" = zip ]; then
+      printf '%s\ta ZIP file, whose bytes outside its members may hold compressed data\t%s\t\n' "$c12" "$sp" >> "$T/compressed"
+    elif [ "$binary" = 1 ]; then
       # a binary file the scan cannot open: compressed data needs no known header (zlib, raw deflate, lzma, data
-      # after a prefix), so any binary file waits for the OK
+      # after a prefix), so any binary file waits for the OK, a ZIP found after a prefix included: the prefix bytes
+      # are read whole and the ZIP's members are read, but compressed data in the prefix cannot be opened
       printf '%s\ta binary file, which may hold compressed data\t%s\t\n' "$c12" "$sp" >> "$T/compressed"
+    elif [ "$zipok" = 1 ]; then
+      printf '%s\ta ZIP file, whose bytes outside its members may hold compressed data\t%s\t\n' "$c12" "$sp" >> "$T/compressed"
     fi
     [ "$binary" = 1 ] || [ -n "$kind" ] || [ "$zipok" = 1 ] || in_binpaths "$p" || continue
     keep "$T/blob" "$c12" "in a file read whole" "$sp" "$kind"
@@ -625,12 +632,15 @@ if [ "$HISTORY" = 1 ]; then
       if [ "$(head -c 40 "$T/blob" | tr -d '\000' 2> /dev/null)" = "version https://git-lfs.github.com/spec/" ]; then
         printf '%s\ta Git LFS pointer (its file is not in these git objects)\t%s\t\n' "$o12" "$sp" >> "$T/compressed"
       fi
-      zipread=0
       if [ "$kind" = zip ] || [ "$zipok" = 1 ]; then scan_zip "$o12" "$sp" "$T/blob"; fi
       if [ -n "$kind" ] && [ "$kind" != zip ]; then
         printf '%s\tcompressed file (%s)\t%s\t\n' "$o12" "$kind" "$sp" >> "$T/compressed"
-      elif [ "$binary" = 1 ] && [ "$zipread" = 0 ] && [ "$kind" != zip ]; then
+      elif [ "$kind" = zip ]; then
+        printf '%s\ta ZIP file, whose bytes outside its members may hold compressed data\t%s\t\n' "$o12" "$sp" >> "$T/compressed"
+      elif [ "$binary" = 1 ]; then
         printf '%s\ta binary file, which may hold compressed data\t%s\t\n' "$o12" "$sp" >> "$T/compressed"
+      elif [ "$zipok" = 1 ]; then
+        printf '%s\ta ZIP file, whose bytes outside its members may hold compressed data\t%s\t\n' "$o12" "$sp" >> "$T/compressed"
       fi
       keep "$T/blob" "$o12" "in an object a tag names" "$sp" "$kind"
       if [ "$binary" = 0 ] && [ -z "$kind" ] && [ "$zipok" = 0 ]; then
@@ -647,11 +657,15 @@ if [ "$HISTORY" = 1 ]; then
   done
   # each ref's name (a branch, a tag, a pull request head), as a line of its own, by number only: an annotated tag's
   # name is also in its tag object, read above
-  nnames=0
+  # Each name is also checked on its own, so the count is of names: a base64 run joined across two names, or a name
+  # that matches twice, counts no extra. A CR at a line's end and a blank line are not names
+  nnames=0; nmatch=0
   if [ -n "$NAMES" ]; then
     keep "$NAMES" "refs" "in the ref names" ""     # for gitleaks too, as the pull request's branch name is
     while IFS= read -r nm || [ -n "$nm" ]; do
+      nm=${nm%$'\r'}; [ -n "$nm" ] || continue
       nnames=$((nnames+1)); add "refs" "ref name #$nnames" "" "$nm"
+      printf '%s\n' "$nm" > "$T/name"; blob_hits "$T/name"; nmatch=$((nmatch + hit))
     done < "$NAMES"
   fi
 fi
@@ -782,7 +796,7 @@ if [ "$HISTORY" = 1 ]; then
     | awk -F'\t' '{ print "privacy history scan: gitleaks rule " $1 ", " $2 " finding(s)" }'
   echo "privacy history scan: tag objects $ntag, trees and blobs a tag names $nother"
   if [ "$NOLIST" = 1 ]; then echo "privacy history scan: ref names $nnames, matches not checked (no list)"
-  else echo "privacy history scan: ref names $nnames, $(cat "$T/out.list" "$T/out.bin" | { grep -c -E '^FINDING refs: ' || true; }) matching the list"; fi
+  else echo "privacy history scan: ref names $nnames, $nmatch matching the list"; fi
   echo "privacy history scan: files for a reviewer (binary, compressed, ZIP members, embedded images) $(wc -l < "$T/out.comp")"
 fi
 if [ "$NOLIST" = 1 ]; then
