@@ -116,7 +116,7 @@ body:
       label: Diagnostic export
       description: |
         A diagnostic export helps most: GARAGE → DIAG → CAPTURE & SHARE SNAPSHOT (the DIAG tab in v2.2.6), then attach the ZIP here.
-        What it holds: the car's raw CAN traffic, the app's logs, your unit settings, and the date and time the session started and the export was made. From the v2.2.7 nightlies the unit settings include a region, which a new install takes from the phone's country setting.
+        What it holds: the car's raw CAN traffic, the app's logs, your unit settings, and the date and time the session started and the export was made. From v2.2.7-nightly.YYYYMMDD on, a new install or Settings → RESET starts your unit settings, and the region they are shown under, from the phone's country setting, so they can hint at your country.
         If a drive was recording or paused when you exported, the ZIP also holds that drive, with its route (GPS positions and times).
         From v2.2.7-rc.8 on, the app masks the VIN and removes the adapter's Bluetooth address and name, as far as it can recognise them.
         v2.2.6 and the earlier v2.2.7 release candidates do not. Leave out anything you do not want public.
