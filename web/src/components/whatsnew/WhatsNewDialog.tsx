@@ -1,13 +1,13 @@
 // "What's new" (#384 ticket 09; the owner's pick, mock-up A): a dialog over the page with this update's new things, the
-// titles of the web/CHANGELOG.md section that names its release (#416 ticket 4), and one button. Loaded only when shown
-// (its text is not in the first visit).
+// titles of the web/CHANGELOG.md section that names its release (#416 ticket 4), with the changelog fragments folded in
+// (lib/changelogText.ts), and one button. Loaded only when shown (its text is not in the first visit).
 import { useEffect, useRef, type KeyboardEvent } from 'react'
-import changelog from '../../../CHANGELOG.md?raw'
+import { CHANGELOG_TEXT } from '../../lib/changelogText'
 import { RELEASE } from '../../lib/whatsNew'
 import { releaseTitles } from '../../lib/changelogSection'
 
 // a release with no section shows no titles (a test holds that RELEASE has one: lib/changelogSection.test.ts)
-const TITLES = releaseTitles(changelog, RELEASE) ?? { added: [], changed: [] }
+const TITLES = releaseTitles(CHANGELOG_TEXT, RELEASE) ?? { added: [], changed: [] }
 
 export function WhatsNewDialog({ onClose }: { onClose: () => void }) {
   const button = useRef<HTMLButtonElement>(null)
