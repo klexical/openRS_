@@ -112,8 +112,9 @@ function EventsTable({ events }: { events: { ts: number; type: string; message: 
             </thead>
             <tbody>
               {events.map((e, i) => {
-                // #382: group colour by type whatever its letter case; an unknown type keeps the neutral style
-                const style = eventStyle(e.type)
+                // #382: group colour by type whatever its letter case; an unknown type keeps the neutral style.
+                // #393: a REC_GAP's group names the reason its message gives
+                const style = eventStyle(e.type, e.message)
                 const known = style !== NEUTRAL_EVENT_STYLE
                 return (
                   <tr key={i} className="border-t border-brd hover:bg-surf3/50 transition-colors">

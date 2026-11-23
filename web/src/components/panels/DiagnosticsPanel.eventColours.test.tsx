@@ -22,9 +22,13 @@ const APP_EVENT_TYPES = ['AUTO_DTC_SCAN', 'BATCH_EXPORT_ERROR', 'BLE_WRITE', 'BO
 const NEUTRAL = 'var(--color-frost)'
 
 function show(types: string[]): HTMLElement {
+  return showEvents(types.map((type) => ({ type, message: `invented ${type}` })))
+}
+
+function showEvents(events: { type: string; message: string }[]): HTMLElement {
   const diagnostics: DiagnosticData = {
     canInventory: [], fpsTimeline: [], decodeTrace: [], probeResults: [], dtcResults: [],
-    sessionEvents: types.map((type, i) => ({ ts: 1000 * (i + 1), type, message: `invented ${type}` })),
+    sessionEvents: events.map((e, i) => ({ ts: 1000 * (i + 1), ...e })),
   }
   const session = { id: 'a', name: 'A', importedAt: 1, tags: [], trip: null, diagnostics,
     meta: { appVersion: '2.2.7', firmwareVersion: 'unknown', sessionStart: '', exportedAt: '' } } as unknown as Session
@@ -83,5 +87,30 @@ describe('#382 Diagnostics event colours', () => {
     expect(getComputedStyle(b.SOMETHING_NEW).color).toBe(NEUTRAL)
     expect(b.SOMETHING_NEW.textContent).toBe('SOMETHING_NEW')
     expect(getComputedStyle(b.FIRMWARE).color).not.toBe(NEUTRAL)
+  })
+})
+
+describe('#393 a REC_GAP badge names its reason on hover', () => {
+  // The four message forms the app writes (RecordingGapMonitor on staging); invented drive number and durations
+  const FORMS = {
+    disconnected: 'drive 3: DISCONNECTED gap 12.0 s (adapter disconnected — samples skipped)',
+    paused: 'drive 3: PAUSED gap 30.0 s (recording paused)',
+    noLocation: 'drive 3: NO_LOCATION gap 8.0 s (no location update while connected — telemetry not recorded)',
+    notice: 'drive 3: no location update for 6 s while connected — drive points paused until location returns',
+  }
+
+  it('only the adapter-disconnected gap is titled "Recording gap"; all four keep the warning colour', () => {
+    const container = showEvents(Object.values(FORMS).map((message) => ({ type: 'REC_GAP', message })))
+    const byMessage = new Map([...container.querySelectorAll('tr')].flatMap((tr) => {
+      const span = tr.cells[1]?.querySelector('span')
+      return span ? [[tr.cells[2]?.textContent ?? '', span] as const] : []
+    }))
+    const title = (m: string) => byMessage.get(m)?.getAttribute('title')
+    expect(title(FORMS.disconnected)).toBe('Recording gap')
+    expect(title(FORMS.paused)).toBe('Recording paused')
+    expect(title(FORMS.noLocation)).toBe('No position update')
+    expect(title(FORMS.notice)).toBe('No position update')
+    const WARN = 'rgb(255, 204, 0)'
+    expect(Object.values(FORMS).map((m) => getComputedStyle(byMessage.get(m)!).color)).toEqual([WARN, WARN, WARN, WARN])
   })
 })
