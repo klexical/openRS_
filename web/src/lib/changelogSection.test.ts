@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import changelog from '../../CHANGELOG.md?raw'
+import { CHANGELOG_TEXT } from './changelogText'
 import { RELEASE } from './whatsNew'
 import { releaseTitles } from './changelogSection'
 
@@ -37,7 +37,7 @@ describe('#416 ticket 4: What\'s new reads its own release\'s section', () => {
   })
 
   it('the release What\'s new speaks of has its section in web/CHANGELOG.md, with titles to show', () => {
-    const titles = releaseTitles(changelog, RELEASE)
+    const titles = releaseTitles(CHANGELOG_TEXT, RELEASE)
     expect(titles).not.toBeNull()
     expect(titles!.added.length).toBeGreaterThan(0)
   })
