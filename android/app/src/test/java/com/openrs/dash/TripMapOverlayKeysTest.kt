@@ -74,13 +74,31 @@ class TripMapOverlayKeysTest {
         assertEquals("%.0fs pause".format(9.0), o.pauses[0].snippet)
     }
 
-    @Test fun `equal timestamps still give unique keys`() {
+    @Test fun `equal timestamps still give unique segment keys`() {
         val pts = listOf(point(0, ts = 0), point(1, ts = 0, speed = 120.0), point(2, ts = 0, speed = 40.0),
             point(3, ts = 9_000, speed = 40.0), point(4, ts = 18_000, speed = 40.0))
         val o = buildRouteOverlay(pts, ColorMode.SPEED, palette)
         assertEquals(o.segments.size, o.segments.map { it.key }.toSet().size)
-        assertEquals(o.pauses.size, o.pauses.map { it.key }.toSet().size)
+    }
+
+    @Test fun `a clock that steps back still gives unique pause keys`() {
+        // Two pauses after points stamped 0: only times that go backwards can repeat a pause's previous-point time
+        val pts = listOf(point(0, ts = 0), point(1, ts = 6_000), point(2, ts = 0), point(3, ts = 6_000))
+        val o = buildRouteOverlay(pts, ColorMode.SPEED, palette)
         assertEquals(2, o.pauses.size)
+        assertEquals(o.pauses.size, o.pauses.map { it.key }.toSet().size)
+    }
+
+    /**
+     * The re-send counts above hold only while DriveMap keys each polyline and pause marker by [ColorSegment.key] and
+     * the pause mark's key: a GoogleMap subcomposition can't run under Robolectric, so this guards the source.
+     */
+    @Test fun `DriveMap keys its polylines and pause markers`() {
+        val src = java.io.File("src/main/java/com/openrs/dash/ui/trip/DriveMap.kt")
+        assertTrue("source not found from ${java.io.File(".").absolutePath}", src.isFile)
+        val text = src.readText()
+        assertTrue(Regex("""overlay\.segments\.forEach \{ seg ->\s+key\(seg\.key\) \{\s+Polyline\(""").containsMatchIn(text))
+        assertTrue(Regex("""overlay\.pauses\.forEach \{ pause ->\s+key\(pause\.key\) \{\s+Marker\(""").containsMatchIn(text))
     }
 
     @Test fun `a colour change one point into a segment leaves no one-point segment`() {
