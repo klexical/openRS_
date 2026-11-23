@@ -156,6 +156,8 @@ diagnostics/
                             the link lock); count, strictly-over edges, longest; pure, each locks itself; DiagnosticLogger
                             holds one of each, reset at sessionStart (UiTimingTest, UiTimingExportTest)
   DriveExportBuilder.kt   — Pure-function builders: GPX track, CSV telemetry, drive summary, DTC report
+                            A reading not yet received (its sentinel) = empty CSV field / no GPX element (#523);
+                            GPX times to the ms, no <ele> (#524)
   DtcDatabase.kt          — 873-code bundled Ford DTC lookup (from res/raw/dtc_database.json)
   CrashReporter.kt        — Installs UncaughtExceptionHandler; persists CrashTelemetryBuffer to disk
   CrashTelemetryBuffer.kt — 300-snapshot ring buffer of VehicleState (`CAPACITY`); flushed on crash to JSON (+ heap, #510)
