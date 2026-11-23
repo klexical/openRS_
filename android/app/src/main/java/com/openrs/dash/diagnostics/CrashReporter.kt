@@ -23,7 +23,7 @@ object CrashReporter {
             try {
                 val diagDir = File(app.filesDir, "diagnostics").apply { mkdirs() }
                 val ts = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-                val file = File(diagDir, "crash_telemetry_$ts.json")
+                val file = crashFile(diagDir, ts)
                 CrashTelemetryBuffer.flushToFile(
                     file      = file,
                     exception = throwable,
@@ -39,4 +39,7 @@ object CrashReporter {
             prev?.uncaughtException(thread, throwable)
         }
     }
+
+    /** The file a crash caught at [ts] (`yyyyMMdd_HHmmss`) is written to, in [dir]. */
+    internal fun crashFile(dir: File, ts: String): File = File(dir, "crash_telemetry_$ts.json")
 }
