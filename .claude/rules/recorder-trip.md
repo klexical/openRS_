@@ -5,7 +5,7 @@ paths:
   - "**/com/openrs/dash/**/*Lap*"
   - "**/com/openrs/dash/data/PendingSummary.kt"
   - "**/com/openrs/dash/data/TripState.kt"
-  - "**/com/openrs/dash/data/SessionDatabase.kt"
+  - "**/com/openrs/dash/data/SessionEntities.kt"
   - "**/com/openrs/dash/demo/TripPreview.kt"
   - "**/com/openrs/dash/ui/trip/**"
   - "**/com/openrs/dash/ui/MainActivity.kt"

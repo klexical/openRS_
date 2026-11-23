@@ -150,10 +150,10 @@ for editing them:
 ## Assets
 
 ```
-android/app/src/main/assets/pids/combined_catalog.json   — merged PID catalog
 android/app/src/main/assets/pids/forscan_modules.json    — FORScan catalog
 android/app/src/main/res/raw/dtc_database.json           — Ford DTC descriptions
 android/app/src/main/res/raw/google_map_style_dark.json  — Google Maps dark style (openRS_ palette)
+android/docs/combined_catalog.json                       — merged PID catalog: a reference for android/docs/pid-reference.md, not shipped
 ```
 
 Regenerate the FORScan catalog: `python3 android/scripts/gen_forscan_catalog.py` (writes forscan_modules.json only)
