@@ -709,6 +709,21 @@ describe('diagnostic parser bug fixes (T6G)', () => {
     expect(fps[1].ts).toBe(2000)
   })
 
+  it('T0B2: an fpsTimeline whose points carry heap fields (#510) imports as before', async () => {
+    const csv = [CSV_HEADER, makeCsvRow(1000000)].join('\n')
+    const heap = { heapUsedKb: 150000, heapTotalKb: 200000, heapMaxKb: 262144, nativeHeapKb: 40000 }
+    const file = await buildZipFile({
+      'drive_test.csv': csv,
+      'diagnostic_detail_test.json': makeDiagJson({
+        fpsTimeline: [{ relMs: 1000, fps: 45, ...heap }, { relMs: 2000, fps: 50 }],
+      }),
+    })
+    const session = await importZip(file)
+
+    expect(session.diagnostics!.fpsTimeline).toEqual([{ ts: 1000, fps: 45 }, { ts: 2000, fps: 50 }])
+    expect(session.diagnostics!.canInventory).toHaveLength(2)
+  })
+
   it('T0C: parses decodeTrace with id key', async () => {
     const csv = [CSV_HEADER, makeCsvRow(1000000)].join('\n')
     const file = await buildZipFile({
