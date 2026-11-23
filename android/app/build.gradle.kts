@@ -195,14 +195,14 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.9.3")
 
     // ── Kotlin Coroutines ───────────────────────────────────
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
 
     // ── AndroidX Core ───────────────────────────────────────
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
 
     // ── Room (Session History) ──────────────────────────────
-    val roomVersion = "2.6.1"
+    val roomVersion = "2.8.5"
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion")
     ksp("androidx.room:room-compiler:$roomVersion")
@@ -212,13 +212,13 @@ dependencies {
 
     // ── Maps & Location ───────────────────────────────────────
     implementation("com.google.android.gms:play-services-maps:19.0.0")
-    implementation("com.google.android.gms:play-services-location:21.3.0")
+    implementation("com.google.android.gms:play-services-location:21.4.0")
     implementation("com.google.maps.android:maps-compose:6.4.1")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
     // ── Testing ─────────────────────────────────────────────
     testImplementation("junit:junit:4.13.2")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
     testImplementation("org.json:json:20231013")
     // Real Room (production DriveDatabase + DriveDao) on the JVM for the recorder tests (#236); test-only, pinned.
     // Runs on SDK 35, the app's target (app/src/test/resources/robolectric.properties); Java 17 (CI) suffices for it.
