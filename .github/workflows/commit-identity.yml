@@ -23,7 +23,7 @@ jobs:
       # The default ref: the run's merge commit, whose tree holds the workflow and the scripts together (a head
       # checkout lacks any script added to the base after the PR was cut). fetch-depth 0
       # brings every branch, and the PR head is the merge commit's second parent.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0             # the whole history: the check walks base..head
           persist-credentials: false
@@ -61,7 +61,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
