@@ -153,6 +153,7 @@ internal object DiagnosticReportBuilder {
         appendLine("  openRS_ Diagnostic Report")
         appendLine("  App       : v${BuildConfig.RELEASE_NAME} (build ${BuildConfig.VERSION_CODE}, ${BuildConfig.BUILD_TYPE})")
         appendLine("  Source    : ${BuildConfig.SOURCE_COMMIT}${if (BuildConfig.SOURCE_DIRTY) " (uncommitted changes)" else ""}")
+        appendLine("  Platform  : ${DiagnosticExporter.platformText()}")
         appendLine("  Generated : $ts")
         appendLine("  Session   : ${log.formatDuration(log.sessionDurationMs)}")
         appendLine("  Schema    : export schema $EXPORT_SCHEMA_VERSION")
