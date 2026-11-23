@@ -166,6 +166,9 @@ diagnostics/
                             a minimal record first, then the full one renamed over it (#511)
   HeapSample.kt           — one reading of Java heap used / size / limit + native heap, KiB (#510): FPS timeline points and
                             the crash record; never throws
+  ReplyCount.kt           — Mode 22 replies per module for the export (#514): requests from `# TX` lines, replies from
+                            logObdFrame; answered / rejected / no reply within 1 s / late / pending only, answer-time
+                            buckets, longest miss run per DID. A count, not attribution (the ledgers keep that); pure
 service/
   CanDataService.kt       — Bound service, foreground only while a connection runs (ForegroundController);
                             Wi-Fi: connects on the adapter network (#324; sockets bound to it, onLost only for it);
