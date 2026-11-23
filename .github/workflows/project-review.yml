@@ -1,0 +1,210 @@
+name: project-review
+
+# A review thread's verdict on one pull request head, posted as the commit status `project-review` on that head. The
+# project's GitHub proxy refuses a thread's own write to the statuses endpoint, so the review thread starts this
+# workflow instead ("Run workflow" through REST, on main), as the one GitHub write it makes. The status shows that a
+# verdict exists at that head, not who gave it: every project thread acts as the owner's account, so GitHub cannot
+# tell a review thread from the thread that wrote the change. The status names the pull request and its base, and links
+# the run (and attempt) that posted it. Checking each status against the review record is the audit's planned next step.
+# A status stays with its commit: if the pull request is retargeted, or the commit heads another pull request, the
+# status still reads green or red there. The merge step is to compare the status's "(PR N to <base>)" with the pull
+# request's own number and base, and the audit's planned record check will too: a mismatch counts as no status.
+#
+# A dispatch's answer (204) says only that a run was queued: GitHub keeps one waiting run per concurrency group (one
+# head), so a newer dispatch for the same head replaces a waiting one, and a run also posts nothing when the head has
+# moved or the verdict is refused. So the review thread waits for its own run (the run's name gives the pull request and
+# the verdict) to complete, and only then reads the head's statuses back. The sign that its verdict posted is one of
+# the app's statuses on the head naming its reviewer tag and report (a run of the same name can be another reviewer's).
+# Cancelled or never started (replaced while it waited): dispatch again. Failed because a REAL-GAP stands or the head
+# moved: that is the answer, final for that head; do not dispatch again. A withdrawal while another REAL-GAP stands
+# posts a failure ("Review REAL-GAP withdrawn: ..."): that run succeeded. Any other failure (no REAL-GAP of that
+# reviewer and report stands, the app not installed, a transport error): name it in the report and do not loop.
+#
+# The status is posted by the owner's own GitHub App, so a ruleset can require `project-review` from that app alone: a
+# pull request's own workflow, or a job of that name in one, cannot stand in for it. The app's key is the
+# PROJECT_REVIEW_APP_KEY secret of the environment project-review, whose only deployment branch is main, so a run on any
+# other ref gets no key (and fails in its first step anyway). Its id is that environment's PROJECT_REVIEW_APP_ID variable.
+#
+# What a run does: a re-run of an old run never posts (dispatch again instead). In its last step it checks that the
+# pull request is open, comes from this repository, has staging or main as its base (or the owner's proof base, below),
+# and that its head is still the reviewed commit; then it posts success for `clear` and failure for `real-gap`. Every
+# verdict carries a reviewer tag: 12 random hex characters that a review thread makes once, writes at the top of its
+# report file in the project's files, and reuses for every dispatch, so two reviewers never share a key even when their
+# report names match, and the tag links to nothing outside the review record. Nothing stops a thread from naming
+# another's tag (every thread is the owner's account), so this is a rule the reviewers keep, as the review record
+# shows. A mistaken REAL-GAP whose review thread has ended is withdrawn by a new review thread the coordinator starts:
+# it reads the tag from the old report file, withdraws under that tag, and says so in its own report. Which
+# REAL-GAPs stand comes from the app's whole history of `project-review` statuses on the head, oldest first, per
+# reviewer and report: a REAL-GAP adds its key, a withdrawal of that key removes it. While any stands, a `clear` is
+# refused (a second reviewer's clear cannot overwrite it; a fix goes forward to a new head). `withdrawn-gap` withdraws
+# the same reviewer's REAL-GAP of the same report, and is refused for any other: it posts success when no REAL-GAP is
+# left, and otherwise a failure that records the withdrawal, so one withdrawal never hides another gap. A status of the
+# app's that this run cannot read fails the run, so a later change to the status texts must keep reading the old ones,
+# or every head that carries one fails for good. The status's text is the verdict, the reviewer tag, the report's file
+# name (a short pattern) and the pull request's number and base, so no free text reaches the public status. If the
+# app's own post comes back from another login than `<app slug>[bot]`, the history above would read nothing, so the
+# run fails loudly (after the post) instead of letting later clears pass.
+#
+# No checkout, no `uses:` and no GITHUB_TOKEN permission: this workflow needs no actions.lock entry, runs nothing of a
+# pull request and no third-party code with the key. Its tests: .github/scripts/test-project-review.rb.
+
+run-name: "project-review: pull request ${{ inputs.pr }}, ${{ inputs.verdict }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "The pull request's number"
+        required: true
+        type: number
+      sha:
+        description: "The reviewed head: the full 40-character commit SHA"
+        required: true
+        type: string
+      verdict:
+        description: "The review's verdict at that head"
+        required: true
+        type: choice
+        options: [ clear, real-gap, withdrawn-gap ]
+      reviewer:
+        description: "The reviewer tag: 12 random hex characters, made once and written at the top of the review report"
+        required: true
+        type: string
+      report:
+        description: "The review report's file name (a-z, 0-9, dot, dash, underscore; at most 44)"
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: project-review-${{ inputs.sha }}      # the status belongs to the commit, so one run at a time per head
+  cancel-in-progress: false
+
+jobs:
+  project-review:
+    name: Post the project-review status
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: project-review
+    permissions: {}                  # the app's own token does every call
+    steps:
+      - name: Main only
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          [ "$REF" = refs/heads/main ] || { echo "::error::project-review runs on main only: fails closed"; exit 1; }
+
+      - name: Check the inputs
+        env:
+          PR: ${{ inputs.pr }}
+          SHA: ${{ inputs.sha }}
+          VERDICT: ${{ inputs.verdict }}
+          REVIEWER: ${{ inputs.reviewer }}
+          REPORT: ${{ inputs.report }}
+        run: |
+          fail() { echo "::error::$1"; exit 1; }
+          [ "${GITHUB_RUN_ATTEMPT:-}" = 1 ] || fail "a re-run of an old run never posts: dispatch again"
+          [[ "$PR" =~ ^[1-9][0-9]{0,5}$ ]] || fail "pr: a pull request number"
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || fail "sha: the reviewed head, 40 lower-case hex characters"
+          [[ "$REVIEWER" =~ ^[0-9a-f]{12}$ ]] || fail "reviewer: the reviewer tag, 12 lower-case hex characters"
+          [[ "$REPORT" =~ ^[a-z0-9][a-z0-9._-]{0,43}$ ]] || fail "report: a report file name (a-z, 0-9, . _ -), at most 44"
+          case "$VERDICT" in clear|real-gap|withdrawn-gap) ;; *) fail "verdict: clear, real-gap or withdrawn-gap" ;; esac
+
+      - name: Check the head and post the verdict
+        env:
+          PR: ${{ inputs.pr }}
+          SHA: ${{ inputs.sha }}
+          VERDICT: ${{ inputs.verdict }}
+          REVIEWER: ${{ inputs.reviewer }}
+          REPORT: ${{ inputs.report }}
+          REPO: ${{ github.repository }}
+          API: ${{ github.api_url }}
+          APP_ID: ${{ vars.PROJECT_REVIEW_APP_ID }}
+          APP_KEY: ${{ secrets.PROJECT_REVIEW_APP_KEY }}
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$1"; exit 1; }
+          [[ "${APP_ID:-}" =~ ^[1-9][0-9]*$ ]] && [ -n "${APP_KEY:-}" ] || fail "the environment project-review holds no app id or key"
+          # The app's JWT (RS256, ten minutes at most), signed with the key in a file only this step can read.
+          b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
+          umask 077
+          key="$RUNNER_TEMP/project-review-key.pem"
+          seen="$RUNNER_TEMP/project-review-statuses.jsonl"
+          trap 'rm -f "$key" "$seen"' EXIT
+          printf '%s\n' "$APP_KEY" > "$key"
+          unset APP_KEY                  # no child process gets the key from the environment
+          now=$(date +%s)
+          unsigned="$(printf '{"alg":"RS256","typ":"JWT"}' | b64url).$(printf '{"iat":%d,"exp":%d,"iss":"%s"}' "$((now - 60))" "$((now + 540))" "$APP_ID" | b64url)"
+          sig=$(printf '%s' "$unsigned" | openssl dgst -sha256 -sign "$key" -binary | b64url) || fail "the app's key could not sign"
+          rm -f "$key"
+          auth="$unsigned.$sig"
+          echo "::add-mask::$auth"
+          api() {                        # api METHOD PATH [curl args]: GitHub's answer on stdout, nothing on a failure
+            local method=$1 path=$2; shift 2
+            curl -fsS --proto '=https' -X "$method" -H "Authorization: Bearer $auth" \
+              -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" "$@" "$API/$path"
+          }
+          slug=$(api GET app | jq -er '.slug') || fail "the app could not be read with its key"
+          inst=$(api GET "repos/$REPO/installation" | jq -er '.id') || fail "the app is not installed on this repository"
+          scope=$(jq -cn --arg r "${REPO#*/}" '{repositories: [$r], permissions: {statuses: "write", pull_requests: "read"}}')
+          auth=$(api POST "app/installations/$inst/access_tokens" --data "$scope" | jq -er '.token') || fail "the app got no installation token"
+          echo "::add-mask::$auth"
+
+          # The pull request, as it is now
+          pr=$(api GET "repos/$REPO/pulls/$PR") || fail "pull request $PR could not be read"
+          state=$(jq -r '.state' <<< "$pr"); base=$(jq -r '.base.ref' <<< "$pr"); head=$(jq -r '.head.sha' <<< "$pr")
+          from=$(jq -r '.head.repo.full_name' <<< "$pr")
+          [ "$state" = open ] || fail "pull request $PR is not open"
+          [ "$from" = "$REPO" ] || fail "pull request $PR comes from another repository"
+          # scratch/project-review-proof: the owner's proof that a ruleset takes this app's status (a status there
+          # gates nothing on staging or main)
+          case "$base" in main|staging|scratch/project-review-proof) ;; *) fail "pull request $PR targets neither staging nor main" ;; esac
+          [ "$head" = "$SHA" ] || fail "the head of pull request $PR has moved on from the reviewed commit: review the new head"
+
+          # Every project-review status the app put on the head (GitHub lists them newest first, 100 a page), then the
+          # REAL-GAPs that still stand, per reviewer and report, read oldest first. A page read while statuses are being added can
+          # repeat entries, never skip one, and a repeated stretch of adds and removals leaves the same set.
+          : > "$seen"
+          page=0
+          while :; do
+            page=$((page + 1))
+            [ "$page" -le 10 ] || fail "the head carries more statuses than this run reads"
+            list=$(api GET "repos/$REPO/commits/$SHA/statuses?per_page=100&page=$page") || fail "the head's statuses could not be read"
+            jq -c --arg bot "${slug}[bot]" '[.[] | select(.context == "project-review" and .creator.login == $bot) | {state, description}]' \
+              <<< "$list" >> "$seen" || fail "the head's statuses could not be read"
+            [ "$(jq 'length' <<< "$list")" = 100 ] || break
+          done
+          standing=$(jq -rs '
+            (add // []) | reverse
+            | reduce .[] as $s ({};
+                ((($s.description // "") | capture("^(?<k>Review found a REAL-GAP|Review REAL-GAP withdrawn|Review clear \\(REAL-GAP withdrawn\\)|Review clear): (?<r>[0-9a-f]{12}/[a-z0-9][a-z0-9._-]{0,43}) \\(PR ")) // {k: ""}) as $m
+                | if   $m.k == "Review found a REAL-GAP" and $s.state == "failure" then .[$m.r] = true
+                  elif ($m.k == "Review REAL-GAP withdrawn" and $s.state == "failure") or
+                       ($m.k == "Review clear (REAL-GAP withdrawn)" and $s.state == "success") then del(.[$m.r])
+                  elif $m.k == "Review clear" and $s.state == "success" then .
+                  else error("unreadable") end)
+            | keys | join(" ")' "$seen") || fail "a project-review status of the app's on the head could not be read: fails closed"
+          echo "Standing REAL-GAPs on ${SHA:0:8}: ${standing:-none}"
+          where="(PR $PR to $base)"
+          key="$REVIEWER/$REPORT"
+          case "$VERDICT" in
+            clear)
+              [ -z "$standing" ] || fail "this head has a standing REAL-GAP ($standing): the clear is refused, and that is final for this head; a fix goes to a new head, or its reviewer withdraws it with withdrawn-gap"
+              st=success; text="Review clear: $key $where" ;;
+            real-gap)
+              st=failure; text="Review found a REAL-GAP: $key $where" ;;
+            withdrawn-gap)
+              [[ " $standing " == *" $key "* ]] || fail "no REAL-GAP of reviewer $REVIEWER and report $REPORT stands on this head (standing: ${standing:-none}): a reviewer withdraws only its own"
+              if [ "$standing" = "$key" ]; then
+                st=success; text="Review clear (REAL-GAP withdrawn): $key $where"
+              else
+                st=failure; text="Review REAL-GAP withdrawn: $key $where"     # another REAL-GAP still stands
+              fi ;;
+          esac
+          run_url="$GITHUB_SERVER_URL/$REPO/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT"
+          body=$(jq -cn --arg s "$st" --arg d "$text" --arg u "$run_url" '{state: $s, context: "project-review", description: $d, target_url: $u}')
+          made=$(api POST "repos/$REPO/statuses/$SHA" --data "$body") || fail "the status could not be posted"
+          by=$(jq -r '.creator.login // "(none)"' <<< "$made" 2> /dev/null) || by="(unreadable)"
+          [ "$by" = "${slug}[bot]" ] || fail "the status was posted, but GitHub names its creator $by, not ${slug}[bot]: this run's history reads only ${slug}[bot]'s statuses, so it would miss every REAL-GAP; fix the creator filter before trusting any project-review status"
+          echo "project-review: $st on ${SHA:0:8} (pull request $PR)"
