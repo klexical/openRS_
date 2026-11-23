@@ -544,7 +544,7 @@ class MainActivity : ComponentActivity() {
                         )
 
                         // Last in this Box, over the pages, the bottom nav and the Custom Dashboard. Inside the Scaffold it sat under the last two, unseen and untappable
-                        SnackbarHost(snackbarHostState, Modifier.align(Alignment.BottomCenter).padding(bottom =
+                        AppSnackbarHost(snackbarHostState, Modifier.align(Alignment.BottomCenter).padding(bottom =
                             if (showCustomDash) WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() else navBarClearance()))
                     }
                 }
@@ -614,6 +614,35 @@ class MainActivity : ComponentActivity() {
 //
 // Pulling down ≥40dp on the header opens the DriveModeDock from any tab.
 // ═══════════════════════════════════════════════════════════════════════════
+
+/** The colours of the app's message bar (#368): the theme's own, never Material's default inverse surface. */
+internal data class SnackbarColors(val container: Color, val content: Color, val action: Color, val dismiss: Color)
+
+/**
+ * Read inside a composition: the getters follow the theme mode (NIGHT / DAY / ULTRA). The bar is the raised surface
+ * ([Surf3]) with the primary ink ([Frost]); an action takes the paint accent as DAY's action ink.
+ */
+internal fun snackbarColors(accent: Color): SnackbarColors =
+    SnackbarColors(container = Surf3, content = Frost, action = actionInk(accent), dismiss = Mid)
+
+/**
+ * The one message bar (#368): every message the app shows (copy, drive mode, ESC, connection) goes through it. Placement
+ * stays the caller's (#268: last child of the root Box, above the bottom nav and the Custom Dashboard).
+ */
+@Composable
+internal fun AppSnackbarHost(state: SnackbarHostState, modifier: Modifier = Modifier) {
+    val colors = snackbarColors(LocalThemeAccent.current)
+    SnackbarHost(state, modifier) { data ->
+        Snackbar(
+            data,
+            containerColor = colors.container,
+            contentColor = colors.content,
+            actionColor = colors.action,
+            actionContentColor = colors.action,
+            dismissActionContentColor = colors.dismiss,
+        )
+    }
+}
 
 @Composable fun AppHeader(
     vs: VehicleState,
