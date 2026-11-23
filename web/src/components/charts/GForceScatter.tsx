@@ -5,7 +5,7 @@ import {
 } from 'recharts'
 import { colors, modeColors } from '../../styles/tokens'
 import type { TripPoint } from '../../types/session'
-import { gForceSamples } from '../../lib/gforce'
+import { gForceSamples, modeDotColor } from '../../lib/gforce'
 
 type ColorBy = 'speed' | 'mode'
 
@@ -17,13 +17,7 @@ const speedBands: { min: number; max: number; color: string; label: string }[] =
 ]
 
 function dotColor(point: { speedKph: number; driveMode: string }, colorBy: ColorBy): string {
-  if (colorBy === 'mode') {
-    const m = point.driveMode.toLowerCase()
-    if (m === 'sport') return modeColors.sport
-    if (m === 'track') return modeColors.track
-    if (m === 'drift') return modeColors.drift
-    return modeColors.normal
-  }
+  if (colorBy === 'mode') return modeDotColor(point.driveMode)
   for (const b of speedBands) {
     if (point.speedKph < b.max) return b.color
   }
