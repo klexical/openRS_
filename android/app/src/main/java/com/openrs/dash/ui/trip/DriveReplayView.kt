@@ -7,6 +7,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -17,18 +18,22 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.google.android.gms.maps.CameraUpdateFactory
@@ -44,6 +49,9 @@ import kotlinx.coroutines.delay
 // ═══════════════════════════════════════════════════════════════════════════
 
 private enum class ReplayState { IDLE, PLAYING, PAUSED }
+
+/** The least height the replay's map keeps at any font size (#301); below it the map and readings scroll. */
+private val MIN_MAP_HEIGHT = 160.dp
 
 @Composable
 fun DriveReplayView(
@@ -139,74 +147,86 @@ fun DriveReplayView(
 
         if (previewNotice) Box(Modifier.padding(horizontal = Tokens.PagePad)) { PreviewSheetNotice() }
 
-        // ── Map area ─────────────────────────────────────────────────────
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .weight(1f)
-        ) {
-            DriveMap(
-                points = points.subList(0, (cursorIndex + 1).coerceAtMost(points.size)),
-                colorMode = ColorMode.SPEED,
-                currentLat = currentPoint.lat,
-                currentLng = currentPoint.lng,
-                isRecording = true,  // enables position marker + camera follow
-                cameraPositionState = cameraPositionState
-            )
-            // #285: inside a stretch with no stored sample — say so (no cause: a stored drive doesn't record one) and
-            // offer to jump to the next sample. Top of the map: the bottom carries the Google logo.
-            gap?.let { g ->
+        // #301: map + readings share the height between the header and the controls. When the readings fit, the map takes
+        // the rest (the layout before #301). When a large system font makes them too tall, the map keeps MIN_MAP_HEIGHT and
+        // this part scrolls (map, then readings); the controls below stay fixed, so the transport row is always on screen.
+        BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
+            val viewport = constraints.maxHeight
+            val scroll = rememberScrollState()
+            MapThenReadouts(
+                viewportPx = viewport,
+                modifier = Modifier.fillMaxWidth().verticalScroll(scroll, enabled = scroll.maxValue > 0)
+            ) {
+                // ── Map area ─────────────────────────────────────────────────────
+                Box(Modifier.fillMaxWidth()) {
+                    DriveMap(
+                        points = points.subList(0, (cursorIndex + 1).coerceAtMost(points.size)),
+                        colorMode = ColorMode.SPEED,
+                        currentLat = currentPoint.lat,
+                        currentLng = currentPoint.lng,
+                        isRecording = true,  // enables position marker + camera follow
+                        cameraPositionState = cameraPositionState
+                    )
+                    // #285: inside a stretch with no stored sample — say so (no cause: a stored drive doesn't record one) and
+                    // offer to jump to the next sample. Top of the map: the bottom carries the Google logo.
+                    gap?.let { g ->
+                        Box(
+                            Modifier
+                                .align(Alignment.TopCenter)
+                                .padding(top = 8.dp)
+                                .heightIn(min = 48.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Surf2)
+                                .border(Tokens.CardBorder, Brd, RoundedCornerShape(8.dp))
+                                .clickable(onClickLabel = "Skip gap") { position = g.toMs }
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            MonoText(
+                                "NO DATA ${ReplayTimeline.formatClock(g.toMs - g.fromMs)} \u00B7 SKIP GAP",
+                                12.sp, Frost, FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+
+                // ── HUD: one readings panel (was eight DataCell cards); boost in the user's unit ──
+                // In a gap no reading is current: every value reads "— —" (the marker stays at the last sample).
                 Box(
                     Modifier
-                        .align(Alignment.TopCenter)
-                        .padding(top = 8.dp)
-                        .heightIn(min = 48.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Surf2)
-                        .border(Tokens.CardBorder, Brd, RoundedCornerShape(8.dp))
-                        .clickable(onClickLabel = "Skip gap") { position = g.toMs }
-                        .padding(horizontal = 14.dp, vertical = 12.dp),
-                    contentAlignment = Alignment.Center
+                        .fillMaxWidth()
+                        .padding(horizontal = Tokens.PagePad, vertical = 8.dp)
                 ) {
-                    MonoText(
-                        "NO DATA ${ReplayTimeline.formatClock(g.toMs - g.fromMs)} \u00B7 SKIP GAP",
-                        12.sp, Frost, FontWeight.Bold
+                    val inGap = gap != null
+                    fun v(text: String) = if (inGap) "\u2014 \u2014" else text
+                    val oilText = if (currentPoint.oilTempC > -90)
+                        "${prefs.displayTemp(currentPoint.oilTempC)}${prefs.tempLabel}" else "\u2014 \u2014"
+                    val cltText = if (currentPoint.coolantTempC > -90)
+                        "${prefs.displayTemp(currentPoint.coolantTempC)}${prefs.tempLabel}" else "\u2014 \u2014"
+                    val boost = prefs.boostPsi(currentPoint.boostPsi).let { it.value to it.unit }
+                    ReadoutGrid(
+                        rows = listOf(
+                            listOf(Readout("SPEED", v(prefs.speed(currentPoint.speedKph).text)),
+                                Readout("RPM", v("${currentPoint.rpm}")),
+                                Readout("GEAR", v(currentPoint.gear.ifEmpty { "\u2014 \u2014" })),
+                                // #207: the point's own source when recorded (TIP / BOOST); no reading → "— —"; points from
+                                // before sources were stored: as recorded, "source not recorded"
+                                com.openrs.dash.data.StoredBoost.point(currentPoint).let { b ->
+                                    Readout(b.label, v(if (b == com.openrs.dash.data.StoredBoost.Unavailable) "\u2014 \u2014" else "${boost.first} ${boost.second}"),
+                                        sub = if (b is com.openrs.dash.data.StoredBoost.Legacy) "src n/r" else null)
+                                }),
+                            // #229: a drive saved without this build's 0x0F8 mapping — oil as recorded, said so
+                            listOf(Readout("OIL", v(oilText),
+                                    sub = if (com.openrs.dash.data.OilPtuMapping.isCurrent(drive.oilPtuMapping)) null
+                                          else com.openrs.dash.data.OilPtuMapping.UNKNOWN_TAG),
+                                Readout("COOLANT", v(cltText)),
+                                Readout("LAT G", v("%.2f g".format(currentPoint.lateralG))),
+                                Readout("MODE", v(currentPoint.driveMode.uppercase()))),
+                        ),
+                        dense = true
                     )
                 }
             }
-        }
-
-        // ── HUD: one readings panel (was eight DataCell cards); boost in the user's unit ──
-        // In a gap no reading is current: every value reads "— —" (the marker stays at the last sample).
-        Box(Modifier.fillMaxWidth().padding(horizontal = Tokens.PagePad, vertical = 8.dp)) {
-            val inGap = gap != null
-            fun v(text: String) = if (inGap) "\u2014 \u2014" else text
-            val oilText = if (currentPoint.oilTempC > -90)
-                "${prefs.displayTemp(currentPoint.oilTempC)}${prefs.tempLabel}" else "\u2014 \u2014"
-            val cltText = if (currentPoint.coolantTempC > -90)
-                "${prefs.displayTemp(currentPoint.coolantTempC)}${prefs.tempLabel}" else "\u2014 \u2014"
-            val boost = prefs.boostPsi(currentPoint.boostPsi).let { it.value to it.unit }
-            ReadoutGrid(
-                rows = listOf(
-                    listOf(Readout("SPEED", v(prefs.speed(currentPoint.speedKph).text)),
-                        Readout("RPM", v("${currentPoint.rpm}")),
-                        Readout("GEAR", v(currentPoint.gear.ifEmpty { "\u2014 \u2014" })),
-                        // #207: the point's own source when recorded (TIP / BOOST); no reading → "— —"; points from
-                        // before sources were stored: as recorded, "source not recorded"
-                        com.openrs.dash.data.StoredBoost.point(currentPoint).let { b ->
-                            Readout(b.label, v(if (b == com.openrs.dash.data.StoredBoost.Unavailable) "\u2014 \u2014" else "${boost.first} ${boost.second}"),
-                                sub = if (b is com.openrs.dash.data.StoredBoost.Legacy) "src n/r" else null)
-                        }),
-                    // #229: a drive saved without this build's 0x0F8 mapping — oil as recorded, said so
-                    listOf(Readout("OIL", v(oilText),
-                            sub = if (com.openrs.dash.data.OilPtuMapping.isCurrent(drive.oilPtuMapping)) null
-                                  else com.openrs.dash.data.OilPtuMapping.UNKNOWN_TAG),
-                        Readout("COOLANT", v(cltText)),
-                        Readout("LAT G", v("%.2f g".format(currentPoint.lateralG))),
-                        Readout("MODE", v(currentPoint.driveMode.uppercase()))),
-                ),
-                dense = true
-            )
         }
 
         // ── Controls ─────────────────────────────────────────────────────
@@ -278,6 +298,25 @@ fun DriveReplayView(
             }
 
             Spacer(Modifier.height(8.dp))
+        }
+    }
+}
+
+/**
+ * Lays out two children, the map and the readings panel, in [viewportPx] of height (#301). The readings take their own
+ * height; the map takes the rest, never less than [MIN_MAP_HEIGHT]. When both don't fit, the result is taller than the
+ * viewport and the caller's vertical scroll covers the difference.
+ */
+@Composable
+private fun MapThenReadouts(viewportPx: Int, modifier: Modifier, content: @Composable () -> Unit) {
+    Layout(content = content, modifier = modifier) { measurables, c ->
+        val (map, readouts) = measurables
+        val r = readouts.measure(c.copy(minHeight = 0, maxHeight = Constraints.Infinity))
+        val mapH = maxOf(MIN_MAP_HEIGHT.roundToPx(), viewportPx - r.height)
+        val m = map.measure(Constraints.fixed(c.maxWidth, mapH))
+        layout(c.maxWidth, mapH + r.height) {
+            m.place(0, 0)
+            r.place(0, mapH)
         }
     }
 }

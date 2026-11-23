@@ -339,6 +339,9 @@ ui/
                             Title row: the title (FlowRow, version drops to a second line) takes only the width the
                             48 dp ✕ leaves; ✕ top-aligned (#508, WhatsNewTitleFitTest: 360 dp, font 1.0 / 1.3 / 2.0, stable / RC / nightly)
   trip/
+    DriveReplayView.kt    — Drive replay: header, map + readings, fixed slider + transport row. The readings take their
+                            height and the map the rest, never under MIN_MAP_HEIGHT (160 dp); past that, map + readings
+                            scroll (large system fonts, #301, DriveReplayFitTest)
     DriveHistory.kt       — rc.7 (#228) — TRIP history: observe (Room Flow, the list's only source) + delete / tags / rename
                             (writes only — never re-read the list by hand)
     DriveMap.kt           — Google Maps Compose wrapper: 6 color modes (SPD/MODE/BOOST/THRTL/G-LAT/TEMP),
