@@ -122,10 +122,9 @@ for editing them:
   test or a CI check fails on when it is broken is not kept here: the test is the rule, and its name and KDoc carry the
   reason. An entry stays when its rule binds code not yet written ("any new writer …"), when it records evidence or an
   unverified point (hardware, emulator-only, a source read but not run), when an owner decision behind it is not in a
-  test, or when `CODING_STANDARDS.md` points at it or at its file. A pointer that names a file alone, with no entry
-  title, keeps every entry in that file.
-- `CODING_STANDARDS.md` points at rule files, by file alone or by file and title, and the CI reviewer reads the rule file
-  a standard points to. Renaming or removing an entry it reaches changes a review rule: change `CODING_STANDARDS.md` in
+  test, or when `CODING_STANDARDS.md` points at it.
+- `CODING_STANDARDS.md` points at rule-file entries by file and title, and the CI reviewer reads the entry a standard
+  points to. Renaming or removing an entry it reaches changes a review rule: change `CODING_STANDARDS.md` in
   the same round (it is a twin, see "Branch / Release Workflow").
 
 | File | Area | Loads when a matching file is read / edited |
