@@ -192,4 +192,22 @@ class ReplyCountTest {
         assertEquals("the older request is lost, not pending", 1, m.noReply)
         assertEquals(1, m.positive); assertEquals(1, m.pendingOnly); assertEquals(0, m.unmatched)
     }
+
+    @Test fun `an older request's answer leaves a newer request's response pending in place, in both orders`() {
+        fun run(bluetooth: Boolean): ReplyCount.Module {
+            val c = ReplyCount()
+            c.request(req("703", "DD01"), 0, sent, 40)
+            if (bluetooth) { c.reply(0x70B, pending, 150); c.request(req("703", "DD02"), 100, sent, 160) }
+            else { c.request(req("703", "DD02"), 100, sent, 140); c.reply(0x70B, pending, 150) }
+            c.reply(0x70B, pos("DD01"), 200)                                                 // the older request's answer
+            c.reply(0x70B, pos("DD02"), 3_000)                                               // the newer one's, after its 78
+            return c.read(20_000).first { it.responseId == 0x70B }
+        }
+        for (bluetooth in listOf(false, true)) {
+            val m = run(bluetooth)
+            assertEquals("bluetooth order = $bluetooth: both answered, nothing lost, late or unmatched",
+                listOf(2, 0, 0, 0, 0), listOf(m.positive, m.noReply, m.late, m.unmatched, m.pendingOnly))
+        }
+        assertEquals(run(false).counts(), run(true).counts())
+    }
 }

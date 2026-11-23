@@ -142,9 +142,13 @@ class ReplyCount {
         m.missRun.remove(did)
     }
 
-    /** [r] got its final reply at [atMs]: a response pending still held from its own wait was its own. */
+    /**
+     * [r] got its final reply at [atMs]: a response pending still held from its own wait was its own, unless a newer
+     * waiting request began before it (then it is that request's, the newest that began before it).
+     */
     private fun final(m: Live, r: Request, atMs: Long) {
-        m.held.removeAll { it.pending && it.atMs >= r.stampMs && it.atMs <= atMs }
+        m.held.removeAll { h -> h.pending && h.atMs >= r.stampMs && h.atMs <= atMs &&
+            m.waiting.none { w -> w.stampMs > r.stampMs && w.stampMs <= h.atMs } }
         answered(m, r.did, atMs - r.stampMs)
     }
 
