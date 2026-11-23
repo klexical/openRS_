@@ -71,7 +71,8 @@ can/
   ReceptionStall.kt       — gaps on an open connection (#356): frames per quarter second of elapsedRealtime against the
                             connection's own rate (frames over time outside gaps); a gap whose next half second holds a burst
                             of queued frames = RECEPTION_STALL, any other = QUIET_SPAN (claims no cause); a gap with no frame
-                            after its first quarter, then the connection's end = nothing; stamped at its start. Pure, one per
+                            after its first quarter, then the connection's end = nothing; stamped at its start. A gap past
+                            the bound or a low start (#513) = one QUIET_SPAN with its full length. Pure, one per
                             connection, fed by SlcanConnection's frame loop. Names gaps; prevents nothing
   EscCommand.kt           — ESC request + confirmation (#125): window = firmware press plan + 3 s; only a 0x1C0 frame
                             stamped after the request on the same link generation confirms; one request at a time (Busy)
@@ -148,6 +149,8 @@ diagnostics/
                             sessionTransport field: transport label for diagnostic reports and share intents
   DiagnosticExporter.kt   — ZIP orchestrator + share intents + crash history; delegates format generation
                             to DiagnosticReportBuilder and DriveExportBuilder; rc.6 adds drive_knock_session_*.csv (KnockSessionLog)
+                            putBuildIdentity: the build + the Android release and API level, nothing else about the
+                            phone (#373), in every manifest.json and the detail JSON's meta
   DiagnosticReportBuilder.kt — Diagnostic summary text + JSON detail (JSONObject/JSONArray, no hand-rolled strings);
                             `buildSummaryAndDetail` takes one `ExportCounters` snapshot (linkIntegrity / logLimits /
                             nrcUnattributedTotal agree between summary and detail on a live export); UI TIMING / `uiTiming` (#421)
@@ -203,6 +206,7 @@ ui/
                             Scaffold uses contentWindowInsets=statusBars (content extends behind nav bar)
                             hazeSource on content Box inside Scaffold (NOT outer Box — see Haze gotcha)
                             enableEdgeToEdge with transparent navigation bar style
+                            AppSnackbarHost: the one message bar, in the theme's Surf3 / Frost (#368; placement #268)
   DrivePage.kt             — DRIVE tab: StatusLine (permanent 48 dp row: OVERHEATING › critical tyre alert › TEMPERATURE
                             HIGH / HEAT RISING › other alerts (3 s hold) › rest of the ThermalVerdict; temps come only from
                             the verdict — "OVERHEATING  oil 268°F ↑  +4"),
@@ -303,7 +307,9 @@ ui/
                             2-way adapter picker (MeatPi USB / Pro) + connection method toggle (WiFi / Bluetooth)
                             Design pass: instrument-panel sections, SettingsPicker (accent tint + actionInk; stacked full
                             width where options don't fit at 360 dp), 48 dp rows / actions; every exit except SAVE reverts
-                            the live theme / font / paint preview (`cancel()`). Public SegmentedPicker is PERF's (unchanged)
+                            the live theme / font / paint preview (`cancel()`). Public SegmentedPicker (PERF's knock scope too):
+                            options are radio buttons in a selectable group, short Region names spoken in full (#504); a
+                            full-width row widens an option that an equal share would wrap (`FillRow`, #507)
   anim/
     EdgeShiftLight.kt     — Peripheral shift light: multi-zone edge glow overlay (breathing → fill → flash)
                             Three phases keyed to shiftRpm: 70% breathing, 81% progressive, 95.5% flash
@@ -319,6 +325,7 @@ ui/
     CarDiagram.kt           — TopDownCar: approved top-down RS art (body in ink, tyres tinted per state, TOPDOWN_ASPECT,
                             WHEEL_ANCHORS measured from the tyre layer)
   PidBrowserSection.kt    — DIAG tab: expandable FORScan catalog per module with coverage bar
+                            Long press copies the DID; the app's own "Copied" message only below API 33 (copyPidDid, #368)
   RequestCaptureRow.kt    — DIAG's Request capture switch beside the DID prober (#209): the owner's label and text as constants
   DidProberSection.kt     — DIAG tab: interactive Mode 22 scanner for any ECU+DID (UI only; the scan runs in
                             diagnostics/DidProbeScan.kt)
