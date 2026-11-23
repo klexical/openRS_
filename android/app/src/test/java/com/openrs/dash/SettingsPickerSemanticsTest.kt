@@ -91,14 +91,13 @@ class SettingsPickerSemanticsTest {
             assertEquals("$r: region options", Region.entries.size, regionOpts.size)
             assertEquals("$r: one region group", 1, regionOpts.mapNotNull { it.groupId }.distinct().size)
             assertEquals("$r: selected region", listOf(r.label), regionOpts.filter { it.selected == true }.map { it.text })
-            for (row in UNIT_ROWS) {
-                val labels = row.options.map { it.second }
-                // Several rows share option labels (psi / bar / kPa), so take this row's run of options in tree order
-                val start = all.indexOfFirst { it.text == labels.first() && all.drop(all.indexOf(it)).take(labels.size)
-                    .map { o -> o.text } == labels && it.groupId !in regionOpts.map { o -> o.groupId } &&
-                    all.filter { o -> o.groupId == it.groupId }.map { o -> o.text } == labels }
-                assertTrue("$r / ${row.label}: options not found as one group", start >= 0)
-                val opts = all.subList(start, start + labels.size)
+            // The unit rows' groups in tree order (several rows share option labels: psi / bar / kPa)
+            val regionGroup = regionOpts.first().groupId
+            val groups = all.mapNotNull { it.groupId }.distinct().filter { it != regionGroup }
+            assertEquals("$r: one group per unit row", UNIT_ROWS.size, groups.size)
+            for ((row, g) in UNIT_ROWS.zip(groups)) {
+                val opts = all.filter { it.groupId == g }
+                assertEquals("$r / ${row.label}: options", row.options.map { it.second }, opts.map { it.text })
                 val chosen = row.options.first { it.first == row.get(units) }.second
                 assertEquals("$r / ${row.label}: selected", listOf(chosen), opts.filter { it.selected == true }.map { it.text })
             }
