@@ -46,8 +46,12 @@ sha() { g rev-parse "$1"; }
 OUT=$T/out
 scan() { # scan [<base>]: runs the check as the workflow does; base defaults to main's tip, staging's and main's tips excluded
   local base; base=$(sha "${1:-main}")
+  # the event's head is the head scanned, as GitHub's payload gives it; EVHEAD=<sha> names another, EVHEAD=none none.
+  # LABELS: the labels the pull request carries, space-separated
   jq -n --arg t "${TITLE:-}" --arg b "${BODY:-}" --arg r "${BRANCH:-feature/x}" --arg a "${ACTION:-synchronize}" \
-    --arg l "${LABEL:-}" --arg n "${PRNUM-7}" '{action: $a, pull_request: ({title: $t, body: $b, head: {ref: $r}}
+    --arg l "${LABEL:-}" --arg n "${PRNUM-7}" --arg h "${EVHEAD:-$(sha HEAD)}" --arg ls "${LABELS:-}" \
+    '{action: $a, pull_request: ({title: $t, body: $b, head: ({ref: $r} + (if $h == "none" then {} else {sha: $h} end)),
+          labels: [$ls | splits(" +") | select(. != "") | {name: .}]}
         + (if $n == "" then {} else {number: (try ($n | tonumber) catch $n)} end))}
       + (if $l == "" then {} else {label: {name: $l}} end)' > "$T/event.json"
   (cd "$T/r" && PRIVACY_IDENTIFIERS=${LIST-$LISTV} GITLEAKS=${GL-$STUB} GITHUB_EVENT_PATH=${EVENT-$T/event.json} \
@@ -253,6 +257,19 @@ ACTION=labeled LABEL=privacy-ok-compressed run 0 "the label privacy-ok-compresse
 ACTION=labeled LABEL=bug run 1 "another label being added is no OK" "compressed file (gzip) data.gz (needs a reviewer's OK"
 ACTION=synchronize LABEL=privacy-ok-compressed run 1 "a later push's run is no OK, even with the label on the event" \
   "compressed file (gzip) data.gz (needs a reviewer's OK"
+# the OK is bound to the head it was given on: the label event's own head must be the head scanned
+commit "a later commit, the gzip still in the range"
+EVHEAD=$(sha HEAD~1) ACTION=labeled LABEL=privacy-ok-compressed run 1 "the label added at an older head is no OK for this head" \
+  "compressed file (gzip) data.gz (needs a reviewer's OK" \
+  "the label privacy-ok-compressed was added at head $(sha HEAD~1 | cut -c1-12), not the head scanned ($(c12)): no OK for it"
+EVHEAD=none ACTION=labeled LABEL=privacy-ok-compressed run 1 "a label event that names no head is no OK" \
+  "compressed file (gzip) data.gz (needs a reviewer's OK" "the label privacy-ok-compressed event names no head: no OK"
+EVHEAD=$(sha HEAD) ACTION=labeled LABEL=privacy-ok-compressed run 0 "the label added at the head scanned is the OK" \
+  "REVIEWED $(sha HEAD~1 | cut -c1-12): compressed file (gzip) data.gz" "0 finding(s) in all"
+for a in ready_for_review edited reopened synchronize; do
+  ACTION=$a LABELS="bug privacy-ok-compressed" run 1 "the label on the pull request at a $a event is no OK" \
+    "compressed file (gzip) data.gz (needs a reviewer's OK"
+done
 repo; g checkout -q -b feature; put icon.png '\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR'; commit "a PNG"
 run 1 "a PNG needs a reviewer's OK" "FINDING $(c12): compressed file (PNG) icon.png"
 repo; g checkout -q -b feature; put "$ID1.gz" '\x1f\x8b\x08\x00'; commit "a gzip with an identifier in its name"
@@ -809,6 +826,42 @@ STUB_REPORT_DIR=$T/dir-report run 1 "a gitleaks dir finding is printed by rule a
   "gitleaks rule generic-api-key" "gitleaks findings 1"
 grep -q -F -e "$(sed -n 1p "$STUB_ARGS.dir.src")" -e "/$f1" "$OUT" && { fail=$((fail+1)); echo "FAIL the dir finding printed the scan's own file name"; } || { pass=$((pass+1)); echo "PASS the dir finding names its place, not the scan's file"; }
 PLANTED=
+
+# ── privacy-scan.yml's fetch step: the event's own head, the PR head now or one the PR moved on from ───────────────
+# The step runs as GitHub runs it (bash -eo pipefail), against a local stand-in for github.com (url.insteadOf), so it
+# fetches the stand-in's branches and its refs/pull/7/head. WF=<path> tests another copy of the workflow (red first)
+WF=${WF:-$HERE/../workflows/privacy-scan.yml}
+if command -v ruby > /dev/null; then
+  STEP=$(ruby -ryaml -e 'wf = YAML.safe_load(File.read(ARGV[0]), aliases: false)
+    print wf["jobs"]["privacy-scan"]["steps"].find { |x| x["run"].to_s.include?("git fetch") }["run"]' "$WF")
+  repo; mkdir -p "$T/r/.github/scripts"; put .github/scripts/privacy-scan.sh 'echo stand-in\n'; commit "the script on main"
+  g checkout -q -b feature; put f.txt 'one\n'; commit "first head"; put f.txt 'one\nb\n'; commit "second head"
+  g checkout -q main; put m.txt 'm\n'; commit "main moves on"; g checkout -q feature
+  rm -rf "$T/remote.git"; git clone -q --bare "$T/r" "$T/remote.git"
+  git -C "$T/remote.git" update-ref refs/pull/7/head "$(sha feature)"
+  git -C "$T/remote.git" config uploadpack.allowAnySHA1InWant true
+  fetch_step() { # fetch_step <event head sha>: the step for PR 7, its base main's tip, run on a fresh runner folder
+    rm -rf "$T/rt"; mkdir "$T/rt"
+    (cd "$T/rt" && env -u GIT_DIR RUNNER_TEMP="$T/rt" GITHUB_SHA="$(sha main)" REPO=o/r PR=7 HEAD="$1" BASE="$(sha main~1)" \
+      GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="url.file://$T/remote.git.insteadOf" GIT_CONFIG_VALUE_0="https://github.com/o/r" \
+      bash --noprofile --norc -eo pipefail -c "$STEP") > "$OUT" 2>&1
+  }
+  fetch_step "$(sha feature)"; rc=$?
+  { [ "$rc" -ne 0 ] || [ "$(cat "$T/rt/tips")" = "$(sha staging) $(sha main)" ] && [ -s "$T/rt/privacy-scan.sh" ] \
+      && ! grep -q "moved on" "$OUT"; } || rc=9
+  expect 0 "the fetch step: the event's head is the PR head, which is fetched and scanned" "$rc"
+  fetch_step "$(sha feature~1)"; rc=$?
+  { [ "$rc" -ne 0 ] || [ "$(cat "$T/rt/tips")" = "$(sha staging) $(sha main)" ]; } || rc=9
+  expect 0 "the fetch step: a head the PR has moved on from is scanned, not a red" "$rc" \
+    "the PR head has moved on to $(sha feature) since this event: this run scans the event's own head $(sha feature~1)"
+  fetch_step "$(sha main)"
+  expect 1 "the fetch step: a head outside the PR head's history (one a force-push dropped) fails closed" $? \
+    "the event's head $(sha main) is not in the PR head's history (now $(sha feature)): fails closed"
+  fetch_step "$(printf 'f%.0s' {1..40})"
+  expect 1 "the fetch step: a head that is not a commit here fails closed" $? "is not in the PR head's history"
+else
+  fail=$((fail+1)); echo "FAIL the fetch step's cases need ruby (CI's runner has it)"
+fi
 
 # ── gitleaks, the real binary (the workflow runs this part) ─────────────────────────────────────────────────────────
 if [ -n "${GITLEAKS_REAL:-}" ]; then

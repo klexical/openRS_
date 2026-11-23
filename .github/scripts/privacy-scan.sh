@@ -44,8 +44,8 @@
 # compressed file (gzip, bzip2, xz, zstd, tar, PNG, JPEG, PDF, 7z and the like, found by its magic at the start), a
 # compressed or binary ZIP member, a Git LFS pointer, a workflow or action file that names the privacy-scan check, and
 # an image or attachment in the pull request's title or description are each a finding until a reviewer's OK: the
-# label privacy-ok-compressed being added to the pull request (that label event's run only, so a later push needs a
-# new OK).
+# label privacy-ok-compressed being added to the pull request (that label event's run only, and only when the event's
+# head is the head scanned, so a later push needs a new OK; the label on the pull request at any other event is no OK).
 # Base64 on any scanned line, a run of 8 characters or more (or wrapped over several lines, the last one short), is
 # decoded, padded rather than cut, and decoded again if it is base64 itself; gzip, zlib, bzip2, xz and lzma found in
 # it by their checksummed formats are decompressed. Wrapped base64 whose pieces share their lines with other text is
@@ -56,7 +56,8 @@
 # shorter runs are not pieces. A list match in any of these is a finding; a run that decodes to a compressed file of
 # 100 bytes or more (an embedded image) needs the same OK. Not covered: raw deflate inside base64,
 # base32, ascii85, uuencode, rot13, quoted-printable, hex dumps, homoglyphs, an identifier split across lines, a
-# shorter entry spelled another way, what an OK'd binary holds inside (SQLite, PDF and the like), and a check name the
+# shorter entry spelled another way, raw MAC bytes on a scanned line (a line is text, which carries no raw bytes: they
+# are matched in files read whole), what an OK'd binary holds inside (SQLite, PDF and the like), and a check name the
 # workflow-file OK misses (built by an expression, a YAML escape or an escaped line break, or a check run made through
 # the API); the merge step confirms the check's source, see the PR text.
 # gitleaks, default rules only (its config is the scan's own), base64 decoded, its inline allow marker ignored, twice:
@@ -796,8 +797,16 @@ if [ -s "$T/glctl" ]; then withhold "$T/glctl" | fmt >> "$T/out.allow"; fi
 if [ -s "$T/zipbad" ]; then withhold "$T/zipbad" | fmt >> "$T/out.bin"; fi
 # compressed files other than a ZIP's readable members: a finding, unless this run is a reviewer's OK, the label
 # privacy-ok-compressed being added to the pull request (that label event's run only: any later push runs again
-# without it, so an OK covers the head it was given on)
-reviewed=$(jq -r '(.action == "labeled") and (.label.name? == "privacy-ok-compressed")' "$GITHUB_EVENT_PATH")
+# without it). The OK covers the head it was given on: the label event's own head must be the head scanned here, so
+# an event that names no head, or another one, is no OK
+okat=$(jq -r 'if (.action == "labeled") and (.label.name? == "privacy-ok-compressed")
+  then (.pull_request.head.sha? | if type == "string" and test("^[0-9a-f]{40}$") then . else "none" end) else "" end' \
+  "$GITHUB_EVENT_PATH")
+reviewed=false; [ -z "$okat" ] || [ "$okat" != "${head:-}" ] || reviewed=true
+if [ -n "$okat" ] && [ "$reviewed" = false ]; then
+  if [ "$okat" = none ]; then echo "the label privacy-ok-compressed event names no head: no OK for head ${head:0:12}"
+  else echo "the label privacy-ok-compressed was added at head ${okat:0:12}, not the head scanned (${head:0:12}): no OK for it"; fi
+fi
 : > "$T/out.comp"; : > "$T/out.reviewed"
 if [ -s "$T/compressed" ]; then
   if [ "$reviewed" = true ]; then withhold "$T/compressed" | fmt | sed 's/^FINDING /REVIEWED /' > "$T/out.reviewed"

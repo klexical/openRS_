@@ -20,7 +20,9 @@ name: Privacy scan
 
 on:
   pull_request_target:               # the one such workflow: main's code only, see above
-    types: [opened, synchronize, reopened, edited, ready_for_review, labeled, unlabeled]   # labeled: a reviewer's OK; unlabeled takes it back
+    # labeled: a reviewer's OK; unlabeled takes it back. Not ready_for_review: leaving draft changes neither the head
+    # nor the PR's text, so a run there would only replace the label event's run, and with it an OK given on this head
+    types: [opened, synchronize, reopened, edited, labeled, unlabeled]
     branches: [staging, main]
 
 permissions: {}
@@ -51,7 +53,13 @@ jobs:
           git fetch -q --no-tags "https://github.com/$REPO" \
             "+refs/heads/staging:refs/remotes/origin/staging" "+refs/heads/main:refs/remotes/origin/main" \
             "+refs/pull/$PR/head:refs/remotes/pr/head" "$GITHUB_SHA"
-          [ "$(git rev-parse refs/remotes/pr/head)" = "$HEAD" ] || { echo "the fetched PR head is not $HEAD"; exit 1; }
+          # the event's own head is scanned, and its check run lands on it: the PR head now, or one the PR has moved on
+          # from since the event (a push soon after it, or a re-run of an older event), which is still in the PR head's
+          # history, so it was fetched with it. Any other head (one a force-push dropped) fails closed
+          now=$(git rev-parse refs/remotes/pr/head)
+          git cat-file -e "$HEAD^{commit}" 2>/dev/null && git merge-base --is-ancestor "$HEAD" "$now" \
+            || { echo "the event's head $HEAD is not in the PR head's history (now $now): fails closed"; exit 1; }
+          [ "$now" = "$HEAD" ] || echo "the PR head has moved on to $now since this event: this run scans the event's own head $HEAD"
           [ -z "$(git ls-files)" ] || { echo "a working tree exists: nothing of the PR may be checked out"; exit 1; }
           git show "$GITHUB_SHA:.github/scripts/privacy-scan.sh" > "$RUNNER_TEMP/privacy-scan.sh"
           git cat-file -e "$BASE^{commit}" 2>/dev/null || git fetch -q --no-tags "https://github.com/$REPO" "$BASE"
