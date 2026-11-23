@@ -48,7 +48,12 @@ name: project-review
 # No checkout, no `uses:` and no GITHUB_TOKEN permission: this workflow needs no actions.lock entry, runs nothing of a
 # pull request and no third-party code with the key. Its tests: .github/scripts/test-project-review.rb.
 
-run-name: "project-review: pull request ${{ inputs.pr }}, ${{ inputs.verdict }}"
+# The run's name is public. GitHub does not enforce `type: number` on a REST dispatch, so the number reaches the name
+# only through this guard: a whole number from 1 to 999999 shows as its digits, anything else as "refused (not a
+# number)", and a few values (such as "0x10") stop the run before it starts. The input check in the second step then fails
+# the run, so it posts nothing. The verdict is a choice, which GitHub does enforce.
+run-name: >-
+  project-review: pull request ${{ inputs.pr >= 1 && inputs.pr <= 999999 && !contains(format('{0}', fromJSON(inputs.pr)), '.') && format('{0}', fromJSON(inputs.pr)) || 'refused (not a number)' }}, ${{ inputs.verdict }}
 
 on:
   workflow_dispatch:
