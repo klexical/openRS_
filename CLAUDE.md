@@ -141,7 +141,7 @@ for editing them:
 | `ble.md` | BLE GATT transport and picker | `Ble*.kt`, `BleDevicePickerDialog.kt`, `SlcanConnection.kt`, `*Ledger*`, `WriteOutcome.kt`, their tests |
 | `recorder-trip.md` | Drive recorder, laps and the TRIP tab | `DriveRecorder.kt`, `data/Drive*.kt`, lap files, `ui/trip/` (incl. `TripPage.kt`), `TripPreview.kt`, `MainActivity.kt`, `DriveExportBuilder.kt`, their tests |
 | `diagnostics.md` | DTC scans, DID prober, diagnostic export | `diagnostics/`, `DiagPage.kt`, `SlcanConnection.kt`, `*Ledger*`, `CanDataService.kt`, `DidProberSection.kt`, `PidBrowserSection.kt`, `data/Dtc*.kt`, their tests |
-| `ui-compose.md` | Compose UI (layout, theme, navigation); theme colours, AppSettings defaults | any file under `ui/` or `res/`, `HudOverlayService.kt` |
+| `ui-compose.md` | Compose UI (layout, theme, navigation) | any file under `ui/` or `res/`, `HudOverlayService.kt` |
 | `thermal.md` | Thermal readiness, temperature freshness, drive thermal record | any `*Thermal*` file, `TempsPage.kt` (home of `TempAvail`), `ChassisPage.kt`, `DrivePage.kt`, `DriveRecorder.kt`, their tests |
 | `demo-mode.md` | Demo mode (debug builds) | any file under `com/openrs/dash/` (its rules bind every writer of live telemetry) |
 | `build-release.md` | Build, release identity, CI, private builds, test runtime; RCs, nightlies, stable, the release checklist, changelog format, release notes | Gradle files, `android/scripts/`, `android/CHANGELOG.md`, `android/changelog.d/`, `robolectric.properties`, `update/`, `BuildInfo*`, `*Version*`, `.github/workflows/` |
