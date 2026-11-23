@@ -10,6 +10,7 @@ trim_trailing_whitespace = true
 
 [*.{kt,kts}]
 indent_size = 4
+# Advisory only: no lint, formatter or CI check enforces it, and existing files exceed it.
 max_line_length = 120
 
 [*.{xml,json}]

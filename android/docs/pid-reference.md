@@ -58,7 +58,7 @@ The following PCM Mode 22 PIDs are polled by the app every 30 seconds via ISO-TP
 | 0x054B | Oil Life | `22054B` | 1 | A | % | 3 | DigiCluster |
 | 0x03E8 | Octane Adjust Ratio | `2203E8` | 2 | (signed(A)×256+B) / 16384 | ratio | 3 | DigiCluster |
 | 0x0461 | Charge Air Temp | `220461` | 2 | (signed(A)×256+B) / 64 | °C | 2 | DigiCluster |
-| 0xF422 | HP Fuel Rail Pressure | `22F422` | 2 | (A×256+B) × 1.45038 | PSI | 2 | DigiCluster |
+| 0xF423 | HP Fuel Rail Pressure | `22F423` | 2 | (A×256+B) × 1.45038 (10 kPa per bit) | PSI | 2 | SAE J1979 PID 0x23 (direct-injection rail); F422 (PID 0x22, port injection) answers NRC 0x31 on this PCM ([#198](https://github.com/klexical/openRS_/issues/198)) |
 | 0xF43C | Catalytic Temp | `22F43C` | 2 | (A×256+B) / 10 − 40 | °C | 3 | DigiCluster |
 
 ### Boost / TIP pressure — what each claim rests on ([#207](https://github.com/klexical/openRS_/issues/207))
