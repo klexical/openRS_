@@ -27,6 +27,8 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Rect
+import android.graphics.Region
+import android.graphics.RegionIterator
 import com.github.takahirom.roborazzi.RoborazziOptions
 import com.github.takahirom.roborazzi.RoborazziTaskType
 import com.github.takahirom.roborazzi.captureRoboImage
@@ -196,7 +198,10 @@ class MainScreensScreenshotTest(private val fontScale: Float) {
                 val file = if (page == 1) "${name}_$font" else "${name}_p${page}_$font"
                 val shot = screen(file)
                 val paint = Paint().apply { color = MASK }
-                Canvas(shot).apply { masks().forEach { drawRect(it, paint) } }
+                Canvas(shot).apply {
+                    val r = Rect()
+                    masks().forEach { region -> RegionIterator(region).let { while (it.next(r)) drawRect(r, paint) } }
+                }
                 shot.captureRoboImage("src/testDebug/screenshots/$file.png", options)
                 if (!paged || fontScale > 1.3f || !scrollOnePage()) break
                 check(++page <= MAX_PAGES) { "$name at font $fontScale scrolls past $MAX_PAGES screenfuls" }
@@ -232,10 +237,15 @@ class MainScreensScreenshotTest(private val fontScale: Float) {
      * - the debug build's source revision in Settings' ABOUT line ("· debug 1549b7e*"), new with every commit;
      * - the header's LIVE pill: its dot pulses for ever, and how far it has got when the image is taken depends on how long
      *   Robolectric waits for background work first (seen on pages after a scroll), so it differed between runs.
+     * A box covers only what shows of its window: a dialog drawn over it hides the part under the dialog's content (What's
+     * New's title sits over the header's LIVE pill), and only what shows of the pill around Settings is painted over.
      */
-    private fun masks(): List<Rect> {
+    private fun masks(): List<Region> {
         val commit = com.openrs.dash.update.BuildInfo.sourceCommit.take(7)
-        val out = mutableListOf<Rect>()
+        val out = mutableListOf<Region>()
+        // Each window's content on screen, bottom window first (the order the windows were added)
+        val covers = mutableListOf<Rect>()
+        val boxes = mutableListOf<Pair<Int, Rect>>()
         for (window in windows()) {
             val root = composeRoot(window) ?: continue
             // Where the screen image puts this window: placed by its gravity on the display (a dialog is centred)
@@ -251,12 +261,22 @@ class MainScreensScreenshotTest(private val fontScale: Float) {
                 val livePill = n.config.getOrNull(SemanticsActions.OnClick) != null && textOf(n) == LinkUi.LIVE.pill
                 if ((text != null && commit.length == 7 && commit in text) || livePill) {
                     val b = n.boundsInWindow
-                    out += Rect(frame.left + b.left.toInt(), frame.top + b.top.toInt(),
+                    boxes += covers.size to Rect(frame.left + b.left.toInt(), frame.top + b.top.toInt(),
                         frame.left + kotlin.math.ceil(b.right).toInt(), frame.top + kotlin.math.ceil(b.bottom).toInt())
                 }
                 n.children.forEach { walk(it) }
             }
-            walk(root.semanticsOwner.unmergedRootSemanticsNode)
+            val content = root.semanticsOwner.unmergedRootSemanticsNode
+            walk(content)
+            val c = content.boundsInWindow
+            covers += Rect(frame.left + c.left.toInt(), frame.top + c.top.toInt(),
+                frame.left + c.right.toInt(), frame.top + c.bottom.toInt())
+        }
+        for ((index, box) in boxes) {
+            val region = Region(box)
+            // The window that holds the box is covers[index]; every window after it is drawn over it
+            for (above in covers.drop(index + 1)) region.op(above, Region.Op.DIFFERENCE)
+            if (!region.isEmpty) out += region
         }
         return out
     }

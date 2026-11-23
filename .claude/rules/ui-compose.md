@@ -74,6 +74,14 @@ paths:
   the wordmark, the 44 dp cog and the 7 dp REC dot. Never feed live mode, ESC, REC or link state into that decision: a header
   that changes height moves every page. The measured-only copies must stay out of the merged semantics tree, so TalkBack reads
   each pill once (`EscHeaderPillTest` walks the merged tree; `HeaderFitMatrixTest` sweeps link and mode at the switch points).
+- **Screenshot goldens** — `MainScreensScreenshotTest` (`android/app/src/testDebug/`) composes DRIVE, PERF, THERMAL, TRIP,
+  GARAGE (+ DIAG), Settings (+ UNITS) and What's New at 360 dp from demo data, font 1.0 / 1.3 every screenful and 2.0 the
+  first; every `./gradlew test` compares them with `src/testDebug/screenshots/*.png` (`roborazzi.test.verify` in
+  `android/gradle.properties`) and fails on a changed pixel, diffs in `app/build/outputs/roborazzi/`. A change that moves
+  any of those screens (a merge from staging included) re-records on Linux only — `./gradlew recordRoborazziDebug --tests
+  '*MainScreensScreenshotTest*'`; macOS renders other pixels — looks at every changed PNG and commits them with the
+  change. A PNG in a pull request needs the privacy scan's reviewer OK (`privacy-ok-compressed`). Goldens hold demo or
+  synthetic data only: never a real drive, VIN, location or device name
 
 ## Theme Colors
 

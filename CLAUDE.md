@@ -211,13 +211,8 @@ Unit tests live in `android/app/src/test/java/com/openrs/dash/` (JVM, plus Robol
 in `web/src/` (`*.test.ts`, `*.test.tsx`) for Sapphire. Run one class with `./gradlew test --tests '*ClassName*'`. For the
 per-class catalog, list the folder.
 
-Screenshot tests (Roborazzi on Robolectric, debug variant only): `android/app/src/testDebug/` composes the main screens at
-360 dp, font 1.0 / 1.3 (every screenful) and 2.0 (first), from demo data; the goldens are
-`android/app/src/testDebug/screenshots/*.png`. Every `./gradlew test` compares against them (`roborazzi.test.verify` in
-`android/gradle.properties`) and fails on a changed pixel; the diff images land in `app/build/outputs/roborazzi/`. After an
-intended layout change, re-record on Linux (`./gradlew recordRoborazziDebug --tests '*MainScreensScreenshotTest*'`; macOS
-renders other pixels), look at every changed PNG, and commit them with the change. A PNG in a pull request needs the
-privacy scan's reviewer OK (`privacy-ok-compressed`).
+Screenshot tests of the main screens (Roborazzi, debug only) live in `android/app/src/testDebug/`; every `./gradlew test`
+compares them. Re-recording after a layout change: `.claude/rules/ui-compose.md`, "Screenshot goldens".
 
 Counts are not kept here. To count: `./gradlew clean test lint --no-build-cache` on Temurin 17 (a plain run can restore
 results from the Gradle build cache); one test is skipped by decision (`#251 outlier policy`). Sapphire:
