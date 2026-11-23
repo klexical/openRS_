@@ -60,6 +60,11 @@ internal object DriveExportBuilder {
     /** [v] in [pattern] (Locale.ROOT), or an empty field when there is no reading. */
     private fun field(v: Double?, pattern: String): String = v?.let { pattern.format(Locale.ROOT, it) } ?: ""
 
+    /** One `openrs:` extension element of a GPX track point, to one decimal; none when there is no reading. */
+    private fun StringBuilder.gpxReading(name: String, v: Double?) {
+        if (v != null) appendLine("          <openrs:$name>${"%.1f".format(Locale.ROOT, v)}</openrs:$name>")
+    }
+
     /**
      * GPX times, to the millisecond (#524): points are about 1 s apart and not on whole seconds, so whole-second times
      * gave consecutive points the same time. xsd:dateTime takes the fraction.
@@ -103,14 +108,12 @@ internal object DriveExportBuilder {
                 pt.boostReadingPsi()?.let { appendLine("          <openrs:boostPsi>${"%.2f".format(Locale.ROOT, it)}</openrs:boostPsi>") }
                 pt.boostSource?.takeIf { it != "NONE" }?.let { appendLine("          <openrs:boostSource>$it</openrs:boostSource>") }
                 // A reading not yet received has no element (#523)
-                fun reading(name: String, v: Double?) =
-                    v?.let { appendLine("          <openrs:$name>${"%.1f".format(Locale.ROOT, it)}</openrs:$name>") }
-                reading("coolantC", receivedTempC(pt.coolantTempC))
-                reading("oilC", receivedTempC(pt.oilTempC))
-                reading("ambientC", receivedTempC(pt.ambientTempC))
-                reading("rduC", receivedTempC(pt.rduTempC))
-                reading("ptuC", receivedTempC(pt.ptuTempC))
-                reading("fuelPct", receivedFuelPct(pt.fuelLevelPct))
+                gpxReading("coolantC", receivedTempC(pt.coolantTempC))
+                gpxReading("oilC", receivedTempC(pt.oilTempC))
+                gpxReading("ambientC", receivedTempC(pt.ambientTempC))
+                gpxReading("rduC", receivedTempC(pt.rduTempC))
+                gpxReading("ptuC", receivedTempC(pt.ptuTempC))
+                gpxReading("fuelPct", receivedFuelPct(pt.fuelLevelPct))
                 appendLine("          <openrs:lateralG>${"%.3f".format(Locale.ROOT, pt.lateralG)}</openrs:lateralG>")
                 appendLine("          <openrs:longitudinalG>${"%.3f".format(Locale.ROOT, pt.longitudinalG)}</openrs:longitudinalG>")
                 appendLine("          <openrs:brakePressure>${"%.1f".format(Locale.ROOT, pt.brakePressure)}</openrs:brakePressure>")
