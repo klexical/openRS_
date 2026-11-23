@@ -40,10 +40,41 @@ internal object DriveExportBuilder {
      */
     const val GPX_EXTENSION_NAMESPACE = "https://github.com/klexical/openRS_"
 
+    // ── Readings not yet received (#523): an empty field (CSV) or no element (GPX) in every format, never the sentinel.
+    //    The recorder stores VehicleState as it stands, so a point taken before a frame or poll arrived holds the
+    //    sentinel (CLAUDE.md, VehicleState Rules). Each rule matches the app's own reading of that field. ──
+
+    /** A temperature: −99 until received; anything at or below −90 °C is no reading (as DRIVE, the peaks, the thermal record). */
+    private fun receivedTempC(c: Double): Double? = c.takeIf { it > -90.0 }
+
+    /** The fuel level: 0.0 until 0x380 arrives (VehicleState's default), −1 as the point's default; DRIVE, TRIP and
+     *  [com.openrs.dash.data.FuelUsed] read only a level above 0 as a reading. */
+    private fun receivedFuelPct(pct: Double): Double? = pct.takeIf { it > 0.0 }
+
+    /** A polled scalar with the −1 sentinel (TPMS pressure, WGDC when not fresh at the point); 0 is a reading. */
+    private fun receivedPolled(v: Double): Double? = v.takeIf { it >= 0.0 }
+
+    /** TIP actual / desired, kPa absolute: the recorder writes 0.0 when no fresh decode is at the point. */
+    private fun receivedAbsKpa(kpa: Double): Double? = kpa.takeIf { it > 0.0 }
+
+    /** [v] in [pattern] (Locale.ROOT), or an empty field when there is no reading. */
+    private fun field(v: Double?, pattern: String): String = v?.let { pattern.format(Locale.ROOT, it) } ?: ""
+
+    /** One `openrs:` extension element of a GPX track point, to one decimal; none when there is no reading. */
+    private fun StringBuilder.gpxReading(name: String, v: Double?) {
+        if (v != null) appendLine("          <openrs:$name>${"%.1f".format(Locale.ROOT, v)}</openrs:$name>")
+    }
+
+    /**
+     * GPX times, to the millisecond (#524): points are about 1 s apart and not on whole seconds, so whole-second times
+     * gave consecutive points the same time. xsd:dateTime takes the fraction.
+     */
+    private fun gpxTimeFormat() = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
+        timeZone = TimeZone.getTimeZone("UTC")
+    }
+
     fun buildGpx(drive: DriveEntity, points: List<DrivePointEntity>, ts: String): String {
-        val isoFmt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply {
-            timeZone = TimeZone.getTimeZone("UTC")
-        }
+        val isoFmt = gpxTimeFormat()
         return buildString {
             appendLine("""<?xml version="1.0" encoding="UTF-8"?>""")
             appendLine("""<gpx version="1.1" creator="openRS_ v${appVersion}" """)
@@ -68,7 +99,7 @@ internal object DriveExportBuilder {
                     appendLine("    <trkseg>")
                 }
                 appendLine("""      <trkpt lat="${pt.lat}" lon="${pt.lng}">""")
-                appendLine("        <ele>0</ele>")
+                // No <ele> (#524): a point records no altitude, and GPX's ele is optional — 0 was made up
                 appendLine("        <time>${isoFmt.format(Date(pt.timestamp))}</time>")
                 appendLine("        <extensions>")
                 appendLine("          <openrs:speed>${"%.1f".format(Locale.ROOT, pt.speedKph)}</openrs:speed>")
@@ -76,12 +107,13 @@ internal object DriveExportBuilder {
                 appendLine("          <openrs:gear>${pt.gear}</openrs:gear>")
                 pt.boostReadingPsi()?.let { appendLine("          <openrs:boostPsi>${"%.2f".format(Locale.ROOT, it)}</openrs:boostPsi>") }
                 pt.boostSource?.takeIf { it != "NONE" }?.let { appendLine("          <openrs:boostSource>$it</openrs:boostSource>") }
-                appendLine("          <openrs:coolantC>${"%.1f".format(Locale.ROOT, pt.coolantTempC)}</openrs:coolantC>")
-                appendLine("          <openrs:oilC>${"%.1f".format(Locale.ROOT, pt.oilTempC)}</openrs:oilC>")
-                appendLine("          <openrs:ambientC>${"%.1f".format(Locale.ROOT, pt.ambientTempC)}</openrs:ambientC>")
-                appendLine("          <openrs:rduC>${"%.1f".format(Locale.ROOT, pt.rduTempC)}</openrs:rduC>")
-                appendLine("          <openrs:ptuC>${"%.1f".format(Locale.ROOT, pt.ptuTempC)}</openrs:ptuC>")
-                appendLine("          <openrs:fuelPct>${"%.1f".format(Locale.ROOT, pt.fuelLevelPct)}</openrs:fuelPct>")
+                // A reading not yet received has no element (#523)
+                gpxReading("coolantC", receivedTempC(pt.coolantTempC))
+                gpxReading("oilC", receivedTempC(pt.oilTempC))
+                gpxReading("ambientC", receivedTempC(pt.ambientTempC))
+                gpxReading("rduC", receivedTempC(pt.rduTempC))
+                gpxReading("ptuC", receivedTempC(pt.ptuTempC))
+                gpxReading("fuelPct", receivedFuelPct(pt.fuelLevelPct))
                 appendLine("          <openrs:lateralG>${"%.3f".format(Locale.ROOT, pt.lateralG)}</openrs:lateralG>")
                 appendLine("          <openrs:longitudinalG>${"%.3f".format(Locale.ROOT, pt.longitudinalG)}</openrs:longitudinalG>")
                 appendLine("          <openrs:brakePressure>${"%.1f".format(Locale.ROOT, pt.brakePressure)}</openrs:brakePressure>")
@@ -125,6 +157,8 @@ internal object DriveExportBuilder {
     /**
      * Drive telemetry CSV. [hasGps] false writes empty lat / lng (the knock CSV's convention). The format line names the
      * drive's [oilPtuMapping] (#229) — `not_recorded` unless the drive was saved with one; the row count is unchanged.
+     * A reading not yet received at the point is an empty field (#523): the temperatures, fuel, tyre pressures and
+     * temperatures, TIP actual / desired and WGDC.
      */
     fun buildCsv(points: List<DrivePointEntity>, hasGps: Boolean = true, oilPtuMapping: String? = null): String = buildString {
         appendLine("# openrs_csv_v2 oil_ptu_mapping=${oilPtuMappingValue(oilPtuMapping)}")
@@ -150,20 +184,20 @@ internal object DriveExportBuilder {
                 "${pt.rpm}," +
                 "${csvEscape(pt.gear)}," +
                 "${pt.boostReadingPsi()?.let { "%.3f".format(Locale.ROOT, it) } ?: ""}," +
-                "${"%.1f".format(Locale.ROOT, pt.coolantTempC)}," +
-                "${"%.1f".format(Locale.ROOT, pt.oilTempC)}," +
-                "${"%.1f".format(Locale.ROOT, pt.ambientTempC)}," +
-                "${"%.1f".format(Locale.ROOT, pt.rduTempC)}," +
-                "${"%.1f".format(Locale.ROOT, pt.ptuTempC)}," +
-                "${"%.1f".format(Locale.ROOT, pt.fuelLevelPct)}," +
-                "${"%.1f".format(Locale.ROOT, pt.tirePressLF)}," +
-                "${"%.1f".format(Locale.ROOT, pt.tirePressRF)}," +
-                "${"%.1f".format(Locale.ROOT, pt.tirePressLR)}," +
-                "${"%.1f".format(Locale.ROOT, pt.tirePressRR)}," +
-                "${"%.1f".format(Locale.ROOT, pt.tireTempLF)}," +
-                "${"%.1f".format(Locale.ROOT, pt.tireTempRF)}," +
-                "${"%.1f".format(Locale.ROOT, pt.tireTempLR)}," +
-                "${"%.1f".format(Locale.ROOT, pt.tireTempRR)}," +
+                "${field(receivedTempC(pt.coolantTempC), "%.1f")}," +
+                "${field(receivedTempC(pt.oilTempC), "%.1f")}," +
+                "${field(receivedTempC(pt.ambientTempC), "%.1f")}," +
+                "${field(receivedTempC(pt.rduTempC), "%.1f")}," +
+                "${field(receivedTempC(pt.ptuTempC), "%.1f")}," +
+                "${field(receivedFuelPct(pt.fuelLevelPct), "%.1f")}," +
+                "${field(receivedPolled(pt.tirePressLF), "%.1f")}," +
+                "${field(receivedPolled(pt.tirePressRF), "%.1f")}," +
+                "${field(receivedPolled(pt.tirePressLR), "%.1f")}," +
+                "${field(receivedPolled(pt.tirePressRR), "%.1f")}," +
+                "${field(receivedTempC(pt.tireTempLF), "%.1f")}," +
+                "${field(receivedTempC(pt.tireTempRF), "%.1f")}," +
+                "${field(receivedTempC(pt.tireTempLR), "%.1f")}," +
+                "${field(receivedTempC(pt.tireTempRR), "%.1f")}," +
                 "${"%.2f".format(Locale.ROOT, pt.wheelSpeedFL)}," +
                 "${"%.2f".format(Locale.ROOT, pt.wheelSpeedFR)}," +
                 "${"%.2f".format(Locale.ROOT, pt.wheelSpeedRL)}," +
@@ -175,9 +209,9 @@ internal object DriveExportBuilder {
                 "${"%.1f".format(Locale.ROOT, pt.throttlePct)}," +
                 "${csvEscape(pt.driveMode)}," +
                 "${pt.isRaceReady}," +
-                "${"%.2f".format(Locale.ROOT, pt.tipActualKpa)}," +
-                "${"%.2f".format(Locale.ROOT, pt.boostTargetKpa)}," +
-                "${"%.1f".format(Locale.ROOT, pt.wgdcPct)}," +
+                "${field(receivedAbsKpa(pt.tipActualKpa), "%.2f")}," +
+                "${field(receivedAbsKpa(pt.boostTargetKpa), "%.2f")}," +
+                "${field(receivedPolled(pt.wgdcPct), "%.1f")}," +
                 "${pt.boostSource ?: ""}," +
                 "${pt.baroKpa?.let { "%.1f".format(Locale.ROOT, it) } ?: ""}," +
                 "${pt.mapKpa?.let { "%.0f".format(Locale.ROOT, it) } ?: ""}," +
@@ -701,8 +735,8 @@ internal object DriveExportBuilder {
                 "${pt.rpm}," +
                 "${"%.1f".format(Locale.ROOT, pt.throttlePct)}," +
                 "${csvEscape(pt.gear)}," +
-                "${"%.1f".format(Locale.ROOT, pt.coolantTempC)}," +
-                "${"%.1f".format(Locale.ROOT, pt.oilTempC)}," +
+                "${field(receivedTempC(pt.coolantTempC), "%.1f")}," +    // empty until received (#523)
+                "${field(receivedTempC(pt.oilTempC), "%.1f")}," +
                 "${"%.1f".format(Locale.ROOT, pt.brakePressure)}"
             )
         }
@@ -725,8 +759,9 @@ internal object DriveExportBuilder {
         points.forEach { pt ->
             val timeSec = (pt.timestamp - t0) / 1000.0
             val speedMph = pt.speedKph * 0.621371
-            val coolantF = if (pt.coolantTempC > -90) pt.coolantTempC * 9.0 / 5.0 + 32.0 else -99.0
-            val oilF = if (pt.oilTempC > -90) pt.oilTempC * 9.0 / 5.0 + 32.0 else -99.0
+            // Empty until received (#523) — the −99 written here before was a °C sentinel in a °F column
+            val coolantF = receivedTempC(pt.coolantTempC)?.let { it * 9.0 / 5.0 + 32.0 }
+            val oilF = receivedTempC(pt.oilTempC)?.let { it * 9.0 / 5.0 + 32.0 }
             appendLine(
                 "${"%.3f".format(Locale.ROOT, timeSec)}," +
                 "${"%.6f".format(Locale.ROOT, pt.lat)}," +
@@ -737,8 +772,8 @@ internal object DriveExportBuilder {
                 "${pt.rpm}," +
                 "${"%.1f".format(Locale.ROOT, pt.throttlePct)}," +
                 "${csvEscape(pt.gear)}," +
-                "${"%.1f".format(Locale.ROOT, coolantF)}," +
-                "${"%.1f".format(Locale.ROOT, oilF)}," +
+                "${field(coolantF, "%.1f")}," +
+                "${field(oilF, "%.1f")}," +
                 "${"%.1f".format(Locale.ROOT, pt.brakePressure)}"
             )
         }

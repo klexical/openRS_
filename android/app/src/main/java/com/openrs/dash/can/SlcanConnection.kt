@@ -504,13 +504,17 @@ class SlcanConnection(
                 }
 
                 // ── BCM OBD poller ────────────────────────────────────────
+                // TPMS sensor-ID reads (#518): all four on the first cycle, then only a position still unmapped in the
+                // state and only after the BCM answered since its last read, each at most TPMS_ID_MAX_SENDS times on this
+                // connection (read-only Mode 22 to 0x726)
+                val tpmsIdReads = TpmsIdReads()
                 val obdJob = launch {
                     delay(ObdConstants.BCM_INITIAL_DELAY_MS)
-                    ObdConstants.BCM_TPMS_ID_QUERIES.forEach { q ->
-                        try { pollWrite(q) } catch (_: Exception) { }
-                        delay(ObdConstants.BCM_QUERY_GAP_MS)
-                    }
                     while (isActive) {
+                        tpmsIdReads.due(getCurrentState()).forEach { q ->
+                            try { pollWrite(q) } catch (_: Exception) { }
+                            delay(ObdConstants.BCM_QUERY_GAP_MS)
+                        }
                         ObdConstants.BCM_QUERIES.forEach { q ->
                             try { pollWrite(q) } catch (_: Exception) { }
                             delay(ObdConstants.BCM_QUERY_GAP_MS)
@@ -769,6 +773,7 @@ class SlcanConnection(
                         }
 
                         if (frame.first == ObdConstants.BCM_RESPONSE_ID) {
+                            tpmsIdReads.bcmAnswered()               // the BCM is answering: re-reads may be spent (#518)
                             val (reassembled, isFF, isSF) = bcmIsoTp.feed(frame.second)
                             if (isFF) {
                                 try { writeLogged(transport, ObdConstants.BCM_FLOW_CONTROL) } catch (_: Exception) {}
