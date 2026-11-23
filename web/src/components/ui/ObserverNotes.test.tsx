@@ -37,6 +37,13 @@ describe('observer notes section', () => {
     ])
   })
 
+  it('the column of REC_GAP events is not headed with the glossary term for one of their reasons (#393)', () => {
+    // REC_GAP covers a disconnect, a pause and a missing position update; "recording gap" means the disconnect only
+    const { container } = render(<ObserverNotesSection sessionEvents={EVENTS} fpsTimeline={FPS} />)
+    const heads = [...container.querySelectorAll('thead th')].map((th) => th.textContent)
+    expect(heads).toEqual(['Time', 'Note', 'Last request', 'Frames received', 'Recording interruptions'])
+  })
+
   it('the events table names the type in words', () => {
     expect(eventTypeLabel('NOTE')).toBe('OBSERVER NOTE')
     expect(eventTypeLabel('DM_CMD')).toBe('DM_CMD')
