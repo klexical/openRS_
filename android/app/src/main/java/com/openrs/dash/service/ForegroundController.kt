@@ -39,12 +39,16 @@ internal class ForegroundController(private val host: Host) {
     var locationDeferred = false
         private set
     private var addRefused = false   // a refused add is reported once per wish, apart from a deferral
+    /** Set by [release]: the service is destroyed, and nothing may start it or change its foreground again (#294). */
+    private var released = false
 
     /**
      * Start (if needed) and go foreground. Throws what the host throws — e.g. a background start that
      * Android 12+ refuses — after undoing a self-start so no started-but-not-foreground service is left.
      */
     fun promote() {
+        // A start after the destroy would create a new service instance and post this dead one's notification (#294)
+        check(!released) { "service destroyed" }
         if (!started) {
             host.startSelf()
             started = true
@@ -102,11 +106,31 @@ internal class ForegroundController(private val host: Host) {
         }
     }
 
-    /** Leave the foreground and the started state. No-op when neither applies. */
-    fun demote() {
+    /**
+     * The service is being destroyed (#294): leave the foreground at once and end the bookkeeping as not foreground and not
+     * started, so a demote still deferred for a drive's points (#262), which the destroy cancels, is not needed, and a
+     * collector body that runs after the destroy finds nothing to re-type or refresh. No stopSelf: the service is already
+     * stopping. Every later [promote] throws, and [applyTypes] and [demote] do nothing.
+     */
+    fun release() {
+        clearLocationState()
+        if (isForeground) {
+            host.exitForeground()
+            isForeground = false
+        }
+        started = false
+        released = true
+    }
+
+    private fun clearLocationState() {
         hasLocation = false
         locationDeferred = false
         addRefused = false
+    }
+
+    /** Leave the foreground and the started state. No-op when neither applies. */
+    fun demote() {
+        clearLocationState()
         if (isForeground) {
             host.exitForeground()
             isForeground = false

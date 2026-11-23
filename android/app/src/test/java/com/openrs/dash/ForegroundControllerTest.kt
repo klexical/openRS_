@@ -86,4 +86,31 @@ class ForegroundControllerTest {
         fg.demote()
         assertTrue(host.calls.isEmpty())
     }
+
+    @Test
+    fun `release at the destroy leaves the foreground once and refuses every later change (#294)`() {
+        val host = FakeHost()
+        val fg = ForegroundController(host)
+        fg.promote()
+        assertEquals(ForegroundController.TypeChange.Added, fg.applyTypes(wantLocation = true, appVisible = true))
+        host.calls.clear()
+        fg.release()
+        assertEquals("leaves the foreground; no stopSelf on a service already stopping", listOf("exitForeground"), host.calls)
+        assertFalse(fg.isForeground); assertFalse(fg.hasLocation)
+        host.calls.clear()
+        assertEquals(ForegroundController.TypeChange.None, fg.applyTypes(wantLocation = false, appVisible = true))
+        fg.demote()                                                          // a deferred demote's late body
+        fg.release()
+        try { fg.promote(); fail("a start after the destroy") } catch (_: IllegalStateException) {}
+        assertTrue("nothing reaches the destroyed service", host.calls.isEmpty())
+        assertFalse(fg.isForeground)
+    }
+
+    @Test
+    fun `release of a service that was never promoted calls nothing`() {
+        val host = FakeHost()
+        val fg = ForegroundController(host)
+        fg.release()
+        assertTrue(host.calls.isEmpty())
+    }
 }

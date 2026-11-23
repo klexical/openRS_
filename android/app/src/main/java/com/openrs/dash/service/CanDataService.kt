@@ -297,10 +297,11 @@ class CanDataService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_CANCEL_CONNECT) {
-            cancelConnection()   // refused (no-op) once connected or while recording — see cancelConnection
+            val cancelled = cancelConnection()   // refused (no-op) once connected or while recording — see cancelConnection
             // A cancel delivered to a service that wasn't already promoted must not leave it started
             if (!foreground.isForeground) stopSelf(startId)
-            return START_NOT_STICKY
+            // Android restarts a killed service by the last start's value: a refused Cancel leaves a live link sticky (#550)
+            return if (cancelled) START_NOT_STICKY else START_STICKY
         }
         return START_STICKY
     }
@@ -337,7 +338,12 @@ class CanDataService : Service() {
         unregisterWifiCallback()
         unregisterBluetoothCallback()
         finder.stopAll()
-        stopConnection(LinkStopReason.SERVICE_DESTROYED)   // flush sessionEnd() before scope is torn down
+        link.transition {
+            stopConnection(LinkStopReason.SERVICE_DESTROYED)   // flush sessionEnd() before scope is torn down
+            // #294: the demote a recording drive defers (#262) dies with the scope below, and a collector body already past
+            // its cancellation check runs after this returns: end the foreground here, so that body finds nothing to change
+            foreground.release()
+        }
         scope.cancel()
         super.onDestroy()
     }
@@ -799,6 +805,13 @@ class CanDataService : Service() {
         OpenRSDashApp.instance.vehicleState.update { it.copy(lamps = it.lamps.copy(srs = null)) }
         // Engine state (0x360 byte 7, #328): not received until this connection's first 0x360 frame
         OpenRSDashApp.instance.vehicleState.update { it.copy(engineState360 = -1) }
+        // Drive mode (#547): unknown ("--") until this connection's own 0x1B0, so the header and a recording drive never
+        // carry the previous link's mode; its 0x1B0 run and 0x420 detail stamps (#252, every key starting "driveMode", as
+        // ObdMerge drops them) go too, so a run or pair is this connection's own
+        OpenRSDashApp.instance.vehicleState.update { vs ->
+            vs.copy(driveMode = com.openrs.dash.data.DriveMode.UNKNOWN,
+                fieldLastUpdateMs = vs.fieldLastUpdateMs.filterKeys { !it.startsWith("driveMode") })
+        }
         FuelEconomy.reset()
         PerformanceTimer.resetSession()
         OpenRSDashApp.instance.knockEventCount.value = 0
