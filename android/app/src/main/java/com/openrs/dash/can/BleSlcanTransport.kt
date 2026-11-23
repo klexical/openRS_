@@ -69,6 +69,7 @@ class BleSlcanTransport(
             return g.writeCharacteristic(c)
         }
         override fun requestMtu(mtu: Int) = g.requestMtu(mtu)
+        override fun requestHighConnectionPriority() = g.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH)
         override fun bondState() = device.bondState
         override fun createBond() = device.createBond()
         override fun disconnect() = g.disconnect()
@@ -114,6 +115,7 @@ class BleSlcanTransport(
         try {
             core.setup()
             core.profile?.let { android.util.Log.i("BLE", "Using ${it.name}${if (it.verified) "" else " (unverified layout)"}") }
+            android.util.Log.i("BLE", "High connection priority ${if (core.connectionPriorityRequested == true) "requested" else "refused by the phone"}")
             connectedBefore += macAddress
         } catch (e: Exception) {
             close()
