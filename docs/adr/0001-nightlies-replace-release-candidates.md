@@ -14,7 +14,7 @@ Through the 2.2.7 cycle, every test build for the Beta channel was a release can
 by hand: a version bump with a literal versionCode, release notes written for it, a tag, and the maintainer's approval
 of that one release. A fix merged into `staging` reached Beta users only when the next candidate was cut, so testers
 ran builds that were behind `staging`, and every candidate cost a round of release work apart from the changes it
-carried. The decision record gives no reason; these are the costs the change removes.
+carried. These are the costs the change removes.
 
 ## Decision
 
@@ -45,7 +45,8 @@ carried. The decision record gives no reason; these are the costs the change rem
    collects entries in sections marked "(nightlies)", with no per-night dates.
 8. **Nightlies are kept, and a bad one is taken back by hand.** No nightly is ever deleted automatically. A faulty
    nightly goes back to a draft on the maintainer's word, with its APK removed and its tag and notes kept for the record;
-   the fix travels through `staging`, and the next night's build replaces it.
+   the fix travels through `staging`, and the next night's build replaces it. What the workflow does delete is a failed
+   run's own draft and its tag, which were never published.
 
 ## Consequences
 
