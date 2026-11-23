@@ -63,6 +63,7 @@ object CrashTelemetryBuffer {
         sourceCommit: String = "",
         buildType: String = "",
         heap: HeapSample? = HeapSample.read(),   // at the start of the flush, before the record is built (#510)
+        appendSnapshot: (StringBuilder, Long, VehicleState) -> Unit = ::appendSnapshotJson,   // seam: a test makes it throw (#511)
     ) {
         try {
             val snapshots: List<Snapshot>
@@ -95,26 +96,10 @@ object CrashTelemetryBuffer {
             sb.append("  \"snapshots\": [\n")
 
             snapshots.forEachIndexed { i, snap ->
-                val s = snap.state
                 val comma = if (i < snapshots.size - 1) "," else ""
-                sb.append("    {")
-                sb.append("\"ts\":${snap.timestampMs},")
-                sb.append("\"rpm\":${"%.1f".format(Locale.ROOT, s.rpm)},")
-                sb.append("\"speedKph\":${"%.1f".format(Locale.ROOT, s.speedKph)},")
-                sb.append("\"boostKpa\":${"%.1f".format(Locale.ROOT, s.boostKpa)},")
-                sb.append("\"throttle\":${"%.1f".format(Locale.ROOT, s.throttlePct)},")
-                sb.append("\"pedal\":${"%.1f".format(Locale.ROOT, s.accelPedalPct)},")
-                sb.append("\"brake\":${"%.1f".format(Locale.ROOT, s.brakePressure)},")
-                sb.append("\"coolant\":${"%.1f".format(Locale.ROOT, s.coolantTempC)},")
-                sb.append("\"oilTemp\":${"%.1f".format(Locale.ROOT, s.oilTempC)},")
-                sb.append("\"gear\":${s.gear},")
-                sb.append("\"latG\":${"%.3f".format(Locale.ROOT, s.lateralG)},")
-                sb.append("\"lonG\":${"%.3f".format(Locale.ROOT, s.longitudinalG)},")
-                sb.append("\"steer\":${"%.1f".format(Locale.ROOT, s.steeringAngle)},")
-                sb.append("\"battV\":${"%.2f".format(Locale.ROOT, s.batteryVoltage)},")
-                sb.append("\"esc\":\"${s.escStatus.diagnostic}\",")
-                sb.append("\"mode\":\"${s.driveMode.label}\"")
-                sb.append("}$comma\n")
+                sb.append("    ")
+                appendSnapshot(sb, snap.timestampMs, snap.state)
+                sb.append(comma).append('\n')
             }
 
             sb.append("  ]\n")
@@ -124,6 +109,28 @@ object CrashTelemetryBuffer {
         } catch (_: Throwable) {
             // Swallow — we must never throw from inside the crash handler.
         }
+    }
+
+    /** Appends one snapshot to [sb] as a one-line JSON object, without a trailing comma. */
+    internal fun appendSnapshotJson(sb: StringBuilder, timestampMs: Long, s: VehicleState) {
+        sb.append("{")
+        sb.append("\"ts\":$timestampMs,")
+        sb.append("\"rpm\":${"%.1f".format(Locale.ROOT, s.rpm)},")
+        sb.append("\"speedKph\":${"%.1f".format(Locale.ROOT, s.speedKph)},")
+        sb.append("\"boostKpa\":${"%.1f".format(Locale.ROOT, s.boostKpa)},")
+        sb.append("\"throttle\":${"%.1f".format(Locale.ROOT, s.throttlePct)},")
+        sb.append("\"pedal\":${"%.1f".format(Locale.ROOT, s.accelPedalPct)},")
+        sb.append("\"brake\":${"%.1f".format(Locale.ROOT, s.brakePressure)},")
+        sb.append("\"coolant\":${"%.1f".format(Locale.ROOT, s.coolantTempC)},")
+        sb.append("\"oilTemp\":${"%.1f".format(Locale.ROOT, s.oilTempC)},")
+        sb.append("\"gear\":${s.gear},")
+        sb.append("\"latG\":${"%.3f".format(Locale.ROOT, s.lateralG)},")
+        sb.append("\"lonG\":${"%.3f".format(Locale.ROOT, s.longitudinalG)},")
+        sb.append("\"steer\":${"%.1f".format(Locale.ROOT, s.steeringAngle)},")
+        sb.append("\"battV\":${"%.2f".format(Locale.ROOT, s.batteryVoltage)},")
+        sb.append("\"esc\":\"${s.escStatus.diagnostic}\",")
+        sb.append("\"mode\":\"${s.driveMode.label}\"")
+        sb.append("}")
     }
 
     private fun String.jsonEsc() =
