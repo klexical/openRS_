@@ -1,0 +1,64 @@
+name: Scratch proof (label OK per head, older event heads)
+
+# Throwaway, on a scratch base only: runs this PR's own privacy-scan.yml fetch step and privacy-scan.sh against
+# GitHub's real pull_request payloads, before the change reaches main. A synthetic list, no secret, no environment.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited, labeled, unlabeled]
+    branches: [scratch/privacy-scan-proof-base]
+
+permissions: {}
+
+jobs:
+  proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions: {}
+    steps:
+      - name: The event
+        env:
+          ACTION: ${{ github.event.action }}
+          LABEL: ${{ github.event.label.name }}
+        run: |
+          echo "proof: event $ACTION, label ${LABEL:-none}"
+          jq -r '"proof: payload pull_request.head.sha " + (.pull_request.head.sha // "none")' "$GITHUB_EVENT_PATH"
+          if [ "$ACTION" = labeled ]; then echo "proof: waiting 90 s, so a push can move the head on"; sleep 90; fi
+
+      - name: The fetch step, taken from this PR's own privacy-scan.yml
+        env:
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git init -q "$RUNNER_TEMP/wf"
+          git -C "$RUNNER_TEMP/wf" fetch -q --no-tags "https://github.com/$REPO" "$GITHUB_SHA"
+          git -C "$RUNNER_TEMP/wf" show "$GITHUB_SHA:.github/workflows/privacy-scan.yml" > "$RUNNER_TEMP/wf.yml"
+          ruby -ryaml -e 'wf = YAML.safe_load(File.read(ARGV[0]), aliases: false)
+            print wf["jobs"]["privacy-scan"]["steps"].find { |x| x["run"].to_s.include?("git fetch") }["run"]' \
+            "$RUNNER_TEMP/wf.yml" > "$RUNNER_TEMP/fetch-step.sh"
+          bash --noprofile --norc -eo pipefail "$RUNNER_TEMP/fetch-step.sh"
+          echo "proof: PR head now $(git -C "$RUNNER_TEMP/objects" rev-parse refs/remotes/pr/head), event head $HEAD"
+
+      - name: gitleaks, pinned by version and digest
+        env:
+          GL_VERSION: 8.28.0
+          GL_SHA256: a65b5253807a68ac0cafa4414031fd740aeb55f54fb7e55f386acb52e6a840eb
+        run: |
+          mkdir -p "$RUNNER_TEMP/gitleaks"
+          cd "$RUNNER_TEMP/gitleaks"
+          curl -fsSL --retry 3 -o gl.tar.gz "https://github.com/gitleaks/gitleaks/releases/download/v${GL_VERSION}/gitleaks_${GL_VERSION}_linux_x64.tar.gz"
+          echo "$GL_SHA256  gl.tar.gz" | sha256sum -c --quiet
+          tar -xzf gl.tar.gz gitleaks
+
+      - name: This PR's privacy-scan.sh, a synthetic list
+        env:
+          PRIVACY_IDENTIFIERS: SCRATCH-PROOF-SYNTHETIC-ENTRY-7731
+          GITLEAKS: ${{ runner.temp }}/gitleaks/gitleaks
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          cd "$RUNNER_TEMP/objects"
+          read -r STAGING MAIN < "$RUNNER_TEMP/tips"
+          bash "$RUNNER_TEMP/privacy-scan.sh" "$BASE" "$HEAD" "$STAGING" "$MAIN"
