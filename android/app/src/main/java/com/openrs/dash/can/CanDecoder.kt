@@ -590,6 +590,7 @@ object CanDecoder {
             // 0x1B0 alone cannot differentiate Sport from Track.
             // Combine with 0x420 (modeDetail420 = byte6<<8|byte7):
             //   nibble=0                          → NORMAL
+            //   nibble=1, no 0x420 yet            → UNKNOWN ("--", #516)
             //   nibble=1, 0x420 byte7 bit0 = 0    → SPORT  (0x11CC confirmed)
             //   nibble=1, 0x420 byte7 bit0 = 1    → TRACK  (0x11CD confirmed)
             //   nibble=2                          → DRIFT  (DBC VAL_ 432 confirmed)
@@ -599,13 +600,15 @@ object CanDecoder {
                 val nibble = b6 ushr 4
                 val resolvedMode = when {
                     nibble == 0 -> DriveMode.NORMAL
-                    nibble == 1 -> if (!has420Arrived) null   // wait for 0x420 before resolving Sport/Track
+                    // Sport or Track: not told apart until this connection's first 0x420, so the mode is not known
+                    // yet — UNKNOWN, never the default or a mode held from an earlier report (#516)
+                    nibble == 1 -> if (!has420Arrived) DriveMode.UNKNOWN
                                   else if ((modeDetail420 and 0x01) != 0) DriveMode.TRACK
                                   else DriveMode.SPORT
                     nibble == 2 -> DriveMode.DRIFT
                     else        -> DriveMode.UNKNOWN
                 }
-                if (b4 != 0 || resolvedMode == null) null
+                if (b4 != 0) null
                 else state.copy(driveMode = resolvedMode, lastUpdate = now)
             } else null
 
