@@ -31,10 +31,11 @@ export function pointColor(point: TripPoint, mode: ColorMode, boostSource: Boost
 
     case 'mode': {
       const m = point.driveMode.toLowerCase()
+      if (m === 'normal') return colors.cyan
       if (m === 'sport') return colors.warn
       if (m === 'track') return colors.ok
       if (m === 'drift') return colors.orange
-      return colors.cyan // Normal
+      return colors.dim // "--": the app did not know the mode yet (#516) — never drawn as Normal
     }
 
     case 'boost': {

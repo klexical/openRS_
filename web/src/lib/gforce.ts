@@ -1,4 +1,5 @@
 import type { TripPoint } from '../types/session'
+import { colors, modeColors } from '../styles/tokens'
 
 export interface GForceSample { latG: number; speedKph: number; driveMode: string }
 
@@ -24,4 +25,18 @@ export function gForceSamples(points: TripPoint[], target = 2000): GForceSample[
   const kept = new Set<number>([maxIdx, minIdx])
   for (let i = 0; i < valid.length; i += step) kept.add(i)
   return [...kept].sort((a, b) => a - b).map((i) => valid[i])
+}
+
+/**
+ * The G-force plot's dot colour for a drive mode (any casing). "--" is what the app stores while it does not know the mode
+ * yet (Sport or Track before the first 0x420, #516): dim, never drawn as Normal.
+ */
+export function modeDotColor(driveMode: string): string {
+  switch (driveMode.toLowerCase()) {
+    case 'normal': return modeColors.normal
+    case 'sport': return modeColors.sport
+    case 'track': return modeColors.track
+    case 'drift': return modeColors.drift
+    default: return colors.dim
+  }
 }
