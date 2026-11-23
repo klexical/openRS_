@@ -165,11 +165,11 @@ internal fun shouldShowWhatsNew(lastSeen: String, releaseName: String, base: Str
     lastSeen != releaseName && whatsNewHighlights(base) != null &&
         com.openrs.dash.update.AppVersion.fromVersionName(releaseName)?.isNightly != true
 
+/** [version] is the installed release name; a test passes the longest one shipped (a nightly's) to check the title row. */
 @Composable
-fun WhatsNewDialog(onDismiss: () -> Unit) {
+fun WhatsNewDialog(onDismiss: () -> Unit, version: String = com.openrs.dash.update.BuildInfo.releaseName) {
     val accent = LocalThemeAccent.current
     val accentM = accentMid()
-    val version = com.openrs.dash.update.BuildInfo.releaseName
     val highlights = whatsNewHighlights(com.openrs.dash.update.BuildInfo.base) ?: return onDismiss()
 
     var dialogEntered by remember { mutableStateOf(false) }
