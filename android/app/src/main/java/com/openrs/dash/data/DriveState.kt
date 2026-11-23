@@ -21,9 +21,10 @@ data class DriveState(
     val recentPoints: List<DrivePointEntity> = emptyList(),
     val totalPointCount: Int = 0,
     val startFuelPct: Double = 0.0,
-    /** The level fuel used is measured from (#336, [FuelUsed.rebase]): -1 = [startFuelPct]; moved by the recording loop
-     *  to the first reading below the 100 % clamp when the start sat on it (or was not received). */
-    val fuelBasePct: Double = -1.0,
+    /** The span fuel used and the average are measured over (#336, #517; [fuelAfter]): null = from [startFuelPct] at
+     *  distance 0; moved by the recording loop to the first reading below the 100 % clamp, with the distance at it, when
+     *  the start sat on the clamp (or was not received). */
+    val fuel: FuelSpan? = null,
     val startTime: Long = 0L,
     val currentWeather: WeatherData? = null,
     val currentLocation: Location? = null,
@@ -63,17 +64,27 @@ data class DriveState(
     val latestFuelPct: Double
         get() = recentPoints.lastOrNull()?.fuelLevelPct ?: startFuelPct
 
-    /** The level fuel used is measured from (#336). */
-    val fuelBaseOrStartPct: Double
-        get() = if (fuelBasePct >= 0.0) fuelBasePct else startFuelPct
+    /** The span fuel used is measured over (#336, #517). */
+    val fuelSpan: FuelSpan
+        get() = fuel ?: FuelSpan.start(startFuelPct)
+
+    /**
+     * [fuelSpan] after a recorded reading of [readingPct] with [distanceKm] driven (this point's
+     * [cumulativeDistanceKm]) at [nowMs], the car [parked] or not ([carParked]): the recording loop's one fuel step.
+     */
+    fun fuelAfter(readingPct: Double, distanceKm: Double, nowMs: Long, parked: Boolean): FuelSpan =
+        fuelSpan.next(readingPct, distanceKm, nowMs, standing = parked, tankL = TANK_L)
 
     /** Fuel used by the drive (#336, [FuelUsed]): 0.0 until the level has dropped by enough gauge steps to be fuel. */
     val fuelUsedL: Double
-        get() = FuelUsed.litres(fuelBaseOrStartPct, latestFuelPct, TANK_L) ?: 0.0
+        get() = fuelSpan.litres(latestFuelPct, TANK_L) ?: 0.0
 
+    /** The drive's average: its fuel used over the distance driven since the fuel start (#517), 0.0 under 0.1 km. */
     val avgFuelL100km: Double
-        get() = if (cumulativeDistanceKm < 0.1) 0.0
-                else fuelUsedL / cumulativeDistanceKm * 100.0
+        get() {
+            val km = fuelSpan.distanceKm(cumulativeDistanceKm)
+            return if (km < 0.1) 0.0 else fuelUsedL / km * 100.0
+        }
 
     val avgFuelMpg: Double
         get() {

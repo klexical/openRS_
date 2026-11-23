@@ -47,14 +47,15 @@ object FuelEconomy {
     private val lock = Any()
 
     // Session tracking
-    private var sessionStartFuelPct: Double = -1.0
+    /** What the session's fuel used and average are measured over (#517): the fuel start and the distance at it. */
+    private var span = FuelSpan()
     private var sessionDistanceKm: Double = 0.0
     private var lastSpeedKph: Double = 0.0
     private var lastUpdateMs: Long = 0L
 
     fun reset() = synchronized(lock) {
         samples.clear()
-        sessionStartFuelPct = -1.0
+        span = FuelSpan()
         sessionDistanceKm = 0.0
         lastSpeedKph = 0.0
         lastUpdateMs = 0L
@@ -62,12 +63,13 @@ object FuelEconomy {
     }
 
     /**
-     * Called on every VehicleState update with current fuel level and speed.
+     * Called on every VehicleState update with current fuel level and speed; [nowMs] is the update's time (wall clock;
+     * tests pass their own).
      */
-    fun onUpdate(fuelPct: Double, speedKph: Double): Unit = synchronized(lock) {
+    fun onUpdate(fuelPct: Double, speedKph: Double, nowMs: Long = System.currentTimeMillis()): Unit = synchronized(lock) {
         if (fuelPct < 0 || fuelPct > 110) return  // invalid fuel reading
 
-        val now = System.currentTimeMillis()
+        val now = nowMs
 
         // Integrate distance from speed (trapezoidal)
         if (lastUpdateMs > 0 && now > lastUpdateMs) {
@@ -78,8 +80,9 @@ object FuelEconomy {
         lastSpeedKph = speedKph
         lastUpdateMs = now
 
-        // Track session start: the first measurable level, moved off the 100 % clamp to the first reading below it (#336)
-        sessionStartFuelPct = FuelUsed.rebase(sessionStartFuelPct, fuelPct)
+        // The fuel start: the first measurable level, moved off the 100 % clamp to the first reading below it (#336), with
+        // the distance at it (#517); a drop at a standstill faster than the car burns is not counted (IDLE's speed rule)
+        span = span.next(fuelPct, sessionDistanceKm, now, standing = speedKph < 2.0, tankL = TANK_CAPACITY_L)
 
         // Add sample to rolling window
         samples.add(Sample(now, fuelPct, sessionDistanceKm))
@@ -111,12 +114,14 @@ object FuelEconomy {
 
         // ── Session average ──────────────────────────────────────────────
         // Only from a fuel-used figure (#336, owner Q165): under four gauge steps there is none, and no average either
-        // (0.0, the existing "no average"); the stored drive average and DRIVE's AVERAGE read this
-        val sessionFuelUsedL = FuelUsed.litres(sessionStartFuelPct, fuelPct, TANK_CAPACITY_L) ?: 0.0
+        // (0.0, the existing "no average"); the stored drive average and DRIVE's AVERAGE read this. The fuel and the
+        // distance cover one span, from the fuel start (#517): not the distance since the connection began
+        val sessionFuelUsedL = span.litres(fuelPct, TANK_CAPACITY_L) ?: 0.0
+        val spanDistanceKm = span.distanceKm(sessionDistanceKm)
         var avgL100 = 0.0
         var avgMpg = 0.0
-        if (sessionDistanceKm > 0.1 && sessionFuelUsedL > 0.01) {
-            avgL100 = (sessionFuelUsedL / sessionDistanceKm) * 100.0
+        if (spanDistanceKm > 0.1 && sessionFuelUsedL > 0.01) {
+            avgL100 = (sessionFuelUsedL / spanDistanceKm) * 100.0
             avgMpg = if (avgL100 > 0) L100KM_TO_MPG / avgL100 else 0.0
         }
 

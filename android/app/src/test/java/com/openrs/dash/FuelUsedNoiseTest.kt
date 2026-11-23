@@ -163,7 +163,8 @@ class FuelUsedNoiseTest {
         listOf(100.0, 99.6, 99.2, 98.8, 98.4).forEach { FuelEconomy.onUpdate(it, 0.0) }
         assertEquals("the issue's run", 0.0, FuelEconomy.state.value.fuelUsedL, 0.0)
         FuelEconomy.reset()
-        listOf(80.0, 75.0, 70.0).forEach { FuelEconomy.onUpdate(it, 0.0) }
+        // Moving: the same drop standing still, within milliseconds, is faster than the car burns and is not fuel (#517)
+        listOf(80.0, 75.0, 70.0).forEach { FuelEconomy.onUpdate(it, 60.0) }
         assertEquals("control", 4.98, FuelEconomy.state.value.fuelUsedL, 1e-9)
     }
 
