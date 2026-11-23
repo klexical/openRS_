@@ -34,7 +34,7 @@ import java.util.concurrent.atomic.AtomicInteger
  * drive) began. The fuel start moves off the 100 % clamp, or waits for the first reading, long after the distance began:
  * one full-tank drive stored 8.24 L/100 km against 12.66 over the span measured. The average now divides by the distance
  * since the fuel start. Separately, a drop faster than [com.openrs.dash.data.FuelUsed.MAX_STANDSTILL_L_PER_HR] (after one
- * gauge step) while the car stands still is the level settling, not fuel (a cold start fell 7 steps in 48 s, standing
+ * gauge step) while the car stands still is taken for the level settling, not fuel (a cold start fell 7 steps in 48 s, standing
  * still), and is not counted. DRIVE's session (FuelEconomy, which the drive stores as its average) and the drive's own
  * figures through the real recorder (in-memory Room, a fake location source).
  */

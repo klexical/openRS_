@@ -111,7 +111,9 @@ data/
   ForscanCatalog.kt       — Lazy loader for assets/pids/forscan_modules.json
   FuelEconomy.kt          — Real-time fuel economy: 60s rolling window, instant/avg, distance-to-empty
   FuelUsed.kt             — Fuel used from the gauge (#336): a figure only after a drop of 4 steps (0.4 % each); a start on
-                            the 100 % clamp moves to the first reading below it; the drive's figure and DRIVE's cell share it
+                            the 100 % clamp moves to the first reading below it; the drive's figure and DRIVE's cell share it.
+                            FuelSpan (#517): fuel used and the average over one span, from the fuel start and the distance
+                            at it; a drop at a standstill over 4 L/h beyond one gauge step is not counted
   PerformanceTimer.kt     — 0-60 / 0-100 timer using CAN speed: IDLE → ARMED → RUNNING → FINISHED
   SessionDatabase.kt      — Room DB for session snapshots: SessionEntity, SnapshotEntity, SessionDao
   BoostSweepStats.kt      — Target-vs-actual boost delta analytics; rc.5 uses fresh-only samples;
