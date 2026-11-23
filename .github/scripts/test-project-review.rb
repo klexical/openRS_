@@ -26,8 +26,16 @@ check.(inputs.keys == %w[pr sha verdict reviewer report] && inputs.values.all? {
        inputs.dig("pr", "type") == "number" && inputs.dig("verdict", "type") == "choice" &&
        inputs.dig("verdict", "options") == %w[clear real-gap withdrawn-gap],
        "inputs: pr (a number), sha, verdict (clear, real-gap, withdrawn-gap), reviewer, report; all required")
-check.(wf["run-name"] == "project-review: pull request ${{ inputs.pr }}, ${{ inputs.verdict }}",
-       "the run's name carries the number and the verdict only (no free text in the public list of runs)")
+# GitHub does not enforce `type: number` on a REST dispatch (the proof, 2026-11-23: pr=abc queued a run named "pull
+# request abc"), so the name takes the number only through a guard, tried live on a branch dispatch: a whole number
+# from 1 to 999999 shows as its canonical digits (" 571" and "1e3" as 571 and 1000), anything else as "refused (not a
+# number)" ("abc", "1.5", "-5", "0", "571 x", "1_000", "0b11", a newline), and "0x10" or "+5" never start the run. The
+# verdict is a choice, which GitHub does enforce (422 for "foo bar" and "CLEAR").
+PR_GUARD = "${{ inputs.pr >= 1 && inputs.pr <= 999999 && !contains(format('{0}', fromJSON(inputs.pr)), '.') && " \
+           "format('{0}', fromJSON(inputs.pr)) || 'refused (not a number)' }}"
+check.(wf["run-name"] == "project-review: pull request #{PR_GUARD}, ${{ inputs.verdict }}",
+       "the run's name carries the number (through the guard) and the verdict only: no free text in the public list of runs")
+check.(!wf["run-name"].to_s.sub(PR_GUARD, "").include?("inputs.pr"), "the run's name never shows the raw pull request value")
 check.(wf["permissions"] == {} && (wf["jobs"] || {}).keys == ["project-review"], "no workflow-level permission, one job")
 job = (wf["jobs"] || {})["project-review"] || {}
 steps = job["steps"] || []
