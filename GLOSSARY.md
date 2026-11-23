@@ -163,8 +163,10 @@ The first drive ticked for Compare; the other drives' differences are measured a
 _Avoid_: Reference, baseline
 
 **Fill-in**:
-What an import of a drive Sapphire already keeps does: it adds only the parts the stored drive lacked (its profile, its
-session log, a fault-code scan that answers "not checked"). The drive stays one drive; nothing stored is replaced.
+What an import of a drive Sapphire already keeps does to the stored drive. It adds the profile, or the session log, only
+when the stored drive has none. It adds the fault-code scan when the stored drive has none, or when its fault codes are
+"not checked" and this import's scan answers them; an answer is never replaced or turned back into "not checked". The
+drive stays one drive: its points, name, note and tags stay, and only the fields derived from them are worked out again.
 
 **Palette**:
 The set of colours Sapphire is drawn in: Match device (Night or Day, from the device's setting), Night, Day or Ultra.
