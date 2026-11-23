@@ -118,8 +118,8 @@ jobs:
 
   # Changelog fragments: entries live one file each under android/changelog.d/ and stable folds them in, so pull
   # requests stop conflicting in CHANGELOG.md (.claude/rules/build-release.md, "Changelog Format"). On a pull request
-  # into staging, an entry typed straight into a (nightlies) section is refused; HEAD^1 is the base side of the
-  # merge commit the pull request event checks out.
+  # into staging, an entry typed straight into a (nightlies) section is refused, or only warned when the pull request
+  # began before the switch; HEAD^1 and HEAD^2 are the base and head sides of the merge commit the event checks out.
   changelog:
     name: Changelog fragments
     runs-on: ubuntu-latest
@@ -144,7 +144,7 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
         run: |
           if [ "$BASE_REF" = staging ]; then
-            python3 -I scripts/changelog.py check --base HEAD^1
+            python3 -I scripts/changelog.py check --base HEAD^1 --pr-head HEAD^2
           else
             python3 -I scripts/changelog.py check
           fi

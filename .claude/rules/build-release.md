@@ -257,7 +257,8 @@ number is the issue the entry links. The file holds one or more entry lines in t
 apply to each. `python3 android/scripts/changelog.py print` shows the changelog as stable will fold it. Stable's change
 folds them in (release checklist, step 7), and a fold gives the same bytes as the same lines appended to the end of
 their sections by hand, in issue order. CI's "Changelog fragments" job runs `changelog.py`: it refuses a malformed
-fragment, and on a pull request into staging an entry typed straight into a `(nightlies)` section of `CHANGELOG.md`.
+fragment, and on a pull request into staging an entry typed straight into a `(nightlies)` section of `CHANGELOG.md`
+(only a warning for a pull request whose merge base predates `changelog.d/README.md`).
 Lines outside those sections, such as a stable known-limitations section, are written in `CHANGELOG.md` as before. A
 nightly's "Full changelog" link names `CHANGELOG.md` at its commit, and the pointer line under the version heading
 leads from there to `changelog.d/` at the same commit; a fold drops that line.

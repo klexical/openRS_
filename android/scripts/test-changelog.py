@@ -2,7 +2,8 @@
 """test-changelog.py — checks changelog.py: a fold of fragments taken from the real android/CHANGELOG.md gives it back
 byte for byte; fragments are ordered by issue number, then slug; a missing (nightlies) section is made in the order
 Added, Fixed, Changed, Removed; a malformed fragment is refused with its reason; on a pull request (--base) an entry
-added straight into a (nightlies) section is refused unless a deleted fragment held it.
+added straight into a (nightlies) section is refused unless a deleted fragment held it, and only warned about
+(--pr-head) when the pull request began before the switch to fragments.
 Run: python3 -I android/scripts/test-changelog.py (CI's changelog job runs it)."""
 import os, re, shutil, subprocess, sys, tempfile
 
@@ -209,6 +210,44 @@ rc, out, _ = run(d, "check", "--base", "HEAD")
 check("--base: a line slipped in beside a fold is still refused", rc == 1 and "CHANGELOG.md:" in out, out)
 rc, out, _ = run(d, "check", "--base", "no-such-revision")
 check("--base: an unknown revision is refused, not passed", rc == 1 and "git" in out, out)
+shutil.rmtree(top)
+
+# 5. --pr-head: a pull request that began before the switch (its merge base has no changelog.d/README.md) is warned
+#    about a typed entry and passes; one that began after it is refused. The work tree is the merge commit, as in CI.
+top, d = repo({})
+os.remove(os.path.join(d, "changelog.d", "README.md"))
+git(top, "add", "-A"); git(top, "commit", "-q", "-m", "before the switch")
+git(top, "branch", "-q", "old-pr")
+with open(os.path.join(d, "changelog.d", "README.md"), "w") as f:
+    f.write("# Changelog fragments\n")
+git(top, "add", "-A"); git(top, "commit", "-q", "-m", "the switch")
+git(top, "branch", "-q", "new-pr")
+TYPED = (entry(300, "Old fix") + "\n", entry(300, "Old fix") + "\n" + entry(77, "Typed straight in") + "\n")
+for branch in ("old-pr", "new-pr"):
+    git(top, "checkout", "-q", branch); edit(d, *TYPED); git(top, "commit", "-q", "-am", "typed entry")
+main_branch = subprocess.run(["git", "-C", top, "branch", "--format=%(refname:short)"], capture_output=True,
+                             text=True).stdout.split()
+main_branch = next(b for b in main_branch if b not in ("old-pr", "new-pr"))
+for branch, want_rc in (("old-pr", 0), ("new-pr", 1)):
+    git(top, "checkout", "-q", main_branch); git(top, "checkout", "-q", "--detach")
+    git(top, "merge", "-q", "--no-ff", "--no-edit", branch)
+    rc, out, _ = run(d, "check", "--base", "HEAD^1", "--pr-head", "HEAD^2")
+    if branch == "old-pr":
+        check("--pr-head: a typed entry from a pull request begun before the switch is a warning, and passes",
+              rc == 0 and "::warning::CHANGELOG.md:13" in out and "refused" not in out, out)
+    else:
+        check("--pr-head: a typed entry from a pull request begun after the switch is refused",
+              rc == 1 and "refused: CHANGELOG.md:13" in out and "::warning::" not in out, out)
+git(top, "checkout", "-q", "old-pr"); os.makedirs(os.path.join(d, "changelog.d", "fixed"), exist_ok=True)
+with open(os.path.join(d, "changelog.d", "fixed", "5-x.md"), "w") as f:
+    f.write("not an entry\n")
+git(top, "add", "-A"); git(top, "commit", "-q", "-m", "bad fragment")
+git(top, "checkout", "-q", main_branch); git(top, "checkout", "-q", "--detach"); git(top, "merge", "-q", "--no-edit", "old-pr")
+rc, out, _ = run(d, "check", "--base", "HEAD^1", "--pr-head", "HEAD^2")
+check("--pr-head: a malformed fragment is still refused on a pull request begun before the switch",
+      rc == 1 and "changelog.d/fixed/5-x.md" in out, out)
+rc, _, _ = run(d, "check", "--pr-head", "HEAD^2")
+check("--pr-head without --base is a usage error", rc == 2)
 shutil.rmtree(top)
 
 print(f"{ran - failures} of {ran} passed")

@@ -12,7 +12,9 @@ android/changelog.d/README.md is the only other file there.
   changelog.py check [--base REV]
       Every fragment is well formed and the changelog takes them. With --base (CI, on a pull request into staging):
       an entry line the working tree adds to a `### <Section> (nightlies)` section of CHANGELOG.md since REV must come
-      from a fragment deleted since REV (a fold); any other is refused, with the fragment path it belongs in.
+      from a fragment deleted since REV (a fold); any other is refused, with the fragment path it belongs in. With
+      --pr-head REV2 too, a pull request whose merge base with REV has no changelog.d/README.md (it began before the
+      switch to fragments) gets those as GitHub warnings instead, and passes.
   changelog.py print
       The changelog with every fragment folded in, to stdout; the files are not changed.
   changelog.py fold
@@ -180,19 +182,30 @@ def direct_edits(root, base):
     return out
 
 
+def started_after_fragments(root, base, pr_head):
+    """True when the pull request's merge base with REV already has changelog.d/README.md, that is, it began (or last
+    merged its base) after the switch to fragments; a pull request from before it is warned, not refused."""
+    mb = git(root, "merge-base", base, pr_head).strip()
+    r = subprocess.run(["git", "-C", root, "cat-file", "-e", f"{mb}:./changelog.d/README.md"], capture_output=True)
+    return r.returncode == 0
+
+
 def main(argv):
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     args = list(argv)
     if "--root" in args:
         i = args.index("--root"); root = os.path.abspath(args[i + 1]); del args[i:i + 2]
-    base = None
-    if "--base" in args:
-        i = args.index("--base")
-        if i + 1 >= len(args):
-            print("usage: --base needs a revision", file=sys.stderr); return 2
-        base = args[i + 1]; del args[i:i + 2]
-    if len(args) != 1 or args[0] not in ("check", "print", "fold") or (base and args[0] != "check"):
-        print("usage: changelog.py [--root DIR] check [--base REV] | print | fold", file=sys.stderr)
+    opts = {}
+    for flag in ("--base", "--pr-head"):
+        if flag in args:
+            i = args.index(flag)
+            if i + 1 >= len(args):
+                print(f"usage: {flag} needs a revision", file=sys.stderr); return 2
+            opts[flag] = args[i + 1]; del args[i:i + 2]
+    base, pr_head = opts.get("--base"), opts.get("--pr-head")
+    if len(args) != 1 or args[0] not in ("check", "print", "fold") or (opts and args[0] != "check") \
+            or (pr_head and not base):
+        print("usage: changelog.py [--root DIR] check [--base REV [--pr-head REV]] | print | fold", file=sys.stderr)
         return 2
     path = os.path.join(root, "CHANGELOG.md")
     try:
@@ -201,7 +214,13 @@ def main(argv):
             text = f.read()
         out = assemble(text, frags)
         if base:
-            problems += direct_edits(root, base)
+            direct = direct_edits(root, base)
+            if direct and pr_head and not started_after_fragments(root, base, pr_head):
+                for p in direct:              # a pull request from before the switch: warned, not refused
+                    print(f"::warning::{p} (this pull request began before changelog fragments; moving the entry "
+                          f"into a fragment ends the warning)")
+            else:
+                problems += direct
     except Refused as e:
         problems = locals().get("problems", []) + [str(e)]
         out = None
