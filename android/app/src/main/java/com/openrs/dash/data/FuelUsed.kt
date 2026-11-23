@@ -42,9 +42,12 @@ object FuelUsed {
  * first reading, long after the distance began, and dividing by the whole distance read about 35 % low on a full tank.
  *
  * While the car stands still, the drop counted in one standstill is held to one gauge step plus
- * [FuelUsed.MAX_STANDSTILL_L_PER_HR] over its time; the rest of the drop is set aside in [discountPct], not counted. A rise
- * of the level, standing or moving, gives the set-aside drop back first: a dip that comes back up was never fuel, and
- * subtracting it for good lost a real figure (80 → 78.8 → 80 % at a standstill, then 2 % driven, gave none).
+ * [FuelUsed.MAX_STANDSTILL_L_PER_HR] over its time; the rest of the drop is set aside ([setAsidePct]), not counted. It is
+ * given back as the level comes back up past the level it was set aside at ([setAsideAtPct]), beyond one gauge step: a dip
+ * that recovers was never fuel (80 → 78.8 → 80 % at a standstill, then 2 % driven, must give 2 %), while the gauge's
+ * one-step jitter gives nothing back (six one-step rises and falls while moving after a settled drop gave 1.39 L when each
+ * rise gave back what it rose). The give-back follows the highest level since ([peakSincePct]), so repeated jitter never
+ * adds to it.
  */
 data class FuelSpan(
     /** The level fuel used is measured from; until it is [FuelUsed.measurable] there is no figure. */
@@ -57,9 +60,18 @@ data class FuelSpan(
     val standStartMs: Long = -1L,
     /** The drop counted in the current standstill. */
     val standCountedPct: Double = 0.0,
-    /** The drop set aside as faster than the car burns standing still: not fuel until a rise gives it back. */
-    val discountPct: Double = 0.0,
+    /** The drop set aside as faster than the car burns standing still, before any give-back. */
+    val setAsidePct: Double = 0.0,
+    /** The level the drop was last set aside at, -1 before any. */
+    val setAsideAtPct: Double = -1.0,
+    /** The highest level read since [setAsideAtPct]. */
+    val peakSincePct: Double = -1.0,
 ) {
+    /** The part of [setAsidePct] still set aside: less the rise of [peakSincePct] above [setAsideAtPct], beyond one step. */
+    val heldBackPct: Double
+        get() = if (setAsideAtPct < 0.0) 0.0
+                else setAsidePct - (peakSincePct - setAsideAtPct - FuelUsed.GAUGE_STEP_PCT).coerceIn(0.0, setAsidePct)
+
     /** The span after a reading of [readingPct] at [distanceKm] and [nowMs], the car [standing] still or not. */
     fun next(readingPct: Double, distanceKm: Double, nowMs: Long, standing: Boolean, tankL: Double): FuelSpan {
         if (!FuelUsed.measurable(basePct)) {
@@ -70,24 +82,27 @@ data class FuelSpan(
         val drop = (if (lastPct > 0.0) lastPct else basePct) - readingPct
         val start = if (!standing) -1L else if (standStartMs >= 0L) standStartMs else nowMs
         var counted = if (start == standStartMs) standCountedPct else 0.0    // a new standstill, or moving
-        var discount = discountPct
+        var next = copy(lastPct = readingPct, standStartMs = start,
+            peakSincePct = if (setAsideAtPct < 0.0) peakSincePct else maxOf(peakSincePct, readingPct))
         if (drop < -EPS) {
-            val back = minOf(-drop, discount)                                 // a rise gives the set-aside drop back first
-            discount -= back
-            counted = (counted - (-drop - back)).coerceAtLeast(0.0)
+            counted = (counted - -drop).coerceAtLeast(0.0)                   // a rise frees the standstill's allowance
         } else if (drop > EPS && standing) {
             val hours = (nowMs - start).coerceAtLeast(0L) / 3_600_000.0
             val allowedPct = FuelUsed.GAUGE_STEP_PCT + FuelUsed.MAX_STANDSTILL_L_PER_HR * hours / tankL * 100.0
             val take = minOf(drop, (allowedPct - counted).coerceAtLeast(0.0))
             counted += take
-            discount += drop - take
+            if (drop - take > EPS) {
+                // Keep what was given back so far, add the new excess, and measure the give-back from this level on
+                next = next.copy(setAsidePct = next.heldBackPct + (drop - take), setAsideAtPct = readingPct,
+                    peakSincePct = readingPct)
+            }
         }
-        return copy(lastPct = readingPct, standStartMs = start, standCountedPct = counted, discountPct = discount)
+        return next.copy(standCountedPct = counted)
     }
 
-    /** Litres used from [basePct] to [nowPct], less the drop set aside, or null when there is no figure yet ([FuelUsed.litres]). */
+    /** Litres used from [basePct] to [nowPct], less the drop held back, or null when there is no figure yet ([FuelUsed.litres]). */
     fun litres(nowPct: Double, tankL: Double): Double? =
-        if (!FuelUsed.measurable(basePct) || nowPct <= 0.0) null else FuelUsed.litres(basePct, nowPct + discountPct, tankL)
+        if (!FuelUsed.measurable(basePct) || nowPct <= 0.0) null else FuelUsed.litres(basePct, nowPct + heldBackPct, tankL)
 
     /** The distance driven since [basePct] was taken, at [distanceKm] on the same odometer; 0 before a measurable start. */
     fun distanceKm(distanceKm: Double): Double =

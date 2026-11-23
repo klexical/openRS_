@@ -176,6 +176,25 @@ class FuelSpanTest {
         assertEquals((2.0 + settlingAllowedPct) / 100 * DriveState.TANK_L, after.litres(75.2, DriveState.TANK_L)!!, 1e-9)
     }
 
+    @Test fun `DRIVE - one-step jitter while moving does not give back a drop settled at a standstill`() {
+        // Review of 9c54902: seven steps in 48 s standing (set aside), then six one-step rises and falls while moving
+        // at the settled level; each rise gave the set-aside drop back and each fall counted, 1.39 L from no fuel burnt
+        (0..7).forEach { i ->
+            val ms = i * 48_000L / 7
+            FuelEconomy.onUpdate(80.0 - i * 0.4, 0.0, t0 + ms); FuelEconomy.onUpdate(80.0 - i * 0.4, 0.0, t0 + ms + 1)
+        }
+        (1..6).forEach { i ->
+            FuelEconomy.onUpdate(77.6, 60.0, t0 + 60_000L * i); FuelEconomy.onUpdate(77.2, 60.0, t0 + 60_000L * i + 30_000)
+        }
+        assertEquals(0.0, FuelEconomy.state.value.fuelUsedL, 0.0)
+    }
+
+    @Test fun `the drive's span - one-step jitter while moving does not give back a drop settled at a standstill`() {
+        val settle = (0..7).map { Triple(it * 48_000L / 7, 80.0 - it * 0.4, true) }
+        val jitter = (1..6).flatMap { listOf(Triple(60_000L * it, 77.6, false), Triple(60_000L * it + 30_000, 77.2, false)) }
+        assertEquals(null, span(80.0, *(settle + jitter).toTypedArray()).litres(77.2, DriveState.TANK_L))
+    }
+
     // ── The drive's own figures through the recorder ──────────────────────────────────────────────────────────────────
 
     /**
