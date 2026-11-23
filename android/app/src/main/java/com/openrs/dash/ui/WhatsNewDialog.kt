@@ -208,8 +208,10 @@ fun WhatsNewDialog(onDismiss: () -> Unit, version: String = com.openrs.dash.upda
                         fontFamily = ShareTechMono, color = Frost)
                     Text(" — v$version", fontSize = 14.sp, fontFamily = ShareTechMono, color = Mid)
                 }
+                // top, not centred: a title wrapped onto two or more lines keeps ✕ in the dialog's top-right corner
                 Box(
-                    Modifier.size(48.dp).clip(CircleShape).clickable(onClickLabel = "Close") { onDismiss() },
+                    Modifier.align(Alignment.Top).size(48.dp).clip(CircleShape)
+                        .clickable(onClickLabel = "Close") { onDismiss() },
                     contentAlignment = Alignment.Center,
                 ) {
                     Text("✕", fontSize = 18.sp, color = Mid)

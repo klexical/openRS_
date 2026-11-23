@@ -33,7 +33,8 @@ import java.time.Duration
  * #508 (What's New part): at 360 dp and font 1.3 the title ("What's New — v…") ran up to the ✕ close button. The
  * production [WhatsNewDialog] under the app's MaterialTheme at 360 dp, font 1.0 / 1.3 / 2.0, for a stable, an RC and a
  * nightly release name (the longest shipped): the close button keeps its full 48 × 48 dp target inside the dialog, and
- * every piece of the title ends at least [GAP_DP] before that target starts and stays inside the dialog.
+ * every piece of the title ends at least [GAP_DP] before that target starts and stays inside the dialog, and the target
+ * is never lower than the title's first line (it stays in the top-right corner when the title wraps).
  */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -88,6 +89,19 @@ class WhatsNewTitleFitTest {
                 WhatsNewDialog(onDismiss = {}, version = version)
             }
         }
+        try {
+            return check(controller, fontScale, version)
+        } finally {
+            controller.pause().stop().destroy()
+            idle(8)
+        }
+    }
+
+    private fun check(
+        controller: org.robolectric.android.controller.ActivityController<ComponentActivity>,
+        fontScale: Float,
+        version: String,
+    ): List<String> {
         idle(30)
         val density = controller.get().resources.displayMetrics.density
         val case = "font $fontScale v$version"
@@ -104,6 +118,9 @@ class WhatsNewTitleFitTest {
             if (c.width / density < 47.5f || c.height / density < 47.5f)
                 out += "[$case] close target ${c.width / density} × ${c.height / density} dp"
             if (c.right > panel.right + 0.5f) out += "[$case] close target past the dialog edge"
+            // ✕ stays in the top-right corner: never lower than the title's first line, however many lines it takes
+            val titleTop = title.minOfOrNull { it.boundsInRoot.top }
+            if (titleTop != null && c.top > titleTop + 0.5f) out += "[$case] close target below the title's first line"
             for (t in title) {
                 val b = t.boundsInRoot
                 val gap = (c.left - b.right) / density
@@ -114,8 +131,6 @@ class WhatsNewTitleFitTest {
             }
         }
         println("#508W [$case] close=${close?.boundsInRoot} title=${title.map { textOf(it) to it.boundsInRoot }}")
-        controller.pause().stop().destroy()
-        idle(8)
         return out
     }
 
