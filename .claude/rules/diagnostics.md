@@ -165,3 +165,15 @@ paths:
   Numbers only: no clock time, nothing from the car. Every build, not debug only (owner decision, #510). Additive:
   absent when the runtime gives no reading, no schema bump, no existing field changed; Sapphire's import ignores them
   (`import.test.ts` T0B2 on main, `HeapExportTest`)
+- **Mode 22 replies per module in the export (#514)** — `ReplyCount` (`DiagnosticLogger`'s, cleared by `sessionStart`)
+  counts every single-frame Mode 22 read from its `# TX` line (`logTxLine`, time before the write; certainly-not-sent
+  writes skipped; prober reads included) and every module reply from `logObdFrame`, the one place each reply passes once.
+  A new reply path that skips `logObdFrame`, or a request write that skips `logTxLine`, falls out of the count. It is a
+  count, never attribution: the ledgers still decide which DID an NRC is charged to. A positive answers its DID's oldest
+  waiting request; a reply that answers none, and every rejection, is held up to `EARLY_KEEP_MS` because over Bluetooth a
+  reply is often logged before its request's line (#209 T1); a held rejection answers the newest request that began before
+  it. No reply = nothing within `NO_REPLY_MS` (1 s, the issue's measure); `7F 22 78` makes it wait for the final reply
+  (pending only, never no reply). Per module the totals are exact; the miss run per DID and the answer times are a best
+  match around rejections. Counts only, additive (MODE 22 REPLIES / `mode22Replies`, no schema bump); Sapphire ignores it.
+  Not checked against a real Bluetooth session yet: that is #514's acceptance drive (`ReplyCountTest`,
+  `Mode22RepliesExportTest`)
