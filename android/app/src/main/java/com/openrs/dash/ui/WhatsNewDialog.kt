@@ -165,11 +165,11 @@ internal fun shouldShowWhatsNew(lastSeen: String, releaseName: String, base: Str
     lastSeen != releaseName && whatsNewHighlights(base) != null &&
         com.openrs.dash.update.AppVersion.fromVersionName(releaseName)?.isNightly != true
 
+/** [version] is the installed release name; a test passes the longest one shipped (a nightly's) to check the title row. */
 @Composable
-fun WhatsNewDialog(onDismiss: () -> Unit) {
+fun WhatsNewDialog(onDismiss: () -> Unit, version: String = com.openrs.dash.update.BuildInfo.releaseName) {
     val accent = LocalThemeAccent.current
     val accentM = accentMid()
-    val version = com.openrs.dash.update.BuildInfo.releaseName
     val highlights = whatsNewHighlights(com.openrs.dash.update.BuildInfo.base) ?: return onDismiss()
 
     var dialogEntered by remember { mutableStateOf(false) }
@@ -196,13 +196,22 @@ fun WhatsNewDialog(onDismiss: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                // #508: the title takes only the width the close button leaves (weight), 4 dp short of it; the version
+                // moves to a second line when both don't fit, and wraps there only if it is wider than the whole slot.
+                // An unweighted title squeezed the 48 dp button, down to nothing for a nightly's name.
+                @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+                androidx.compose.foundation.layout.FlowRow(
+                    Modifier.weight(1f).padding(end = 4.dp),
+                    itemVerticalAlignment = Alignment.CenterVertically,
+                ) {
                     Text("What's New", fontSize = 16.sp, fontWeight = FontWeight.Bold,
                         fontFamily = ShareTechMono, color = Frost)
                     Text(" — v$version", fontSize = 14.sp, fontFamily = ShareTechMono, color = Mid)
                 }
+                // top, not centred: a title wrapped onto two or more lines keeps ✕ in the dialog's top-right corner
                 Box(
-                    Modifier.size(48.dp).clip(CircleShape).clickable(onClickLabel = "Close") { onDismiss() },
+                    Modifier.align(Alignment.Top).size(48.dp).clip(CircleShape)
+                        .clickable(onClickLabel = "Close") { onDismiss() },
                     contentAlignment = Alignment.Center,
                 ) {
                     Text("✕", fontSize = 18.sp, color = Mid)
