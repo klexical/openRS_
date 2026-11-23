@@ -3,9 +3,9 @@ import {
   ResponsiveContainer, ScatterChart, Scatter, XAxis, YAxis, Tooltip,
   CartesianGrid, ZAxis, Cell,
 } from 'recharts'
-import { colors, modeColors } from '../../styles/tokens'
+import { colors } from '../../styles/tokens'
 import type { TripPoint } from '../../types/session'
-import { gForceSamples, modeDotColor } from '../../lib/gforce'
+import { gForceSamples, modeDotColor, modeLegend } from '../../lib/gforce'
 
 type ColorBy = 'speed' | 'mode'
 
@@ -35,12 +35,7 @@ export function GForceScatter({ points }: Props) {
 
   const legend = colorBy === 'speed'
     ? speedBands.map((b) => ({ label: b.label, color: b.color }))
-    : [
-        { label: 'Normal', color: modeColors.normal },
-        { label: 'Sport', color: modeColors.sport },
-        { label: 'Track', color: modeColors.track },
-        { label: 'Drift', color: modeColors.drift },
-      ]
+    : modeLegend
 
   const handleToggle = useCallback(() => {
     setColorBy((c) => (c === 'speed' ? 'mode' : 'speed'))

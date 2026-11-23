@@ -83,6 +83,7 @@ export function colorLegend(mode: ColorMode, boostUnit: BoostUnit = 'PSI'): { la
         { label: 'Sport', color: colors.warn },
         { label: 'Track', color: colors.ok },
         { label: 'Drift', color: colors.orange },
+        { label: '-- not known yet', color: colors.dim },   // the app's "--": mode not reported yet (#516)
       ]
     case 'boost': {
       // Band edges are 8 / 16 psi — labelled in the selected unit (#207)

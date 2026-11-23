@@ -40,3 +40,12 @@ export function modeDotColor(driveMode: string): string {
     default: return colors.dim
   }
 }
+
+/** The G-force plot's legend when its dots are coloured by mode: the four modes, then "--" (#516). */
+export const modeLegend: { label: string; color: string }[] = [
+  { label: 'Normal', color: modeColors.normal },
+  { label: 'Sport', color: modeColors.sport },
+  { label: 'Track', color: modeColors.track },
+  { label: 'Drift', color: modeColors.drift },
+  { label: '-- not known yet', color: colors.dim },
+]
