@@ -126,6 +126,19 @@ internal object DiagnosticReportBuilder {
         put("outcome", c.outcome)
     }
 
+    /**
+     * The FPS TIMELINE section's heap line (#510): the last sample's Java heap used of its limit, the most used in any
+     * sample, and the last native heap, in MiB (1024 × 1024 bytes); null when no sample carries a heap reading.
+     */
+    internal fun heapLine(fps: List<DiagnosticLogger.FpsPoint>): String? {
+        val heaps = fps.mapNotNull { it.heap }
+        if (heaps.isEmpty()) return null
+        val last = heaps.last()
+        fun mb(kb: Long) = "%.1f".format(java.util.Locale.ROOT, kb / 1024.0)
+        return "  Heap: now ${mb(last.usedKb)} of ${mb(last.maxKb)} MiB · peak ${mb(heaps.maxOf { it.usedKb })} MiB" +
+            " · native now ${mb(last.nativeKb)} MiB · ${heaps.size} of ${fps.size} samples"
+    }
+
     fun buildSummaryText(
         ts: String,
         snap: AdapterStatusSnapshot = DiagnosticLogger.snapshotAdapterStatus(),
@@ -381,6 +394,7 @@ internal object DiagnosticReportBuilder {
             val maxFps = fps.maxOf { it.fps }
             val avgFps = fps.map { it.fps }.average()
             appendLine("  Min: ${"%.0f".format(minFps)}  Max: ${"%.0f".format(maxFps)}  Avg: ${"%.0f".format(avgFps)}")
+            heapLine(fps)?.let { appendLine(it) }
             appendLine("  Last 10 samples:")
             fps.takeLast(10).forEach { pt ->
                 appendLine("    +${log.formatDuration(pt.relMs)} → ${"%.0f".format(pt.fps)} fps")
@@ -543,6 +557,12 @@ internal object DiagnosticReportBuilder {
                 put(JSONObject().apply {
                     put("relMs", pt.relMs)
                     put("fps", pt.fps)
+                    pt.heap?.let { h ->
+                        put("heapUsedKb", h.usedKb)
+                        put("heapTotalKb", h.totalKb)
+                        put("heapMaxKb", h.maxKb)
+                        put("nativeHeapKb", h.nativeKb)
+                    }
                 })
             }
         })
