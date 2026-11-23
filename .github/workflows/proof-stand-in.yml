@@ -1,0 +1,29 @@
+# The project-review proof's stand-in (the ruleset proposal, (b) "The proof"). It lives only on the scratch branch
+# scratch/project-review-proof-pr and runs only on pull requests into scratch/project-review-proof. It tries the two
+# forgery paths a project-review rule must refuse: an Actions check run named project-review, and a commit status
+# named project-review posted with the workflow's own GITHUB_TOKEN (creator github-actions[bot]). Neither may satisfy
+# a rule whose source is the owner's review app.
+name: proof stand-in
+on:
+  pull_request:
+    branches: [scratch/project-review-proof]
+permissions: {}
+jobs:
+  project-review:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "A check run named project-review from GitHub Actions (forgery path 1)."
+  forged-status:
+    runs-on: ubuntu-latest
+    permissions:
+      statuses: write
+    steps:
+      - name: Post a project-review status with GITHUB_TOKEN (forgery path 2)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::no head commit"; exit 1; }
+          gh api -X POST "repos/$REPO/statuses/$SHA" -f state=success -f context=project-review \
+            -f description="proof stand-in: a status from GITHUB_TOKEN, not the review app" --jq '.creator.login'
