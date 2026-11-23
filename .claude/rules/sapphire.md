@@ -15,8 +15,6 @@ Sapphire parses the drive and diagnostic files (it does not read `did_probe_*.cs
 
 **Design:** Dark "Void" aesthetic matching the openRS_ in-app palette.
 
-Scripts are in `web/package.json` (`dev`, `build`, `preview`, `test`, `test:watch`, `lint`); CI installs with `npm ci`.
-
 **Testing notes:**
 - Sapphire tests touching `localStorage` (store / App): Node 25's own `localStorage` global (non-functional without
   `--localstorage-file`) shadows jsdom's — stub one per test (`vi.stubGlobal('localStorage', …)`, see `App.test.tsx`)
