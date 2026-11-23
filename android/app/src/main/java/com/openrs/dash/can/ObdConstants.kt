@@ -39,8 +39,10 @@ object ObdConstants {
         BCM_QUERY_TPMS_LAST
     )
 
-    // TPMS sensor ID queries — polled once on connect to build the ID→position map.
-    // Each returns a 4-byte sensor ID in a single-frame response.
+    // TPMS sensor ID queries — build the ID→position map that 0x280B reports are matched against.
+    // Each returns a 4-byte sensor ID in a single-frame response. All four go out on the first BCM
+    // cycle of a connection; a position still unmapped is read again on later cycles, at most
+    // TPMS_ID_MAX_SENDS times per connection (#518, TpmsIdReads).
     const val BCM_QUERY_TPMS_ID_LF = "t72680322280F00000000\r"
     const val BCM_QUERY_TPMS_ID_RF = "t72680322281000000000\r"
     const val BCM_QUERY_TPMS_ID_RR = "t72680322281100000000\r"
@@ -49,6 +51,11 @@ object ObdConstants {
         BCM_QUERY_TPMS_ID_LF, BCM_QUERY_TPMS_ID_RF,
         BCM_QUERY_TPMS_ID_RR, BCM_QUERY_TPMS_ID_LR
     )
+    /**
+     * Sensor-ID reads per position per connection, the first cycle's included (#518): about 5½ minutes of BCM cycles,
+     * at most 4 × this many read-only single frames to 0x726 per connection. A chosen bound, not a measured one.
+     */
+    const val TPMS_ID_MAX_SENDS = 10
 
     // ISO-TP Flow Control frame sent to BCM (0x726) after receiving a First Frame
     const val BCM_FLOW_CONTROL = "t72683000000000000000\r"
