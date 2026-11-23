@@ -105,12 +105,13 @@ export async function importBatchZip(file: File): Promise<Session[]> {
 /**
  * Import an export ZIP already read into memory (#384 ticket 06): every drive of a batch export (all of them, or the
  * first malformed one throws), else the one drive or session-only entry. The import action reads the ZIP itself, so
- * it can report reading and parsing as separate stages.
+ * it can report reading and parsing as separate stages. [notes] gets one line per part of the ZIP that was skipped
+ * (#266: a damaged diagnostic detail file), for the import's outcome; nothing of it is stored.
  */
-export async function importLoadedZip(zip: JSZip, filename: string): Promise<Session[]> {
+export async function importLoadedZip(zip: JSZip, filename: string, notes: string[] = []): Promise<Session[]> {
   const manifest = await readManifest(zip)
-  if (countDriveCsvs(zip, manifest) > 1) return importBatchZipInner(zip, manifest, filename)
-  return [await importSingleDrive(zip, manifest, filename)]
+  if (countDriveCsvs(zip, manifest) > 1) return importBatchZipInner(zip, manifest, filename, notes)
+  return [await importSingleDrive(zip, manifest, filename, notes)]
 }
 
 /** Drive CSVs in the ZIP — from the manifest when it lists any, else by filename (a list this Sapphire can't read loses no drive). */
@@ -123,7 +124,7 @@ function countDriveCsvs(zip: JSZip, manifest: ExportManifest | null): number {
   return driveCsvFiles(zip, manifest).length
 }
 
-async function importBatchZipInner(zip: JSZip, manifest: ExportManifest | null, filename: string): Promise<Session[]> {
+async function importBatchZipInner(zip: JSZip, manifest: ExportManifest | null, filename: string, notes: string[] = []): Promise<Session[]> {
   const csvFiles = driveCsvFiles(zip, manifest)
 
   const sessions: Session[] = []
@@ -140,7 +141,7 @@ async function importBatchZipInner(zip: JSZip, manifest: ExportManifest | null, 
     // DTC data (shared across batch — use first found)
     const dtcResults = await parseDtcData(zip, manifest)
     const dtcScan = dtcTextFile(zip, manifest) !== undefined   // a text-only scan states no status
-    const diagnostics = await parseDiagnosticData(zip, dtcResults, manifest)
+    const diagnostics = await parseDiagnosticData(zip, dtcResults, manifest, notes)
     const meta = await parseMeta(zip, filename, manifest)
     const name = buildSessionName(meta, trip, csvFile)
 
@@ -205,7 +206,7 @@ function findProfileFor(zip: JSZip, manifest: ExportManifest | null, csvFile: st
   return csvId && profileId && csvId !== profileId ? null : candidates[0]
 }
 
-async function importSingleDrive(zip: JSZip, manifest: ExportManifest | null, filename: string): Promise<Session> {
+async function importSingleDrive(zip: JSZip, manifest: ExportManifest | null, filename: string, notes: string[] = []): Promise<Session> {
   const id = crypto.randomUUID()
   const trip = await parseTripData(zip, manifest)
 
@@ -224,7 +225,7 @@ async function importSingleDrive(zip: JSZip, manifest: ExportManifest | null, fi
   // #384: a scan with no codes is not "no scan", and only a scan marked COMPLETE lets "no codes" mean none
   const dtcScan = dtcJson !== null || dtcTextFile(zip, manifest) !== undefined
   const dtcScanStatus = dtcJson?.status ?? null
-  const diagnostics = await parseDiagnosticData(zip, dtcResults, manifest)
+  const diagnostics = await parseDiagnosticData(zip, dtcResults, manifest, notes)
   const dtcScanFinishedAtMs = (await detailScanFinishedAtMs(zip, manifest)) ?? dtcJson?.finishedAtMs
   const meta = await parseMeta(zip, filename, manifest)
   const name = buildSessionName(meta, trip, filename)
@@ -727,21 +728,48 @@ function diagnosticDetailFile(zip: JSZip, manifest: ExportManifest | null): stri
     ?? Object.keys(zip.files).find((f) => f.startsWith('diagnostic_detail_') && f.endsWith('.json'))
 }
 
-async function parseDiagnosticData(zip: JSZip, dtcResults: DtcEntry[], manifest: ExportManifest | null): Promise<DiagnosticData | null> {
+/** The import's note for a diagnostic detail file it skipped (#266; owner, 2026-11-23). Text users see. */
+export function skippedDetailNote(jsonFile: string): string {
+  return `${jsonFile} could not be read (damaged or missing) and was skipped: this import has no session log.`
+}
+
+/**
+ * The import's diagnostics. A detail file that cannot be read (not JSON, not an object, a shape the parsers cannot
+ * read, or named by the manifest but not in the ZIP) is skipped as a whole, with one note in [notes]: the drive and the
+ * fault codes still load, as an import with no session log (#266; owner, 2026-11-23).
+ */
+async function parseDiagnosticData(zip: JSZip, dtcResults: DtcEntry[], manifest: ExportManifest | null, notes: string[] = []): Promise<DiagnosticData | null> {
   const jsonFile = diagnosticDetailFile(zip, manifest)
-  if (!jsonFile) {
-    if (dtcResults.length > 0) {
-      // fault codes only: no session log in this import (#384: recording gaps are then not checked)
-      return { canInventory: [], fpsTimeline: [], sessionEvents: [], decodeTrace: [], probeResults: [], dtcResults, sessionLog: false }
-    }
+  const detail = jsonFile ? await readDiagnosticDetail(zip, jsonFile, dtcResults) : null
+  if (detail) return detail
+  if (jsonFile) {
+    const note = skippedDetailNote(jsonFile)
+    if (!notes.includes(note)) notes.push(note)   // a batch reads the shared detail file once per drive: one note
+  }
+  if (dtcResults.length > 0) {
+    // fault codes only: no session log in this import (#384: recording gaps are then not checked)
+    return { canInventory: [], fpsTimeline: [], sessionEvents: [], decodeTrace: [], probeResults: [], dtcResults, sessionLog: false }
+  }
+  return null
+}
+
+/** The detail file's diagnostics, or null when it cannot be read (#266). */
+async function readDiagnosticDetail(zip: JSZip, jsonFile: string, dtcResults: DtcEntry[]): Promise<DiagnosticData | null> {
+  try {
+    const file = zip.files[jsonFile]
+    if (!file || file.dir) return null
+    const data: unknown = JSON.parse(await file.async('string'))
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return null
+    return diagnosticsFrom(data as Record<string, unknown>, dtcResults)
+  } catch {
     return null
   }
+}
 
-  const raw = await zip.files[jsonFile].async('string')
-  const data = JSON.parse(raw)
-
+function diagnosticsFrom(data: Record<string, unknown>, dtcResults: DtcEntry[]): DiagnosticData {
   // #384: the session's length (part of a drive-less session's proof), when the detail states it
-  const durationMs = typeof data?.meta?.sessionDurationMs === 'number' ? data.meta.sessionDurationMs : undefined
+  const meta = data.meta as { sessionDurationMs?: unknown } | null | undefined
+  const durationMs = typeof meta?.sessionDurationMs === 'number' ? meta.sessionDurationMs : undefined
   return {
     canInventory: parseCanInventory(data),
     fpsTimeline: parseFpsTimeline(data),

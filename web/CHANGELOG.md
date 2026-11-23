@@ -16,6 +16,7 @@ A fix shipped after a slice goes into that slice's Fixed list until the next sli
 
 ### Fixed
 - **No fuel figure where the app gives none** — a drive whose export states its fuel used as 0 (the level fell by fewer than four gauge steps, so the app shows "—") now shows no Fuel Used or Economy card, and Compare treats it as a missing reading; before, Sapphire worked out its own figure from the CSV's first and last level. A drive imported without its profile keeps the CSV figure. The fix applies to drives imported from now on; a drive already stored keeps its figure until it is deleted and imported again (`lib/import.ts`). ([#443](https://github.com/klexical/openRS_/issues/443))
+- **A damaged diagnostic detail file no longer stops an import** — an export whose `diagnostic_detail_*.json` cannot be read (damaged, cut short, or named by the manifest but missing) now imports its drive and fault codes without a session log, and the import's outcome says which file was skipped; before, the whole import failed and the drive was lost (`lib/import.ts`, `ImportStatus.tsx`). ([#266](https://github.com/klexical/openRS_/issues/266))
 
 ### Changed
 - **Diagnostics' frame-rate chart has no zoom bar of its own** — the page's time range belongs to the drive, and the frame-rate chart runs on the session's own time, so it shows the whole session until slice 4 rebuilds Diagnostics (`TimeSeriesChart.tsx`). ([#416](https://github.com/klexical/openRS_/issues/416))
