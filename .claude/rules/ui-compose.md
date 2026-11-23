@@ -20,6 +20,8 @@ paths:
   the structural `AccentTriad.full` replaces them. Only paint swatches (`rsPaintAccent`) show the raw paint
 - **Amber text uses `WarnInk`** — the text primitives in `Theme.kt` route DAY `Warn` through `textColor()`; raw Material
   `Text`/`TextStyle` must use `WarnInk` or `textColor(...)` explicitly. Fills/bars keep `Warn`
+- **Brand art is never redrawn** — the symbols, car art, wordmark and launcher come from the owner-approved concept sheet
+  (`BrandArt.kt`, `res/drawable*/`); never redraw or substitute them unless the owner asks
 - **Colour = state on DRIVE / THERMAL (design pass)** — readings render in ink, the paint accent marks live/brand
   elements (BOOST value, sparklines, throttle, selected chips), and Warn / Orange appear only when a reading crosses
   an existing limit (`tempLevel()` with the preset warn/crit, `isTireLow` / `tireWarnPsi`, fuel < 10 %, knock counter,
