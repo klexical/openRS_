@@ -68,6 +68,9 @@ can/
   Mode22Frames.kt         — `Mode22`: request DID / positive DID / NRC helpers + `RawReply` (Frame / AmbiguousNrc) for probe matching
   WriteOutcome.kt         — transport write outcome: SENT / POSSIBLY_DELIVERED (GATT 13) / WriteFailure (not sent / uncertain)
   IsoTpBuffer.kt          — ISO-TP SF/FF/CF reassembly; caller sends BCM_FLOW_CONTROL after FF
+  TpmsIdReads.kt          — TPMS sensor-ID reads per BCM cycle (#518): all four on a connection's first cycle, then only a
+                            position still unmapped in the state and only after a BCM frame since its last read, at most
+                            ObdConstants.TPMS_ID_MAX_SENDS each per connection
   ReceptionStall.kt       — gaps on an open connection (#356): frames per quarter second of elapsedRealtime against the
                             connection's own rate (frames over time outside gaps); a gap whose next half second holds a burst
                             of queued frames = RECEPTION_STALL, any other = QUIET_SPAN (claims no cause); a gap with no frame
