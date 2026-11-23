@@ -297,10 +297,11 @@ class CanDataService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_CANCEL_CONNECT) {
-            cancelConnection()   // refused (no-op) once connected or while recording — see cancelConnection
+            val cancelled = cancelConnection()   // refused (no-op) once connected or while recording — see cancelConnection
             // A cancel delivered to a service that wasn't already promoted must not leave it started
             if (!foreground.isForeground) stopSelf(startId)
-            return START_NOT_STICKY
+            // Android restarts a killed service by the last start's value: a refused Cancel leaves a live link sticky (#550)
+            return if (cancelled) START_NOT_STICKY else START_STICKY
         }
         return START_STICKY
     }
