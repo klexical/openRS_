@@ -12,9 +12,9 @@ The words Stable, Release candidate, Nightly, Stable channel and Beta channel ar
 
 Through the 2.2.7 cycle, every test build for the Beta channel was a release candidate (rc.1 to rc.8). Each one was cut
 by hand: a version bump with a literal versionCode, release notes written for it, a tag, and the maintainer's approval
-of that one release; rc.8, for example, waited on a parked check at the car. A fix merged into `staging` reached Beta
-users only when the next candidate was cut, so testers ran builds that were behind `staging`, and every candidate cost a
-round of release work apart from the changes it carried.
+of that one release. A fix merged into `staging` reached Beta users only when the next candidate was cut, so testers
+ran builds that were behind `staging`, and every candidate cost a round of release work apart from the changes it
+carried. The decision record gives no reason; these are the costs the change removes.
 
 ## Decision
 
@@ -26,7 +26,7 @@ round of release work apart from the changes it carried.
    has no advisory mode.
 3. **It is published without an approval of its own.** The approval moves from the release to the merge: a change a
    user would notice needs the maintainer's approval before it merges into `staging`, and so does any change to the
-   pipeline itself. Once publishing is on, an edit to the publish, clean-up or gate script is approved like a release.
+   pipeline itself. While publishing is on, an edit to the publish, clean-up or gate script is approved like a release.
    Stable releases keep their approval per release.
 4. **It goes to the existing Beta channel.** There is no third channel. A nightly is a pre-release, which GitHub never
    marks Latest, and the Stable channel only reads Latest, so it never offers a nightly.
@@ -55,9 +55,8 @@ What was traded away:
   was approved and merged into `staging`, and its checks are the pipeline's: tests, lint, signature, attestation and the
   launch check. A passed launch check shows only that the app installs, starts and keeps running; it says nothing about
   any screen or reading.
-- **A car check per build.** Checks at the car moved to a fortnightly check on the newest nightly. A stable release now
-  needs two of those in a row with nothing that loses data or breaks a control, at least one of them a real drive, and
-  no open P1 bug that has not been accepted as a known limitation.
+- **A car check per build.** A nightly is not checked at the car before it is published. Checks at the car now run on
+  their own schedule, and a stable release still waits for them.
 - **Hand-written notes per test build.** Nightly notes are a generated list of pull requests; the changelog stays the
   authoritative record.
 
@@ -79,7 +78,7 @@ What has to be kept in mind:
 
 ## Options not taken
 
-- **Keep cutting release candidates.** Rejected for the reasons in Context.
+- **Keep cutting release candidates.** Not taken: it would keep the two costs described in Context.
 - **A separate Nightly channel.** Rejected: the Beta channel already offers the newest release of any kind.
 - **Removing old nightlies automatically.** Rejected: published nightlies are kept, and even a taken-back one keeps its
   tag and notes as the record.
