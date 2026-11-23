@@ -150,4 +150,46 @@ class ReplyCountTest {
         c.reset()
         assertEquals(emptyList<ReplyCount.Module>(), c.read(t))
     }
+
+    /** One module's counts as a comparable list (everything but its ID). */
+    private fun ReplyCount.Module.counts() = listOf(requests, positive, negative, noReply, late, pendingOnly, waiting, dropped,
+        unmatched, longestMissRun) + latency
+
+    @Test fun `response pending counts the same whether it is logged before or after its request's line`() {
+        for (finalAt in listOf(400L, 1_500L)) {
+            // Wi-Fi order: the request's line, then 7F 22 78, then the answer
+            val wifi = ReplyCount()
+            wifi.request(req("7E0", "0304"), 0, sent, 10)
+            wifi.reply(0x7E8, pending, 50)
+            wifi.reply(0x7E8, pos("0304"), finalAt)
+            // Bluetooth order: 7F 22 78 arrives while the write is still returning, before the request's line
+            val ble = ReplyCount()
+            ble.reply(0x7E8, pending, 50)
+            ble.request(req("7E0", "0304"), 0, DiagnosticLogger.WRITE_POSSIBLY_DELIVERED, 60)
+            ble.reply(0x7E8, pos("0304"), finalAt)
+            val w = wifi.pcm(20_000); val b = ble.pcm(20_000)
+            assertEquals("final answer at $finalAt ms: one positive, nothing lost or unmatched", listOf(1, 0, 0, 0), listOf(w.positive, w.noReply, w.unmatched, w.late))
+            assertEquals("final answer at $finalAt ms: both orders count alike", w.counts(), b.counts())
+        }
+        // Both the pending and the final answer before the line
+        val ble = ReplyCount()
+        ble.reply(0x7E8, pending, 30); ble.reply(0x7E8, pos("0304"), 45)
+        ble.request(req("7E0", "0304"), 0, DiagnosticLogger.WRITE_POSSIBLY_DELIVERED, 60)
+        val m = ble.pcm(20_000)
+        assertEquals(listOf(1, 0, 0, 0), listOf(m.positive, m.noReply, m.unmatched, m.pendingOnly))
+        assertEquals(listOf(1, 0, 0, 0, 0, 0), m.latency)
+    }
+
+    @Test fun `response pending holds only the newest request that began before it, and no final answer is pending only`() {
+        val c = ReplyCount()
+        c.request(req("703", "DD01"), 0, sent, 40)                                           // lost
+        c.request(req("703", "DD02"), 100, sent, 140)
+        c.reply(0x70B, pending, 150)
+        c.reply(0x70B, pos("DD02"), 600)
+        c.request(req("703", "DD03"), 2_000, sent, 2_040)
+        c.reply(0x70B, pending, 2_050)                                                       // never a final answer
+        val m = c.read(20_000).first { it.responseId == 0x70B }
+        assertEquals("the older request is lost, not pending", 1, m.noReply)
+        assertEquals(1, m.positive); assertEquals(1, m.pendingOnly); assertEquals(0, m.unmatched)
+    }
 }

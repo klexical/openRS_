@@ -17,15 +17,16 @@ import com.openrs.dash.can.NrcTracker
  * - A positive reply answers the oldest waiting request for its DID. A request with no reply within [NO_REPLY_MS] counts
  *   as no reply.
  * - A reply can be logged before its request's `# TX` line (a Bluetooth write returns after the module answered, #209 T1).
- *   So a positive that answers no waiting request, and every final rejection, is held: the next request of its module
- *   whose write began at or before it takes it (for a positive: a request for its DID).
+ *   So a positive that answers no waiting request, and every rejection and response pending, is held: the next request of
+ *   its module whose write began at or before it takes it (for a positive: a request for its DID).
  * - A held rejection otherwise answers the newest request of the module that began before it: settled when a later
  *   request is written, before any request it could answer runs out of time, or after [EARLY_KEEP_MS]. Polls are
  *   paced well apart and answers take about 50 ms, so an older waiting request is more likely lost than answered late.
  * - A held reply that no request takes is a late answer (to a request counted as no reply at most [LATE_KEEP_MS] before
  *   it: counted late as well) or else unmatched. Late counts therefore trail by up to [EARLY_KEEP_MS].
- * - `7F 22 78` (response pending) is a reply that is not the answer: the module's waiting requests then wait for their
- *   final reply up to [LATE_KEEP_MS] and, if none comes, count as pending only, not as no reply.
+ * - `7F 22 78` (response pending) is a reply that is not the answer. It is held and matched like a rejection; the request
+ *   it marks then waits for its final reply up to [LATE_KEEP_MS] and, if none comes, counts as pending only, not as no
+ *   reply.
  * - Requests certainly not sent are not counted. DID-prober requests count like polls (they go to the same modules).
  *
  * Every queue is bounded; a request that falls off a full queue is counted in [Module.dropped], so `requests = positive +
@@ -34,8 +35,8 @@ import com.openrs.dash.can.NrcTracker
 class ReplyCount {
     private class Request(val did: Int, val stampMs: Long) { var pending = false }
     private class Lapsed(val did: Int, val stampMs: Long)
-    /** A reply not yet matched: [did] for a positive, null for a final rejection. */
-    private class Held(val did: Int?, val atMs: Long)
+    /** A reply not yet matched: [did] for a positive, null for a rejection; [pending] for `7F 22 78`. */
+    private class Held(val did: Int?, val atMs: Long, val pending: Boolean = false)
 
     private class Live(val responseId: Int) {
         val waiting = ArrayDeque<Request>()          // stamp order
@@ -83,18 +84,21 @@ class ReplyCount {
         val (requestId, did) = Mode22.request(slcanFrame) ?: return
         val m = module(requestId + RESPONSE_OFFSET) ?: return
         prune(m, nowMs)
-        // A rejection that came before this write began answers an earlier request
-        m.held.filter { it.did == null && it.atMs < stampMs }.forEach { m.held.remove(it); settleRejection(m, it) }
+        // A rejection or response pending that came before this write began belongs to an earlier request
+        m.held.filter { it.did == null && it.atMs < stampMs }.forEach { m.held.remove(it); settle(m, it) }
         m.requests++
-        // A reply that came in while this write was still returning answers it
-        val i = m.held.indexOfFirst { it.atMs >= stampMs && (it.did == null || it.did == did) }
-        if (i >= 0) {
-            val h = m.held.removeAt(i)
+        // A reply that came in while this write was still returning is this request's: a response pending marks it, a
+        // final reply answers it
+        var pendingSeen = false
+        for (h in m.held.toList()) {
+            if (h.atMs < stampMs || (h.did != null && h.did != did)) continue
+            m.held.remove(h)
+            if (h.pending) { pendingSeen = true; continue }
             if (h.did == null) m.negative++ else m.positive++
             answered(m, did, h.atMs - stampMs)
             return
         }
-        val r = Request(did, stampMs)
+        val r = Request(did, stampMs).also { it.pending = pendingSeen }
         // In stamp order: two pollers write to one module (AWD), and each line is written when its write returns
         val at = m.waiting.indexOfFirst { it.stampMs > stampMs }
         if (at < 0) m.waiting.addLast(r) else m.waiting.add(at, r)
@@ -108,12 +112,14 @@ class ReplyCount {
         val m = module(canId) ?: return
         prune(m, nowMs)
         if (code == NrcTracker.NRC_RESPONSE_PENDING) {
-            if (m.waiting.isEmpty()) m.unmatched++ else m.waiting.forEach { it.pending = true }
+            // Held like a rejection: over Bluetooth it can come before its request's line (#514 review)
+            m.held.addLast(Held(null, nowMs, pending = true))
+            if (m.held.size > MAX_HELD) settle(m, m.held.removeFirst())
             return
         }
         if (did != null) {
             val w = m.waiting.indexOfFirst { it.did == did }
-            if (w >= 0) { val r = m.waiting.removeAt(w); m.positive++; answered(m, r.did, nowMs - r.stampMs); return }
+            if (w >= 0) { val r = m.waiting.removeAt(w); m.positive++; final(m, r, nowMs); return }
         }
         m.held.addLast(Held(did, nowMs))
         if (m.held.size > MAX_HELD) settle(m, m.held.removeFirst())
@@ -136,13 +142,33 @@ class ReplyCount {
         m.missRun.remove(did)
     }
 
+    /** [r] got its final reply at [atMs]: a response pending still held from its own wait was its own. */
+    private fun final(m: Live, r: Request, atMs: Long) {
+        m.held.removeAll { it.pending && it.atMs >= r.stampMs && it.atMs <= atMs }
+        answered(m, r.did, atMs - r.stampMs)
+    }
+
     /** A held reply no request took in time. */
-    private fun settle(m: Live, h: Held) { if (h.did == null) settleRejection(m, h) else lateOrUnmatched(m, h) }
+    private fun settle(m: Live, h: Held) = when {
+        h.pending -> settlePending(m, h)
+        h.did == null -> settleRejection(m, h)
+        else -> lateOrUnmatched(m, h)
+    }
+
+    /**
+     * A response pending marks the newest waiting request that began before it. One that came for a request already
+     * counted as no reply changes nothing (its final answer, if any, counts late); otherwise it is unmatched.
+     */
+    private fun settlePending(m: Live, h: Held) {
+        val w = m.waiting.indexOfLast { it.stampMs <= h.atMs }
+        if (w >= 0) { m.waiting[w].pending = true; return }
+        if (m.lapsed.none { it.stampMs <= h.atMs && h.atMs - it.stampMs <= LATE_KEEP_MS }) m.unmatched++
+    }
 
     /** A rejection answers the newest waiting request that began before it, else it is late or unmatched. */
     private fun settleRejection(m: Live, h: Held) {
         val w = m.waiting.indexOfLast { it.stampMs <= h.atMs }
-        if (w >= 0) { val r = m.waiting.removeAt(w); m.negative++; answered(m, r.did, h.atMs - r.stampMs) }
+        if (w >= 0) { val r = m.waiting.removeAt(w); m.negative++; final(m, r, h.atMs) }
         else lateOrUnmatched(m, h)
     }
 
@@ -156,9 +182,10 @@ class ReplyCount {
         while (true) {
             val r = m.waiting.firstOrNull { (!it.pending && nowMs - it.stampMs > NO_REPLY_MS) ||
                                             (it.pending && nowMs - it.stampMs > LATE_KEEP_MS) } ?: break
-            // A rejection that came inside this request's window settles first: it may be this request's answer
+            // A rejection or response pending that came inside this request's window settles first: it may be this
+            // request's reply
             val h = m.held.firstOrNull { it.did == null && it.atMs >= r.stampMs && it.atMs - r.stampMs <= NO_REPLY_MS }
-            if (h != null) { m.held.remove(h); settleRejection(m, h); continue }
+            if (h != null) { m.held.remove(h); settle(m, h); continue }
             m.waiting.remove(r)
             if (r.pending) { m.pendingOnly++; continue }
             m.noReply++

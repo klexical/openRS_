@@ -759,8 +759,9 @@ internal fun didInventoryJson(inv: DiagnosticLogger.DidInventory): JSONObject = 
 
 /**
  * MODE 22 REPLIES summary lines (#514): per module, of the Mode 22 requests the app wrote this session, how many got a reply
- * of any kind within [ReplyCount.NO_REPLY_MS] and how quickly. A rejection counts as a reply to the module's oldest waiting
- * request (it names no DID); attribution of NRCs to DIDs is DID INVENTORY's and LINK INTEGRITY's, unchanged.
+ * of any kind within [ReplyCount.NO_REPLY_MS] and how quickly. A rejection names no DID, so it counts as the reply to the
+ * module's newest request that began before it (the [ReplyCount] rules); attribution of NRCs to DIDs is DID INVENTORY's and
+ * LINK INTEGRITY's, unchanged.
  */
 internal fun repliesText(modules: List<ReplyCount.Module>): List<String> = buildList {
     add("─── MODE 22 REPLIES (per module, this session) ────────────")
