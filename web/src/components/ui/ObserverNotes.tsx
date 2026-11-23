@@ -23,7 +23,8 @@ function offset(ms: number): string {
 
 /**
  * Observer's notes beside what the session recorded around each one: the last request, the frame rate and any
- * recording gap. Renders nothing when the session has no notes (every export made before the notes existed).
+ * REC_GAP event (a disconnect, a pause or a missing position update, so not headed "recording gap", #393). Renders
+ * nothing when the session has no notes (every export made before the notes existed).
  */
 export function ObserverNotesSection({ sessionEvents, fpsTimeline }: { sessionEvents: SessionEvent[]; fpsTimeline: FpsSample[] }) {
   const notes = observerNotes(sessionEvents)
@@ -45,7 +46,7 @@ export function ObserverNotesSection({ sessionEvents, fpsTimeline }: { sessionEv
               <th className="px-3 py-2">Note</th>
               <th className="px-3 py-2">Last request</th>
               <th className="px-3 py-2">Frames received</th>
-              <th className="px-3 py-2">Recording gaps</th>
+              <th className="px-3 py-2">Recording interruptions</th>
             </tr>
           </thead>
           <tbody>
