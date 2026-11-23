@@ -22,6 +22,12 @@ interface GattLink {
     fun writeCccd(service: UUID, characteristic: UUID, value: ByteArray): Boolean
     fun write(service: UUID, characteristic: UUID, value: ByteArray, writeType: Int): Boolean
     fun requestMtu(mtu: Int): Boolean
+    /**
+     * Ask for `BluetoothGatt.CONNECTION_PRIORITY_HIGH` (#513): a shorter connection interval, so more notifications reach
+     * the phone each second. A request to the phone's stack, which may renegotiate the link with the adapter or not; no
+     * callback follows. Default false (refused), for links that don't offer it.
+     */
+    fun requestHighConnectionPriority(): Boolean = false
     fun bondState(): Int
     fun createBond(): Boolean
     fun disconnect()
@@ -36,7 +42,8 @@ interface GattLink {
  *     writable and whose notify characteristic notifies or indicates;
  *  2. the notification subscription (CCCD: notify, or indicate when that is all it supports); an authentication /
  *     encryption failure pairs once ([BleSetupPolicy]) and repeats it;
- *  3. MTU 247 when the stack supports it.
+ *  3. MTU 247 when the stack supports it;
+ *  4. the high connection priority (#513), once nothing else is outstanding on the link; refused or not, setup goes on.
  * Writes use the characteristic's own write type (with response when supported, else without) and wait at most
  * [writeTimeoutMs] for the write callback — a missing callback fails the write instead of holding the write lock, and
  * closes the link: the callback names no write, so a late one would otherwise acknowledge the next write.
@@ -76,6 +83,9 @@ class BleGattCore(
     val mtuTrace = BleMtuTrace()
     /** This attempt's notifications and SLCAN lines, for the export's UI timing (#421); the core only writes to it. */
     val delivery = BleDeliveryCounts()
+    /** This attempt's connection-priority request (#513): null = not yet asked, false = the stack refused to start it. */
+    @Volatile var connectionPriorityRequested: Boolean? = null
+        private set
     private var writeType = WRITE_TYPE_DEFAULT
     private var link: GattLink? = null
 
@@ -199,6 +209,10 @@ class BleGattCore(
         val started = l.requestMtu(REQUESTED_MTU)
         mtuTrace.requested(REQUESTED_MTU, started)
         if (started) withTimeoutOrNull(5_000L) { mtuReady.await() } ?: mtuTrace.waitTimedOut()
+        // #513: a Bluetooth session ran at about a seventh of the Wi-Fi rate, in groups of at most 9 lines about every
+        // 28 ms, as if the link carried one notification per connection event at a long interval; the app had never
+        // asked for a shorter one. Asked after the MTU exchange, so no other request is outstanding on the link.
+        connectionPriorityRequested = l.requestHighConnectionPriority()
     }
 
     private suspend fun bond(l: GattLink) {
