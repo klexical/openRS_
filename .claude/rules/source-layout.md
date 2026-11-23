@@ -145,6 +145,8 @@ diagnostics/
                             the assembled VIN (content layer, `VIN_RUN_MIN = 4`); raw log data → 00 (ID/DLC/timing kept),
                             inventory/trace → **, and every stored probe reply at export read once the VIN is known (`probeSessions`); counted
                             separately in LOG LIMITS; `ExportCounters` = one locked reading for both files
+                            TPMS sensor IDs (BCM 0x280B / 0x280F–0x2812 replies + any known ID, #562) and 0x398's last six bytes
+                            (#527) masked at the same choke point, each counted in LOG LIMITS
                             sessionTransport field: transport label for diagnostic reports and share intents
   DiagnosticExporter.kt   — ZIP orchestrator + share intents + crash history; delegates format generation
                             to DiagnosticReportBuilder and DriveExportBuilder; rc.6 adds drive_knock_session_*.csv (KnockSessionLog)

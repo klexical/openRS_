@@ -165,3 +165,15 @@ paths:
   Numbers only: no clock time, nothing from the car. Every build, not debug only (owner decision, #510). Additive:
   absent when the runtime gives no reading, no schema bump, no existing field changed; Sapphire's import ignores them
   (`import.test.ts` T0B2 on main, `HeapExportTest`)
+- **TPMS sensor IDs and 0x398's text are masked like the VIN (#562, #527)** — at the same choke point in `DiagnosticLogger`
+  (raw log data → `00`, inventory and trace → `**`, ID / DLC / time / PCI / DID kept), each with its own LOG LIMITS count.
+  - **Page rule:** only on the BCM's response ID (0x72E), for DIDs 0x280F–0x2812 (single frame) and 0x280B (first frame and
+    the consecutive frame that completes the ID). Another car's TPMS module at another address is not covered by the page
+    rule, only by content; a DID prober reply to one of those DIDs on the BCM reads `00` at record time.
+  - **Content:** a known ID (learned from those replies and from the app's state; at most `MAX_KNOWN_SENSOR_IDS`, 0 and
+    FFFFFFFF never) in any frame, TX lines and stored probe replies included; the same cold-start limit as the VIN's
+    content layer (a probe reply exported before any ID is known keeps its bytes).
+  - **0x398:** its last `TEXT_398_BYTES` (6) data bytes are masked in every frame, text or not; whether the text identifies
+    the car is the owner's open question on #527.
+  - **Limits:** the app keeps and maps the real IDs; DIAG's DID prober list on screen still shows the reply bytes. Exports
+    made before this masking hold the IDs (`ExportTpmsIdMaskTest`)
