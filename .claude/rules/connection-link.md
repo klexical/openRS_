@@ -199,10 +199,11 @@ paths:
   side, the reader sees EOF and `SlcanConnection` reconnects. A transport that only throws from `write` ends nothing
 - **No adapter reply text reaches a log (#370)** — the adapter's `/check_status` reply carries its Wi-Fi and MQTT passwords
   in plain text, and Android's `org.json` repeats its whole input in a parse error's message. `WicanApi` logs a failure
-  through `logFailure` only: the HTTP status code's three digits or the exception's class name, never the exception, its
-  message or the status line's reason text; success is the status code 200, never a "200" found in the line
+  through `logFailure` only: the HTTP status code's three digits, the exception's class name or the fixed over-limit
+  line, never the exception, its message or the status line's reason text; success is the status code 200, never a "200" found in the line
   (`CheckStatusLogRedactionTest`). Any new request to the adapter's web pages follows the same rule: no body, no
-  throwable, no `e.message` in `Log`, an event or an export.
+  throwable, no `e.message` in `Log`, an event or an export; and it reads at most `WicanApi.MAX_REPLY_CHARS` of a reply's
+  body, never a buffer sized by the reply's `Content-Length` (`FirmwareHttpBodyLimitTest`).
   - Two accepted exceptions, kept so the export's text does not change in #370: `FirmwareApi.post` (`/api/frs`) fails
     with the reply's status line, which reaches the DM_CMD / ESC events, the export and the screen; the WebSocket upgrade
     (`WebSocketSlcanTransport`) fails with up to 80 characters of the reply's headers, which reach the STATE event and
