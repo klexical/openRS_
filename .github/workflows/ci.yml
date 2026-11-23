@@ -116,6 +116,39 @@ jobs:
       - name: Run lint
         run: chmod +x gradlew && ./gradlew lint --no-daemon
 
+  # Changelog fragments: entries live one file each under android/changelog.d/ and stable folds them in, so pull
+  # requests stop conflicting in CHANGELOG.md (.claude/rules/build-release.md, "Changelog Format"). On a pull request
+  # into staging, an entry typed straight into a (nightlies) section is refused, or only warned when the pull request
+  # began before the switch; HEAD^1 and HEAD^2 are the base and head sides of the merge commit the event checks out.
+  changelog:
+    name: Changelog fragments
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: android
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Test the fragment tool (changelog.py)
+        run: python3 -I scripts/test-changelog.py
+
+      - name: Check the fragments, and that a pull request into staging types no entry into CHANGELOG.md
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          if [ "$BASE_REF" = staging ]; then
+            python3 -I scripts/changelog.py check --base HEAD^1 --pr-head HEAD^2
+          else
+            python3 -I scripts/changelog.py check
+          fi
+
   release:
     name: Release APK
     runs-on: ubuntu-latest

@@ -23,7 +23,7 @@ object CrashReporter {
             try {
                 val diagDir = File(app.filesDir, "diagnostics").apply { mkdirs() }
                 val ts = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-                val file = File(diagDir, "crash_telemetry_$ts.json")
+                val file = crashFile(diagDir, ts)
                 CrashTelemetryBuffer.flushToFile(
                     file      = file,
                     exception = throwable,
@@ -39,4 +39,27 @@ object CrashReporter {
             prev?.uncaughtException(thread, throwable)
         }
     }
+
+    /**
+     * Claims the file a crash caught at [ts] (`yyyyMMdd_HHmmss`) is written to, in [dir]: `crash_telemetry_<ts>.json`,
+     * or `crash_telemetry_<ts>_<n>.json` (n from 2) when that name is taken. On a full heap several threads can throw
+     * at once, and the stamp has one-second resolution; the name is claimed by creating the file (atomic, one winner),
+     * so each crash gets a file of its own and no record overwrites or garbles another (#511). Every name keeps the
+     * `crash_telemetry_*.json` form the crash list and the export select by. If no name can be claimed (no folder, a
+     * full disk) the plain name is returned and the write fails there, as before.
+     */
+    internal fun crashFile(dir: File, ts: String): File {
+        for (n in 1..MAX_SAME_SECOND) {
+            val f = File(dir, if (n == 1) "crash_telemetry_$ts.json" else "crash_telemetry_${ts}_$n.json")
+            try {
+                if (f.createNewFile()) return f
+            } catch (_: Throwable) {
+                break
+            }
+        }
+        return File(dir, "crash_telemetry_$ts.json")
+    }
+
+    /** Crashes in one second that get a name of their own; past that they share the plain name (never seen). */
+    private const val MAX_SAME_SECOND = 32
 }

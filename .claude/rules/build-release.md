@@ -7,6 +7,7 @@ paths:
   - "**/android/app/proguard*"
   - "**/android/scripts/**"
   - "**/android/CHANGELOG.md"
+  - "**/android/changelog.d/**"
   - "**/android/app/src/test/resources/robolectric.properties"
   - "**/com/openrs/dash/update/**"
   - "**/com/openrs/dash/**/BuildInfo*"
@@ -187,9 +188,11 @@ paths:
   on the fake first child Compose adds to a merging node (`SemanticsNode.emitFakeNodes`), and the tab's `selected` state
   on that child's parent; a dump takes up to about 40 s there. CI's build job does not run its test (that line would
   need the nightly.yml twin, the exact-commands check)
-- **Unit-test heap is 1 GB (#505)** — `android/app/build.gradle.kts` gives the unit-test JVM `maxHeapSize = "1g"`,
-  because the Robolectric suite keeps most of Gradle's default 512 MB live by its end. Keep it until #505 is fixed. A run
-  that slows to tens of minutes is the heap, not a hung test: read a `jcmd <pid> GC.class_histogram` before raising it
+- **Unit-test heap is Gradle's default 512 MB (#505)** — `android/app/build.gradle.kts` sets no `maxHeapSize` for the
+  unit-test JVM, and the suite ends well under it. A run that slows to tens of minutes is the heap, not a hung test: read
+  a `jcmd <pid> GC.class_histogram` before raising it. A Compose test in a tall window (`h1800dp`) kept its themes and
+  layout nodes live for the rest of the suite and ran CI's release run out of heap (#505): compose a long section in a
+  vertical scroll in the usual 720 dp window instead (`UnitsFitTest`)
 
 ## Releases: RCs, nightlies, stable and the release checklist
 
@@ -241,10 +244,26 @@ sorts above it.
    (Settings also opens it)
 6. Keep Latest on the newest Android stable (`gh release edit android-vX.Y.Z --latest`; firmware never Latest): the Stable
    updater trusts `/releases/latest` only for an Android stable (#364)
+7. The stable change on staging folds the changelog fragments first, before it dates the heading:
+   `python3 android/scripts/changelog.py fold`, which leaves only `android/changelog.d/README.md`. The change that sets
+   the next base puts the pointer line (it starts `> Entries not yet folded in`) back under the new version's heading
 
 ## Changelog Format (`android/CHANGELOG.md`)
 
 Every release follows the same structure.
+
+**Fragments, not the file.** A pull request writes each new entry as its own file under `android/changelog.d/`, never
+as a line in `CHANGELOG.md`, so two pull requests never touch the same lines. The name is
+`android/changelog.d/<added|fixed|changed|removed>/<issue>-<slug>.md`: the folder is the `(nightlies)` section, the
+number is the issue the entry links. The file holds one or more entry lines in the template below and the rules below
+apply to each. `python3 android/scripts/changelog.py print` shows the changelog as stable will fold it. Stable's change
+folds them in (release checklist, step 7), and a fold gives the same bytes as the same lines appended to the end of
+their sections by hand, in issue order. CI's "Changelog fragments" job runs `changelog.py`: it refuses a malformed
+fragment, and on a pull request into staging an entry typed straight into a `(nightlies)` section of `CHANGELOG.md`
+(only a warning for a pull request whose merge base predates `changelog.d/README.md`).
+Lines outside those sections, such as a stable known-limitations section, are written in `CHANGELOG.md` as before. A
+nightly's "Full changelog" link names `CHANGELOG.md` at its commit, and the pointer line under the version heading
+leads from there to `changelog.d/` at the same commit; a fold drops that line.
 
 **Entry template:**
 ```
@@ -253,11 +272,11 @@ Every release follows the same structure.
 
 **Rules:**
 1. **Sections** — use only these four, in this order: `Added`, `Fixed`, `Changed`, `Removed`. No synonyms (not "Improved", "Refactored", "Stability", "Performance").
-2. **Sub-sections** — entries after rc.8 go under the version's heading in sections labelled `(nightlies)`, above the rc.8 sections: `### Added (nightlies)`, `### Fixed (nightlies)`. Up to rc.8 a version with several RCs appended `(rc.N)` to the section header (`### Fixed (rc.3)`, with a short label for context: `### Added (rc.4 — visual polish)`); those sections stay as written.
+2. **Sub-sections** — entries after rc.8 go, as fragments, under the version's heading in sections labelled `(nightlies)`, above the rc.8 sections: `### Added (nightlies)`, `### Fixed (nightlies)`. Up to rc.8 a version with several RCs appended `(rc.N)` to the section header (`### Fixed (rc.3)`, with a short label for context: `### Added (rc.4 — visual polish)`); those sections stay as written.
 3. **Issue links are mandatory** — every entry that originated from or addresses a GitHub issue MUST end with the issue link: `([#N](url))`. If it addresses a sub-item in an umbrella issue, use: `(addresses [#N](url))`. Bugs found and fixed in the same RC or nightly also get a tracking issue and link.
 4. **One format for links** — always `[#N](https://github.com/klexical/openRS_/issues/N)`. Never bare `(#N)`, never `Fixes #N` or `Addresses sub-item in #N` inline.
 5. **Entry length** — 1-3 sentences. Lead with what changed, then why. Include the file/class name when it helps locate the change. Do not write paragraphs — the commit message has the full detail.
-6. **Never shorten or rewrite a shipped entry** — an entry that has shipped in a published build (a release candidate or a nightly) is not edited, condensed or rephrased. Add new entries; do not change the ones already published.
+6. **Never shorten or rewrite a shipped entry** — an entry that has shipped in a published build (a release candidate or a nightly) is not edited, condensed or rephrased, in `CHANGELOG.md` or in a fragment. Add new entries; do not change the ones already published.
 7. **Every fix shipped in a commit gets a changelog entry** — if a commit touches code that fixes something, it goes in the changelog, even if the commit's primary purpose was a feature.
 
 ## GitHub Release Notes
