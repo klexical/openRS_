@@ -1,8 +1,16 @@
 import { colors } from '../../styles/tokens'
+import { useUnitFormatters } from '../../lib/format'
+import { convertTemp } from '../../lib/units'
 import type { ThermalProgression } from '../../types/session'
 
-/** Waterfall chart showing start → peak → end temperatures for oil + coolant. */
+/**
+ * Waterfall chart showing start → peak → end temperatures for oil + coolant, in the chosen units (#498). The axis runs on
+ * round values of the shown unit; a delta converts as a difference (°F = Δ°C × 1.8, no +32, the app's `displayTempDelta`).
+ */
 export function ThermalProgressionChart({ data }: { data: ThermalProgression }) {
+  const { temp, tempUnit, unitSystem } = useUnitFormatters()
+  const toUnit = (c: number) => convertTemp(c, unitSystem)
+
   const sensors = [
     { key: 'oil', label: 'Oil', curve: data.oil, color: colors.orange },
     { key: 'coolant', label: 'Coolant', curve: data.coolant, color: colors.cyan },
@@ -12,7 +20,7 @@ export function ThermalProgressionChart({ data }: { data: ThermalProgression }) 
 
   if (sensors.length === 0) return null
 
-  const allTemps = sensors.flatMap((s) => [s.curve.startC, s.curve.peakC, s.curve.endC]).filter((v) => v > -90)
+  const allTemps = sensors.flatMap((s) => [s.curve.startC, s.curve.peakC, s.curve.endC]).filter((v) => v > -90).map(toUnit)
   const minT = Math.floor(Math.min(...allTemps) / 10) * 10
   const maxT = Math.ceil(Math.max(...allTemps) / 10) * 10
   const range = maxT - minT || 1
@@ -20,7 +28,7 @@ export function ThermalProgressionChart({ data }: { data: ThermalProgression }) 
   const w = 400
   const h = 160
   const padL = 40
-  const padR = 16
+  const padR = 40   // room for the widest delta, "+306°F"
   const padT = 20
   const padB = 28
   const plotW = w - padL - padR
@@ -29,7 +37,7 @@ export function ThermalProgressionChart({ data }: { data: ThermalProgression }) 
   const stageX = [0, 0.5, 1]
   const labels = ['Start', 'Peak', 'End']
   const toX = (frac: number) => padL + frac * plotW
-  const toY = (temp: number) => padT + plotH - ((temp - minT) / range) * plotH
+  const toY = (c: number) => padT + plotH - ((toUnit(c) - minT) / range) * plotH
 
   // Y axis gridlines
   const gridCount = 4
@@ -40,13 +48,13 @@ export function ThermalProgressionChart({ data }: { data: ThermalProgression }) 
       <svg viewBox={`0 0 ${w} ${h}`} className="w-full" style={{ maxHeight: 200 }}>
         {/* Y gridlines */}
         {Array.from({ length: gridCount + 1 }).map((_, i) => {
-          const temp = minT + i * gridStep
-          const y = toY(temp)
+          const t = minT + i * gridStep
+          const y = padT + plotH - (i / gridCount) * plotH
           return (
             <g key={i}>
               <line x1={padL} y1={y} x2={w - padR} y2={y} stroke={colors.brd} strokeWidth={0.5} />
               <text x={padL - 4} y={y + 3} textAnchor="end" fill={colors.dim} fontSize={8} fontFamily="JetBrains Mono">
-                {Math.round(temp)}°
+                {Math.round(t)}{tempUnit}
               </text>
             </g>
           )
@@ -67,7 +75,7 @@ export function ThermalProgressionChart({ data }: { data: ThermalProgression }) 
             { x: toX(1), y: toY(sensor.curve.endC) },
           ]
           const pathD = `M${pts.map((p) => `${p.x},${p.y}`).join(' L')}`
-          const delta = sensor.curve.peakC - sensor.curve.startC
+          const delta = toUnit(sensor.curve.peakC) - toUnit(sensor.curve.startC)
 
           return (
             <g key={sensor.key}>
@@ -89,7 +97,7 @@ export function ThermalProgressionChart({ data }: { data: ThermalProgression }) 
                 fontWeight="bold"
                 fontFamily="JetBrains Mono"
               >
-                {Math.round(sensor.curve.peakC)}°
+                {temp(sensor.curve.peakC)}
               </text>
               {/* Delta annotation at end */}
               <text
@@ -100,7 +108,7 @@ export function ThermalProgressionChart({ data }: { data: ThermalProgression }) 
                 fontSize={7}
                 fontFamily="JetBrains Mono"
               >
-                {delta > 0 ? '+' : ''}{Math.round(delta)}°
+                {delta > 0 ? '+' : ''}{Math.round(delta)}{tempUnit}
               </text>
             </g>
           )
