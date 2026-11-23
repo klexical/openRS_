@@ -2,6 +2,7 @@ package com.openrs.dash.diagnostics
 
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import androidx.core.content.FileProvider
@@ -510,7 +511,15 @@ object DiagnosticExporter {
         o.put("sourceCommit", BuildConfig.SOURCE_COMMIT)
         o.put("sourceDirty", BuildConfig.SOURCE_DIRTY)
         o.put("buildType", BuildConfig.BUILD_TYPE)
+        // #373: the platform the export was written on, and nothing else about the phone. Android's background, Wi-Fi and
+        // Bluetooth rules change per release, so a report reads against these two values. Never add the manufacturer,
+        // model, device, product, brand or fingerprint: with the version they start to narrow down one phone.
+        o.put("androidRelease", Build.VERSION.RELEASE)
+        o.put("androidApiLevel", Build.VERSION.SDK_INT)
     }
+
+    /** The summary header's platform line (#373), from the same two values as [putBuildIdentity]. */
+    internal fun platformText(): String = "Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})"
 
     /** Build manifest.json listing all files in the ZIP with typed metadata. */
     private fun buildManifest(files: List<Pair<String, String>>): String {
