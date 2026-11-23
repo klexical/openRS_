@@ -164,6 +164,9 @@ diagnostics/
   CrashTelemetryBuffer.kt — 300-snapshot ring buffer of VehicleState (`CAPACITY`); flushed on crash to JSON (+ heap, #510)
   HeapSample.kt           — one reading of Java heap used / size / limit + native heap, KiB (#510): FPS timeline points and
                             the crash record; never throws
+  ReplyCount.kt           — Mode 22 replies per module for the export (#514): requests from `# TX` lines, replies from
+                            logObdFrame; answered / rejected / no reply within 1 s / late / pending only, answer-time
+                            buckets, longest miss run per DID. A count, not attribution (the ledgers keep that); pure
 service/
   CanDataService.kt       — Bound service, foreground only while a connection runs (ForegroundController);
                             Wi-Fi: connects on the adapter network (#324; sockets bound to it, onLost only for it);
@@ -328,6 +331,8 @@ ui/
   DidProberSection.kt     — DIAG tab: interactive Mode 22 scanner for any ECU+DID (UI only; the scan runs in
                             diagnostics/DidProbeScan.kt)
   WhatsNewDialog.kt       — Version changelog dialog; shown on first launch after update
+                            Title row: the title (FlowRow, version drops to a second line) takes only the width the
+                            48 dp ✕ leaves; ✕ top-aligned (#508, WhatsNewTitleFitTest: 360 dp, font 1.0 / 1.3 / 2.0, stable / RC / nightly)
   trip/
     DriveReplayView.kt    — Drive replay: header, map + readings, fixed slider + transport row. The readings take their
                             height and the map the rest, never under MIN_MAP_HEIGHT (160 dp); past that, map + readings
