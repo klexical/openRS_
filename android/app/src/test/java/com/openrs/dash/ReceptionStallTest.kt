@@ -26,6 +26,7 @@ class ReceptionStallTest {
         frames(fromMs, toMs, ((toMs - fromMs) * perSecond / 1_000).toInt())
     private fun ReceptionStall.end(atMs: Long) { reports += onEnd(atMs) }
     private fun shown() = reports.joinToString { "${it.type}: ${it.message}" }
+    private fun lengthOf(r: ReceptionStall.Report) = r.message.substringBefore(" s below").toDouble()
     private fun rateOf(r: ReceptionStall.Report) = Regex("""\((\d+) frames/s""").find(r.message)!!.groupValues[1].toInt()
 
     /** The capture's stall from [t] (343 frames in its first 0.1 s, then pairs), its burst at t + 10.66 s, then clean. */
@@ -104,35 +105,115 @@ class ReceptionStallTest {
         assertTrue(shown(), reports.single().message.startsWith("299.00 s below"))
     }
 
-    @Test fun `a silence of 301 s is a quiet span at the bound, and the rate is measured afresh`() {
+    @Test fun `a silence of 301 s is named with its full length, and the rate is measured afresh at the bound`() {
         val d = ReceptionStall()
         d.rate(0, 20_000, 800)                                            // 200 a quarter second: the old rate
         d.rate(321_000, 340_000, 100)                                     // key-on at a quarter of it: a new rate
-        assertEquals(shown(), listOf(TYPE_QUIET), reports.map { it.type })
-        assertEquals(20_000L, reports.single().startMs)
-        assertTrue(shown(), reports.single().message.startsWith("300.00 s below"))
-        assertTrue(shown(), reports.single().message.contains("; 0 frames in it; still low after 300 s; the rate is measured afresh."))
+        assertEquals(shown(), 0, reports.size)                            // still below the old rate: not yet ended
         d.frames(346_000, 346_010, 200)                                   // 6 s of silence, ended by a burst
         d.rate(346_250, 350_000, 100)
-        assertEquals(shown(), listOf(TYPE_QUIET, TYPE_STALL), reports.map { it.type })
-        assertTrue(shown(), reports[1].message.contains("(100 frames/s"))   // the new rate
+        assertEquals(shown(), listOf(TYPE_STALL), reports.map { it.type })
+        assertTrue(shown(), reports[0].message.contains("(100 frames/s"))   // the new rate names the gap inside the span
+        d.end(350_000)
+        assertEquals(shown(), listOf(TYPE_STALL, TYPE_QUIET), reports.map { it.type })
+        assertEquals(20_000L, reports[1].startMs)
+        assertTrue(shown(), reports[1].message.startsWith("330.00 s below 25 % of this connection's rate (800 frames/s"))
+        assertTrue(shown(), reports[1].message.endsWith("${ReceptionStall.CONNECTION_ENDED}. ${ReceptionStall.NOT_TOLD_APART}"))
     }
 
-    @Test fun `a silence of 600 s is one quiet span at the bound`() {
+    @Test fun `a silence of 600 s then key-on is one quiet span of 600 s`() {
         val d = ReceptionStall()
         d.rate(0, 20_000, 100)
         d.rate(620_000, 630_000, 100)
         assertEquals(shown(), listOf(TYPE_QUIET), reports.map { it.type })
-        assertTrue(shown(), reports.single().message.contains("still low after 300 s"))
+        assertEquals(20_000L, reports.single().startMs)
+        assertTrue(shown(), reports.single().message.startsWith("600.00 s below 25 % of this connection's rate (100 frames/s"))
+        assertTrue(shown(), reports.single().message.contains("; 0 frames in it (0 frames/s); the rate came back."))
     }
 
-    @Test fun `a gap with frames that reaches the bound is a quiet span, still low`() {
+    @Test fun `a gap with frames past the bound is named once, with its full length, when the connection ends`() {
         val d = ReceptionStall()
         d.rate(0, 20_000, 100)
         for (t in 20_500L until 20_000L + ReceptionStall.MAX_LOW_MS + 5_000 step 1_500L) d.frames(t, t + 1, 1)
+        assertEquals(shown(), 0, reports.size)
+        d.end(325_000)
         assertEquals(shown(), listOf(TYPE_QUIET), reports.map { it.type })
         assertEquals(20_000L, reports.single().startMs)
-        assertTrue(shown(), reports.single().message.startsWith("300.00 s below"))
+        assertTrue(shown(), reports.single().message.startsWith("305.00 s below"))
+    }
+
+    // ── Spans longer than the bound, and connections that start low (#513) ────────────────────────────────────────────
+
+    @Test fun `a 385 s spell at 10 percent while driving is one quiet span with its full length`() {
+        val d = ReceptionStall()
+        d.rate(0, 60_000, 2_000)
+        d.rate(60_000, 445_000, 200)
+        d.rate(445_000, 500_000, 2_000)
+        d.end(500_000)
+        assertEquals(shown(), listOf(TYPE_QUIET), reports.map { it.type })
+        val r = reports.single()
+        assertEquals(60_000L, r.startMs)
+        assertTrue(r.message, r.message.startsWith("385.00 s below 25 % of this connection's rate (2000 frames/s"))
+        assertTrue(r.message, r.message.contains("; 77000 frames in it (200 frames/s); the rate came back."))
+    }
+
+    @Test fun `a 385 s spell at 10 percent is named at every phase`() {
+        val bad = sweep({ p -> rate(p, p + 60_000, 2_000); rate(p + 60_000, p + 445_000, 200); rate(p + 445_000, p + 460_000, 2_000) }) { r ->
+            // the quarter seconds that straddle the drop and the return are partly low: the length is exact to one of them
+            r.size == 1 && r[0].type == TYPE_QUIET && lengthOf(r[0]) in 384.75..385.25 && rateOf(r[0]) in 1_950..2_050
+        }
+        assertTrue("${bad.size} of 250 phases: ${bad.take(3)}", bad.isEmpty())
+    }
+
+    @Test fun `a connection that starts at 14 percent of its later rate names the start with its full length`() {
+        val d = ReceptionStall()
+        d.rate(0, 435_000, 293)                                           // 14 % of 2,093
+        d.rate(435_000, 500_000, 2_093)
+        d.end(500_000)
+        assertEquals(shown(), listOf(TYPE_QUIET), reports.map { it.type })
+        val r = reports.single()
+        assertEquals(0L, r.startMs)
+        assertTrue(r.message, r.message.startsWith("435.00 s below 25 % of this connection's rate ("))
+        assertTrue(r.message, rateOf(r) in 2_050..2_140)
+        assertTrue(r.message, r.message.contains("the frames of the 5 s after it over their time"))
+        assertTrue(r.message, r.message.contains(" frames in it (293 frames/s); the rate then rose to the rate named."))
+    }
+
+    @Test fun `a connection that starts low is named at every phase`() {
+        val bad = sweep({ p -> rate(p, p + 60_000, 293); rate(p + 60_000, p + 80_000, 1_350) }) { r ->
+            // exact to the quarter second; a first quarter second holding too little traffic to set a rate is not counted
+            r.size == 1 && r[0].type == TYPE_QUIET && lengthOf(r[0]) in 59.75..60.25 && r[0].startMs in 0L..250L
+        }
+        assertTrue("${bad.size} of 250 phases: ${bad.take(3)}", bad.isEmpty())
+    }
+
+    @Test fun `control - a start at half the later rate names nothing`() {
+        val d = ReceptionStall()
+        d.rate(0, 60_000, 1_000)
+        d.rate(60_000, 80_000, 2_000)
+        d.end(80_000)
+        assertEquals(shown(), 0, reports.size)
+    }
+
+    @Test fun `control - a rise shorter than a span names nothing`() {
+        val d = ReceptionStall()
+        d.rate(0, 60_000, 293)
+        d.rate(60_000, 64_750, 2_093)                                     // 4.75 s at the higher rate
+        d.rate(64_750, 80_000, 293)
+        d.end(80_000)
+        assertEquals(shown(), 0, reports.size)
+    }
+
+    @Test fun `a spell past the bound that comes back only part way stays one span`() {
+        val d = ReceptionStall()
+        d.rate(0, 30_000, 2_000)
+        d.rate(30_000, 400_000, 140)                                      // 7 %
+        d.rate(400_000, 420_000, 300)                                     // 15 %: up, but still below 25 % of 2,000
+        d.rate(420_000, 440_000, 2_000)
+        d.end(440_000)
+        assertEquals(shown(), listOf(TYPE_QUIET), reports.map { it.type })
+        assertEquals(30_000L, reports.single().startMs)
+        assertTrue(shown(), reports.single().message.startsWith("390.00 s below 25 % of this connection's rate (2000 frames/s"))
     }
 
     // ── The end of the connection (#356 review 2, N2) ──────────────────────────────────────────────────────────────────

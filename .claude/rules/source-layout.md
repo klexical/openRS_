@@ -71,7 +71,8 @@ can/
   ReceptionStall.kt       — gaps on an open connection (#356): frames per quarter second of elapsedRealtime against the
                             connection's own rate (frames over time outside gaps); a gap whose next half second holds a burst
                             of queued frames = RECEPTION_STALL, any other = QUIET_SPAN (claims no cause); a gap with no frame
-                            after its first quarter, then the connection's end = nothing; stamped at its start. Pure, one per
+                            after its first quarter, then the connection's end = nothing; stamped at its start. A gap past
+                            the bound or a low start (#513) = one QUIET_SPAN with its full length. Pure, one per
                             connection, fed by SlcanConnection's frame loop. Names gaps; prevents nothing
   EscCommand.kt           — ESC request + confirmation (#125): window = firmware press plan + 3 s; only a 0x1C0 frame
                             stamped after the request on the same link generation confirms; one request at a time (Busy)
@@ -148,6 +149,8 @@ diagnostics/
                             sessionTransport field: transport label for diagnostic reports and share intents
   DiagnosticExporter.kt   — ZIP orchestrator + share intents + crash history; delegates format generation
                             to DiagnosticReportBuilder and DriveExportBuilder; rc.6 adds drive_knock_session_*.csv (KnockSessionLog)
+                            putBuildIdentity: the build + the Android release and API level, nothing else about the
+                            phone (#373), in every manifest.json and the detail JSON's meta
   DiagnosticReportBuilder.kt — Diagnostic summary text + JSON detail (JSONObject/JSONArray, no hand-rolled strings);
                             `buildSummaryAndDetail` takes one `ExportCounters` snapshot (linkIntegrity / logLimits /
                             nrcUnattributedTotal agree between summary and detail on a live export); UI TIMING / `uiTiming` (#421)
@@ -161,6 +164,9 @@ diagnostics/
   CrashTelemetryBuffer.kt — 300-snapshot ring buffer of VehicleState (`CAPACITY`); flushed on crash to JSON (+ heap, #510)
   HeapSample.kt           — one reading of Java heap used / size / limit + native heap, KiB (#510): FPS timeline points and
                             the crash record; never throws
+  ReplyCount.kt           — Mode 22 replies per module for the export (#514): requests from `# TX` lines, replies from
+                            logObdFrame; answered / rejected / no reply within 1 s / late / pending only, answer-time
+                            buckets, longest miss run per DID. A count, not attribution (the ledgers keep that); pure
 service/
   CanDataService.kt       — Bound service, foreground only while a connection runs (ForegroundController);
                             Wi-Fi: connects on the adapter network (#324; sockets bound to it, onLost only for it);
@@ -302,7 +308,9 @@ ui/
                             2-way adapter picker (MeatPi USB / Pro) + connection method toggle (WiFi / Bluetooth)
                             Design pass: instrument-panel sections, SettingsPicker (accent tint + actionInk; stacked full
                             width where options don't fit at 360 dp), 48 dp rows / actions; every exit except SAVE reverts
-                            the live theme / font / paint preview (`cancel()`). Public SegmentedPicker is PERF's (unchanged)
+                            the live theme / font / paint preview (`cancel()`). Public SegmentedPicker (PERF's knock scope too):
+                            options are radio buttons in a selectable group, short Region names spoken in full (#504); a
+                            full-width row widens an option that an equal share would wrap (`FillRow`, #507)
   anim/
     EdgeShiftLight.kt     — Peripheral shift light: multi-zone edge glow overlay (breathing → fill → flash)
                             Three phases keyed to shiftRpm: 70% breathing, 81% progressive, 95.5% flash
