@@ -416,9 +416,15 @@ object DiagnosticExporter {
             ?: emptyList()
     }
 
-    /** Delete all crash telemetry files. */
+    /**
+     * Delete all crash telemetry files, and any `crash_telemetry_*.json.part` the crash handler left when the process
+     * was killed while it wrote a full record (#511); those are never listed or exported.
+     */
     fun clearCrashHistory(ctx: Context) {
         crashFiles(ctx).forEach { it.delete() }
+        File(ctx.filesDir, "diagnostics")
+            .listFiles { f -> f.name.startsWith("crash_telemetry_") && f.name.endsWith(".json.part") }
+            ?.forEach { it.delete() }
     }
 
     /**

@@ -174,9 +174,6 @@ android {
         unitTests.isReturnDefaultValues = true
         // #283: Robolectric tests that compose production UI (HeaderRecMarkerTest) need the app's drawables and fonts
         unitTests.isIncludeAndroidResources = true
-        // #505: the Robolectric suite keeps about 490 MB live by its end (themes and compositions it never frees), at the
-        // edge of Gradle's default 512 MB test heap; one more Compose test ran the release run out of memory on CI
-        unitTests.all { it.maxHeapSize = "1g" }
     }
 
     lint {
