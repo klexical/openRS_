@@ -37,8 +37,8 @@ import java.time.Duration
  * 48 dp target. The production [SettingsDialog] under the app's MaterialTheme (its text inherits Material's letter
  * spacing), each category opened as a user opens it, at font scale 1.0 and 1.3: each row's label is one line, each
  * option is one line (the adapter names may wrap: SegmentedPicker keeps their model code that way) and a 48 dp target.
- * The wraps in [knownWraps] are older than the 48 dp minimum (the same with the old 44 dp chips) and are #507; any other
- * wrap, and any target under 48 dp, fails. [UnitsFitTest] holds Settings → UNITS.
+ * Any wrap and any target under 48 dp fails (#507 fixed the five rows that wrapped before), and the dialog's CANCEL /
+ * RESET / SAVE actions keep one line too (#508's CANCEL). [UnitsFitTest] holds Settings → UNITS.
  */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -60,11 +60,8 @@ class SettingsPickersFitTest {
     )
     private val mayWrap = setOf("MeatPi USB (C3)", "MeatPi Pro (S3)")
 
-    /** #507: rows that already wrapped at 360 dp before the 48 dp minimum, by font scale. Empty it when #507 is fixed. */
-    private val knownWraps = mapOf(
-        1.0f to setOf("Classic fonts", "Color / Progressive", "Active profile"),
-        1.3f to setOf("Classic fonts", "Color / Progressive", "Active profile", "Intensity", "Update channel"),
-    )
+    /** The dialog's bottom actions, always shown under every category (#508: CANCEL broke onto two lines at font 1.3). */
+    private val actions = listOf("CANCEL", "RESET", "SAVE")
 
     @After fun tearDown() {
         RuntimeEnvironment.setFontScale(1f)
@@ -144,6 +141,11 @@ class SettingsPickersFitTest {
         idle(20)
         val density = controller.get().resources.displayMetrics.density
         val out = mutableListOf<String>()
+        val first = shown(density)
+        for (a in actions) {
+            val t = first.filter { !it.clickable && it.text == a }
+            if (t.isEmpty()) out += "$a: not found" else if (t.any { it.lines != 1 }) out += "$a: ${t.maxOf { it.lines }} lines"
+        }
         for (category in rows.map { it.first }.distinct()) {
             click { textOf(it)?.startsWith(category) == true }
             if (category == "ABOUT") {
@@ -167,8 +169,7 @@ class SettingsPickersFitTest {
         }
         controller.pause().stop().destroy()
         idle(8)
-        val known = knownWraps[fontScale].orEmpty()
-        return out.distinct().filterNot { it.endsWith(" lines") && it.substringBefore(": ") in known }
+        return out.distinct()
     }
 
     @Test fun `Settings pickers outside UNITS - one-line labels and options, 48 dp targets at 360 dp, font 1-0`() {
