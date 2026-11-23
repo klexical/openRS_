@@ -182,8 +182,8 @@ check.(!File.read(File.join(dir, "commit-identity.yml")).include?("secrets."), "
 psw = load_wf.("privacy-scan.yml")
 pon = on_of.(psw)
 check.(pon.is_a?(Hash) && pon.keys == ["pull_request_target"] && pon.dig("pull_request_target", "branches")&.sort == %w[main staging] &&
-       pon.dig("pull_request_target", "types") == %w[opened synchronize reopened edited ready_for_review labeled unlabeled],
-       "privacy-scan.yml: pull_request_target only, PRs to staging and main, the label events included")
+       pon.dig("pull_request_target", "types") == %w[opened synchronize reopened edited labeled unlabeled],
+       "privacy-scan.yml: pull_request_target only, PRs to staging and main, the label events included, not ready_for_review (leaving draft keeps the label event's run, and its OK, on that head)")
 check.(psw["permissions"] == {} && psw["jobs"].keys == %w[privacy-scan privacy-scan-status],
        "privacy-scan.yml: no workflow-level permission; the scan job and plan B's status job")
 ps = psw["jobs"]["privacy-scan"]
@@ -217,10 +217,10 @@ check.(first["run"].to_s.include?('[ "$HEAD_REPO" = "$REPO" ] ||') && first["run
        "privacy-scan: the first step fails a fork's PR")
 fetch = pss.find { |s| s["run"].to_s.include?("git fetch") } || {}
 fr = fetch["run"].to_s
-check.(fr.include?('"+refs/pull/$PR/head:refs/remotes/pr/head"') && fr.include?('[ "$(git rev-parse refs/remotes/pr/head)" = "$HEAD" ]') &&
+check.(fr.include?('"+refs/pull/$PR/head:refs/remotes/pr/head"') && fr.include?('git merge-base --is-ancestor "$HEAD" "$now"') &&
        fr.include?('git show "$GITHUB_SHA:.github/scripts/privacy-scan.sh" > "$RUNNER_TEMP/privacy-scan.sh"') &&
        !fr.match?(/git (checkout|switch|worktree|reset)|read-tree/),
-       "privacy-scan: the PR head is fetched as objects and checked, never checked out; the script comes from the run's own commit (main's)")
+       "privacy-scan: the PR head is fetched as objects and the event's head checked to be in its history, never checked out; the script comes from the run's own commit (main's)")
 PSEC = "${{ secrets.PRIVACY_IDENTIFIERS }}"
 holders = pss.select { |s| s.to_s.include?("secrets.") }
 check.(holders.size == 1 && holders.first.equal?(pss.last) && holders.first["env"]&.dig("PRIVACY_IDENTIFIERS") == PSEC &&
