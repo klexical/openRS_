@@ -48,7 +48,7 @@ when any file under `android/` is read or edited. It is not complete: list the f
 0x1A4  ambient temp from MS-CAN bridge — byte4 **UNSIGNED** × 0.25°C (DigiCluster v1.0.46 fix); > 55°C rejected (#185)
 0x1B0  drive mode nibble (byte6>>4); combine with 0x420 to distinguish Sport vs Track
 0x1C0  ESC setting (2-bit at bit position 10): 0 Normal, 1 Off, 2 Sport; 3 unrecognized → unknown (#125, #288;
-       can-decoding.md, "ESC names and raw 3")
+       can-decoding.md, "ESC names and raw 3"); while unknown the app sends no ESC command (owner decision, #288)
 0x225  launch control (byte5 bit3) — MS-CAN per DigiCluster, never seen in an HS capture; diagnostics only, never on
        screen (#289)
 0x230  gear (4-bit) — does NOT broadcast on this car
