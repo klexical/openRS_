@@ -28,4 +28,7 @@ Scripts are in `web/package.json` (`dev`, `build`, `preview`, `test`, `test:watc
 
 **Release merge checklist (staging ↔ main):** a one-time runbook for the stable promotion (which side to take per file,
 the `ci.yml` hand-merge, the checks to run after the merge). Read it before merging staging into main:
-`git show 743230fb:CLAUDE.md`, section Sapphire.
+`git show 743230fb:CLAUDE.md`, section Sapphire. Two points it lacks: `web/` and main's rebuilt firmware release binaries
+(`firmware/release/`: the two app images, the bootloaders and the build manifests) come from main; and
+`.cursor/rules/can-architecture.mdc` stays deleted (main removed `.cursor/`; take the deletion in its modify/delete
+conflict).
