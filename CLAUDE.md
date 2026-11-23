@@ -208,6 +208,9 @@ Unit tests live in `android/app/src/test/java/com/openrs/dash/` (JVM, plus Robol
 in `web/src/` (`*.test.ts`, `*.test.tsx`) for Sapphire. Run one class with `./gradlew test --tests '*ClassName*'`. For the
 per-class catalog, list the folder.
 
+Screenshot tests of the main screens (Roborazzi, debug only) live in `android/app/src/testDebug/`; every `./gradlew test`
+compares them. Re-recording after a layout change: `.claude/rules/ui-compose.md`, "Screenshot goldens".
+
 Counts are not kept here. To count: `./gradlew clean test lint --no-build-cache` on Temurin 17 (a plain run can restore
 results from the Gradle build cache); one test is skipped by decision (`#251 outlier policy`). Sapphire:
 `web/node_modules/.bin/vitest run` and `tsc -b`.

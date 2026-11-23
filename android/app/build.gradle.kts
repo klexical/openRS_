@@ -9,6 +9,7 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("com.google.devtools.ksp")
+    id("io.github.takahirom.roborazzi")
 }
 
 // ── Release signing ───────────────────────────────────────────────────────────
@@ -221,6 +222,8 @@ dependencies {
     // Runs on SDK 35, the app's target (app/src/test/resources/robolectric.properties); Java 17 (CI) suffices for it.
     testImplementation("org.robolectric:robolectric:4.14.1")
     testImplementation("androidx.test:core:1.6.1")
+    // Screenshot tests of the main screens (src/testDebug/, goldens in src/testDebug/screenshots/); test-only, pinned
+    testDebugImplementation("io.github.takahirom.roborazzi:roborazzi:1.60.0")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
     androidTestImplementation(composeBom)

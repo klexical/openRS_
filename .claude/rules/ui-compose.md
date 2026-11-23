@@ -58,3 +58,9 @@ paths:
   MainActivity's root Box, not the Scaffold's `snackbarHost`: `BottomNavBar` and the Custom Dashboard overlay are drawn
   after the Scaffold, so a host inside it sits under them — invisible, its action untappable. A UI text dump reports a
   covered snackbar with bounds, so "shown" in a dump is not "visible" — a visibility claim needs a screenshot
+- **Screenshot goldens** — `MainScreensScreenshotTest` (`android/app/src/testDebug/`) fails on any changed pixel of the
+  main screens against `src/testDebug/screenshots/*.png` (diffs in `app/build/outputs/roborazzi/`). A change that moves
+  one of those screens (a merge from staging included) re-records on Linux only — `./gradlew recordRoborazziDebug --tests
+  '*MainScreensScreenshotTest*'`; macOS renders other pixels — looks at every changed PNG and commits them with the
+  change. A PNG in a pull request needs the privacy scan's reviewer OK (`privacy-ok-compressed`). Goldens hold demo or
+  synthetic data only: never a real drive, VIN, location or device name
