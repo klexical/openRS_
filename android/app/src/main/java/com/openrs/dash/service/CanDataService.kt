@@ -804,6 +804,13 @@ class CanDataService : Service() {
         OpenRSDashApp.instance.vehicleState.update { it.copy(lamps = it.lamps.copy(srs = null)) }
         // Engine state (0x360 byte 7, #328): not received until this connection's first 0x360 frame
         OpenRSDashApp.instance.vehicleState.update { it.copy(engineState360 = -1) }
+        // Drive mode (#547): unknown ("--") until this connection's own 0x1B0, so the header and a recording drive never
+        // carry the previous link's mode; its 0x1B0 run and 0x420 detail stamps (#252, every key starting "driveMode", as
+        // ObdMerge drops them) go too, so a run or pair is this connection's own
+        OpenRSDashApp.instance.vehicleState.update { vs ->
+            vs.copy(driveMode = com.openrs.dash.data.DriveMode.UNKNOWN,
+                fieldLastUpdateMs = vs.fieldLastUpdateMs.filterKeys { !it.startsWith("driveMode") })
+        }
         FuelEconomy.reset()
         PerformanceTimer.resetSession()
         OpenRSDashApp.instance.knockEventCount.value = 0
