@@ -91,7 +91,7 @@ object ObdResponseParser {
                     else   -> currentState.copy(tirePressRR = psi, tpmsLastUpdate = now).markFresh("tirePressRR")
                 })
             }
-            // TPMS sensor IDs — 4-byte ID per tire position, polled once on connect
+            // TPMS sensor IDs — 4-byte ID per tire position; re-read while a position is unmapped (#518, TpmsIdReads)
             0x280F, 0x2810, 0x2811, 0x2812 -> {
                 if (avail < 4) return
                 val sensorId = ((b4.toLong() shl 24) or
@@ -165,7 +165,8 @@ object ObdResponseParser {
                     s.tpmsSensorIdLR -> s.copy(tireTempLR = tempC, tirePressLR = psi, tpmsLastUpdate = now)
                         .markFresh("tireTempLR", "tirePressLR")
                     else -> {
-                        Log.d(TAG, "0x280B unknown sensor ID %08X".format(sensorId))
+                        // The ID is a vehicle identifier: never printed (#518)
+                        Log.d(TAG, "0x280B report from an unmapped sensor, dropped")
                         null
                     }
                 }
