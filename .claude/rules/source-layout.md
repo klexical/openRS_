@@ -322,6 +322,9 @@ ui/
                             diagnostics/DidProbeScan.kt)
   WhatsNewDialog.kt       — Version changelog dialog; shown on first launch after update
   trip/
+    DriveReplayView.kt    — Drive replay: header, map + readings, fixed slider + transport row. The readings take their
+                            height and the map the rest, never under MIN_MAP_HEIGHT (160 dp); past that, map + readings
+                            scroll (large system fonts, #301, DriveReplayFitTest)
     DriveHistory.kt       — rc.7 (#228) — TRIP history: observe (Room Flow, the list's only source) + delete / tags / rename
                             (writes only — never re-read the list by hand)
     DriveMap.kt           — Google Maps Compose wrapper: 6 color modes (SPD/MODE/BOOST/THRTL/G-LAT/TEMP),
