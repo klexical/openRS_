@@ -11,6 +11,7 @@ import com.openrs.dash.data.DriveDatabase
 import com.openrs.dash.data.DriveEntity
 import com.openrs.dash.data.DriveState
 import com.openrs.dash.data.FuelEconomy
+import com.openrs.dash.data.FuelSpan
 import com.openrs.dash.data.VehicleState
 import com.openrs.dash.service.DriveRecorder
 import com.openrs.dash.service.WeatherRepository
@@ -140,6 +141,39 @@ class FuelSpanTest {
     @Test fun `control - DRIVE - a fast drop while moving counts in full`() {
         session(100.0, 0.0 to 80.0, 1.0 / 3600 to 70.0)
         assertEquals(4.98, FuelEconomy.state.value.fuelUsedL, 1e-9)
+    }
+
+    @Test fun `DRIVE - a dip at a standstill that comes back up is not subtracted for good`() {
+        // Standing: 80 → 78.8 % for 2 s → 80 %; then driving to 78 %: 2.0 % of 49.8 L. At 3a92de5 the dip moved the
+        // fuel start down to 79.2 % for good, and 1.2 % gave no figure
+        listOf(0L to 80.0, 2_000L to 78.8, 4_000L to 80.0).forEach { (ms, pct) ->
+            FuelEconomy.onUpdate(pct, 0.0, t0 + ms); FuelEconomy.onUpdate(pct, 0.0, t0 + ms + 1)
+        }
+        FuelEconomy.onUpdate(78.0, 60.0, t0 + 600_000); FuelEconomy.onUpdate(78.0, 60.0, t0 + 600_001)
+        assertEquals(0.996, FuelEconomy.state.value.fuelUsedL, 1e-9)
+    }
+
+    /** [FuelSpan] from a measurable [startPct] after each (ms, level, standing) reading, the odometer held at 0. */
+    private fun span(startPct: Double, vararg readings: Triple<Long, Double, Boolean>): FuelSpan =
+        readings.fold(FuelSpan.start(startPct)) { s, (ms, pct, standing) -> s.next(pct, 0.0, t0 + ms, standing, DriveState.TANK_L) }
+
+    @Test fun `the drive's span - a standstill dip that comes back up once moving is restored`() {
+        val s = span(80.0, Triple(0L, 80.0, true), Triple(2_000L, 78.8, true), Triple(4_000L, 80.0, false),
+            Triple(600_000L, 78.0, false))
+        assertEquals(0.996, s.litres(78.0, DriveState.TANK_L)!!, 1e-9)
+    }
+
+    @Test fun `control - the drive's span - a drop settled at a standstill stays uncounted through a long idle`() {
+        // Seven steps in 48 s, then 30 minutes at the settled level: the allowance grows, the settled drop is still not fuel
+        val settle = (0..7).map { Triple(it * 48_000L / 7, 80.0 - it * 0.4, true) }
+        val s = span(80.0, *(settle + Triple(30 * 60_000L, 77.2, true)).toTypedArray())
+        assertEquals(null, s.litres(77.2, DriveState.TANK_L))
+        // …and an idle at 1 L/h after it counts in full: five steps, one each 12 minutes, on top of the settling's allowance
+        // (one step plus 4 L/h over its 48 s)
+        val idle = (1..5).map { Triple(30 * 60_000L + it * 12 * 60_000L, 77.2 - it * 0.4, true) }
+        val after = idle.fold(s) { a, (ms, pct, st) -> a.next(pct, 0.0, t0 + ms, st, DriveState.TANK_L) }
+        val settlingAllowedPct = 0.4 + 4.0 * 48.0 / 3600 / DriveState.TANK_L * 100
+        assertEquals((2.0 + settlingAllowedPct) / 100 * DriveState.TANK_L, after.litres(75.2, DriveState.TANK_L)!!, 1e-9)
     }
 
     // ── The drive's own figures through the recorder ──────────────────────────────────────────────────────────────────
