@@ -6,7 +6,7 @@ import { startImport } from './startImport'
 /**
  * The import's progress and outcome, on every page (#384 ticket 06): files done of files chosen and the current file's
  * stage while it runs; then what was imported, each failure with its file and reason, and each "already imported" with
- * a link to the drive and what it filled in.
+ * a link to the drive and what it filled in, and each part of a file that was skipped (#266).
  */
 export function ImportStatus() {
   const job = useStore((s) => s.importJob)
@@ -31,15 +31,18 @@ export function ImportStatus() {
           <p role="status">Done. Imported {job.storedCount === 1 ? '1 drive' : `${job.storedCount} drives`}.</p>
           {/* role="list": WebKit stops announcing a list styled without bullets (QA, delivery B review) */}
           <ul className="a-import-lines" role="list">
-            {job.results.map((r, i) => (
-              <li key={i}>
-                {r.error ? <span className="a-failed">{r.file}: {r.error}</span>
-                  : r.already.map((a) => (
-                    <span key={a.existingId}>{r.file}: already imported <a href={hrefOf({ place: 'drive', id: a.existingId })}>{nameOf(a.existingId, a.name)}</a>
-                      {a.filled.length > 0 ? ` (filled in: ${a.filled.join(', ')})` : ''}</span>
-                  ))}
-              </li>
-            )).filter((_, i) => job.results[i].error || job.results[i].already.length > 0)}
+            {job.results.flatMap((r, i) => [
+              ...(r.error || r.already.length > 0 ? [
+                <li key={i}>
+                  {r.error ? <span className="a-failed">{r.file}: {r.error}</span>
+                    : r.already.map((a) => (
+                      <span key={a.existingId}>{r.file}: already imported <a href={hrefOf({ place: 'drive', id: a.existingId })}>{nameOf(a.existingId, a.name)}</a>
+                        {a.filled.length > 0 ? ` (filled in: ${a.filled.join(', ')})` : ''}</span>
+                    ))}
+                </li>] : []),
+              // a part of the file that was skipped (#266): a line of its own, under the file's outcome
+              ...(r.notes ?? []).map((n, k) => <li key={`${i}-note-${k}`}>{r.file}: {n}</li>),
+            ])}
           </ul>
           <button type="button" className="a-btn" onClick={() => setJob(null)}>Close</button>
         </>

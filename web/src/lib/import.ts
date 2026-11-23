@@ -105,12 +105,13 @@ export async function importBatchZip(file: File): Promise<Session[]> {
 /**
  * Import an export ZIP already read into memory (#384 ticket 06): every drive of a batch export (all of them, or the
  * first malformed one throws), else the one drive or session-only entry. The import action reads the ZIP itself, so
- * it can report reading and parsing as separate stages.
+ * it can report reading and parsing as separate stages. [notes] gets one line per part of the ZIP that was skipped
+ * (#266: a damaged diagnostic detail file), for the import's outcome; nothing of it is stored.
  */
-export async function importLoadedZip(zip: JSZip, filename: string): Promise<Session[]> {
+export async function importLoadedZip(zip: JSZip, filename: string, notes: string[] = []): Promise<Session[]> {
   const manifest = await readManifest(zip)
-  if (countDriveCsvs(zip, manifest) > 1) return importBatchZipInner(zip, manifest, filename)
-  return [await importSingleDrive(zip, manifest, filename)]
+  if (countDriveCsvs(zip, manifest) > 1) return importBatchZipInner(zip, manifest, filename, notes)
+  return [await importSingleDrive(zip, manifest, filename, notes)]
 }
 
 /** Drive CSVs in the ZIP — from the manifest when it lists any, else by filename (a list this Sapphire can't read loses no drive). */
@@ -123,8 +124,9 @@ function countDriveCsvs(zip: JSZip, manifest: ExportManifest | null): number {
   return driveCsvFiles(zip, manifest).length
 }
 
-async function importBatchZipInner(zip: JSZip, manifest: ExportManifest | null, filename: string): Promise<Session[]> {
+async function importBatchZipInner(zip: JSZip, manifest: ExportManifest | null, filename: string, notes: string[] = []): Promise<Session[]> {
   const csvFiles = driveCsvFiles(zip, manifest)
+  const detail = await readDetailFile(zip, manifest)   // read once (#266): every drive shares it
 
   const sessions: Session[] = []
   for (const csvFile of csvFiles) {
@@ -140,8 +142,8 @@ async function importBatchZipInner(zip: JSZip, manifest: ExportManifest | null, 
     // DTC data (shared across batch — use first found)
     const dtcResults = await parseDtcData(zip, manifest)
     const dtcScan = dtcTextFile(zip, manifest) !== undefined   // a text-only scan states no status
-    const diagnostics = await parseDiagnosticData(zip, dtcResults, manifest)
-    const meta = await parseMeta(zip, filename, manifest)
+    const diagnostics = parseDiagnosticData(detail, dtcResults, notes)
+    const meta = await parseMeta(zip, filename, manifest, detail)
     const name = buildSessionName(meta, trip, csvFile)
 
     const tags: string[] = []
@@ -205,7 +207,7 @@ function findProfileFor(zip: JSZip, manifest: ExportManifest | null, csvFile: st
   return csvId && profileId && csvId !== profileId ? null : candidates[0]
 }
 
-async function importSingleDrive(zip: JSZip, manifest: ExportManifest | null, filename: string): Promise<Session> {
+async function importSingleDrive(zip: JSZip, manifest: ExportManifest | null, filename: string, notes: string[] = []): Promise<Session> {
   const id = crypto.randomUUID()
   const trip = await parseTripData(zip, manifest)
 
@@ -224,9 +226,10 @@ async function importSingleDrive(zip: JSZip, manifest: ExportManifest | null, fi
   // #384: a scan with no codes is not "no scan", and only a scan marked COMPLETE lets "no codes" mean none
   const dtcScan = dtcJson !== null || dtcTextFile(zip, manifest) !== undefined
   const dtcScanStatus = dtcJson?.status ?? null
-  const diagnostics = await parseDiagnosticData(zip, dtcResults, manifest)
-  const dtcScanFinishedAtMs = (await detailScanFinishedAtMs(zip, manifest)) ?? dtcJson?.finishedAtMs
-  const meta = await parseMeta(zip, filename, manifest)
+  const detail = await readDetailFile(zip, manifest)
+  const diagnostics = parseDiagnosticData(detail, dtcResults, notes)
+  const dtcScanFinishedAtMs = detailScanFinishedAtMs(detail) ?? dtcJson?.finishedAtMs
+  const meta = await parseMeta(zip, filename, manifest, detail)
   const name = buildSessionName(meta, trip, filename)
 
   const tags: string[] = []
@@ -727,21 +730,59 @@ function diagnosticDetailFile(zip: JSZip, manifest: ExportManifest | null): stri
     ?? Object.keys(zip.files).find((f) => f.startsWith('diagnostic_detail_') && f.endsWith('.json'))
 }
 
-async function parseDiagnosticData(zip: JSZip, dtcResults: DtcEntry[], manifest: ExportManifest | null): Promise<DiagnosticData | null> {
-  const jsonFile = diagnosticDetailFile(zip, manifest)
-  if (!jsonFile) {
-    if (dtcResults.length > 0) {
-      // fault codes only: no session log in this import (#384: recording gaps are then not checked)
-      return { canInventory: [], fpsTimeline: [], sessionEvents: [], decodeTrace: [], probeResults: [], dtcResults, sessionLog: false }
-    }
-    return null
+/** The import's note for a diagnostic detail file it skipped (#266; owner, 2026-11-23). Text users see. */
+export function skippedDetailNote(jsonFile: string): string {
+  return `${jsonFile} could not be read (damaged or missing) and was skipped: this import has no session log.`
+}
+
+/**
+ * The import's diagnostic detail file, read once (#266). [data] is its root when it can be read: JSON, an object, and
+ * every part the parsers read reads; else null (absent, damaged, or named by the manifest but not in the ZIP). A
+ * skipped file feeds nothing: not the diagnostics, not the scan's finish time, not the export schema version.
+ */
+interface DetailFile {
+  /** The file's name in the ZIP; absent when the import names none. */
+  file?: string
+  data: Record<string, unknown> | null
+}
+
+async function readDetailFile(zip: JSZip, manifest: ExportManifest | null): Promise<DetailFile> {
+  const file = diagnosticDetailFile(zip, manifest)
+  if (!file) return { data: null }
+  try {
+    const entry = zip.files[file]
+    if (!entry || entry.dir) return { file, data: null }
+    const data: unknown = JSON.parse(await entry.async('string'))
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return { file, data: null }
+    const root = data as Record<string, unknown>
+    diagnosticsFrom(root, [])   // a part the parsers cannot read throws here: the file is skipped as a whole
+    return { file, data: root }
+  } catch {
+    return { file, data: null }
   }
+}
 
-  const raw = await zip.files[jsonFile].async('string')
-  const data = JSON.parse(raw)
+/**
+ * The import's diagnostics. A detail file that cannot be read is skipped as a whole, with one note in [notes]: the
+ * drive and the fault codes still load, as an import with no session log (#266; owner, 2026-11-23).
+ */
+function parseDiagnosticData(detail: DetailFile, dtcResults: DtcEntry[], notes: string[] = []): DiagnosticData | null {
+  if (detail.data) return diagnosticsFrom(detail.data, dtcResults)
+  if (detail.file) {
+    const note = skippedDetailNote(detail.file)
+    if (!notes.includes(note)) notes.push(note)   // a batch gives each drive the shared detail file: one note
+  }
+  if (dtcResults.length > 0) {
+    // fault codes only: no session log in this import (#384: recording gaps are then not checked)
+    return { canInventory: [], fpsTimeline: [], sessionEvents: [], decodeTrace: [], probeResults: [], dtcResults, sessionLog: false }
+  }
+  return null
+}
 
+function diagnosticsFrom(data: Record<string, unknown>, dtcResults: DtcEntry[]): DiagnosticData {
   // #384: the session's length (part of a drive-less session's proof), when the detail states it
-  const durationMs = typeof data?.meta?.sessionDurationMs === 'number' ? data.meta.sessionDurationMs : undefined
+  const meta = data.meta as { sessionDurationMs?: unknown } | null | undefined
+  const durationMs = typeof meta?.sessionDurationMs === 'number' ? meta.sessionDurationMs : undefined
   return {
     canInventory: parseCanInventory(data),
     fpsTimeline: parseFpsTimeline(data),
@@ -757,17 +798,11 @@ async function parseDiagnosticData(zip: JSZip, dtcResults: DtcEntry[], manifest:
 
 /**
  * When the fault-code scan finished, from the detail JSON's own `dtcScan` block (#384). Absent when the detail states
- * none ({"status":"NONE"}, no scan this session) or there is no detail file.
+ * none ({"status":"NONE"}, no scan this session), or there is no detail file, or it was skipped (#266).
  */
-async function detailScanFinishedAtMs(zip: JSZip, manifest: ExportManifest | null): Promise<number | undefined> {
-  const jsonFile = diagnosticDetailFile(zip, manifest)
-  if (!jsonFile || !zip.files[jsonFile]) return undefined
-  try {
-    const v = JSON.parse(await zip.files[jsonFile].async('string'))?.dtcScan?.finishedAtMs
-    return typeof v === 'number' && Number.isFinite(v) ? v : undefined
-  } catch {
-    return undefined
-  }
+function detailScanFinishedAtMs(detail: DetailFile): number | undefined {
+  const v = (detail.data?.dtcScan as { finishedAtMs?: unknown } | null | undefined)?.finishedAtMs
+  return typeof v === 'number' && Number.isFinite(v) ? v : undefined
 }
 
 // T0A: Fixed — Android uses "canFrameInventory" object keyed by CAN ID, not an array
@@ -889,22 +924,19 @@ function parseNrcSuppression(data: Record<string, unknown>): NrcSuppression[] | 
 
 // ── Meta (T1G: manifest metadata) ──
 
-/** The export's contract version: the manifest's, else the detail JSON's. Undefined = none stated; never blocks an import. */
-async function readExportSchemaVersion(zip: JSZip, manifest: ExportManifest | null): Promise<number | undefined> {
+/**
+ * The export's contract version: the manifest's, else the detail JSON's (none from a skipped detail file, #266).
+ * Undefined = none stated; never blocks an import.
+ */
+async function readExportSchemaVersion(zip: JSZip, detail: DetailFile): Promise<number | undefined> {
   const fromManifest = parseExportSchemaVersion((await readManifestObject(zip))?.exportSchemaVersion)
   if (fromManifest !== undefined) return fromManifest
-  const jsonFile = diagnosticDetailFile(zip, manifest)
-  if (!jsonFile || !zip.files[jsonFile]) return undefined
-  try {
-    return parseExportSchemaVersion(JSON.parse(await zip.files[jsonFile].async('string'))?.exportSchemaVersion)
-  } catch {
-    return undefined
-  }
+  return parseExportSchemaVersion(detail.data?.exportSchemaVersion)
 }
 
-async function parseMeta(zip: JSZip, filename: string, manifest: ExportManifest | null): Promise<SessionMeta> {
+async function parseMeta(zip: JSZip, filename: string, manifest: ExportManifest | null, detail: DetailFile): Promise<SessionMeta> {
   const meta = await parseExportMeta(zip, filename, manifest)
-  const exportSchemaVersion = await readExportSchemaVersion(zip, manifest)
+  const exportSchemaVersion = await readExportSchemaVersion(zip, detail)
   // No key at all without a version: a legacy export's session stays as it was
   return exportSchemaVersion === undefined ? meta : { ...meta, exportSchemaVersion }
 }

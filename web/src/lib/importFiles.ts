@@ -14,6 +14,8 @@ export interface FileResult {
   already: { name: string; existingId: string; filled: FilledPart[] }[]
   /** Why nothing of this file was stored; absent when it was read. */
   error?: string
+  /** A part of this file that was skipped, one line each (#266: a damaged diagnostic detail file); absent when none. */
+  notes?: string[]
 }
 
 const yieldToPage = () => new Promise<void>((r) => setTimeout(r, 0))
@@ -37,7 +39,9 @@ export async function importFiles(files: File[], onProgress: (p: ImportProgress)
       if (await isSapphireBackup(zip)) throw new Error('this is a Sapphire backup: restore it in Settings')
       step('parsing')
       await yieldToPage()
-      const sessions = await importLoadedZip(zip, file.name)
+      const notes: string[] = []
+      const sessions = await importLoadedZip(zip, file.name, notes)
+      if (notes.length > 0) result.notes = notes
       step('storing')
       await yieldToPage()
       const outcome = await store(sessions)

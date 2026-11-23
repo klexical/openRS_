@@ -178,4 +178,26 @@ describe('#384 ticket 06: Import is an action', () => {
     expect(status().textContent).toMatch(/second\.zip: already imported .*filled in: session log/)
     await waitFor(() => expect(useStore.getState().activeSession?.diagnostics?.sessionEvents).toHaveLength(3))
   })
+
+  it('#266: a damaged diagnostic detail file is skipped with a note, and the drive is stored', async () => {
+    const { useStore } = await start()
+    const file = await zipOf('detail.zip', [['drive_invented_6.csv', csv(6)], ['diagnostic_detail_invented.json', '{ "sessionEvents": [']])
+    await choose([file])
+    await done()
+    expect(useStore.getState().drives).toHaveLength(1)
+    expect(status().textContent).toContain(
+      'detail.zip: diagnostic_detail_invented.json could not be read (damaged or missing) and was skipped: this import has no session log.')
+    expect(status().textContent).not.toMatch(/detail\.zip: .*SyntaxError|JSON at position/)
+    const id = useStore.getState().drives[0].id
+    await waitFor(() => expect(window.location.hash).toBe(`#/drive/${id}`))       // one drive stored: it lands there
+  })
+
+  it('#266: a file holding only a damaged detail file stores nothing, and says which part was skipped', async () => {
+    const { useStore } = await start()
+    await choose([await zipOf('only-detail.zip', [['diagnostic_detail_invented.json', 'not json']])])
+    await done()
+    expect(useStore.getState().drives).toHaveLength(0)
+    expect(status().textContent).toContain('only-detail.zip: Nothing in this file could be read')
+    expect(status().textContent).toContain('only-detail.zip: diagnostic_detail_invented.json could not be read (damaged or missing) and was skipped')
+  })
 })
