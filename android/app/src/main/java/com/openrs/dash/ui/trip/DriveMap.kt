@@ -140,6 +140,11 @@ fun DriveMap(
         )
     }
 
+    // The route's segments and pause marks: built once per point update, never per composition (#520). The map
+    // recomposes on every fix and dot tick; rebuilding allocated a LatLng per point and walked every point each time.
+    val overlay = rememberRouteOverlay(points, colorMode)
+    val roundCap = remember { RoundCap() }
+
     GoogleMap(
         modifier = modifier.fillMaxSize(),
         cameraPositionState = cameraPositionState,
@@ -147,27 +152,30 @@ fun DriveMap(
         uiSettings = uiSettings
     ) {
         // ── Route polyline (color-segmented) ─────────────────────────
-        if (points.size >= 2) {
-            val segments = buildColorSegments(points, colorMode)
-            segments.forEach { seg ->
+        // Keyed by the segment's first point (#520): a point added, or one dropped from the front of the live window,
+        // leaves every other segment's polyline as it was (maps-compose sets a polyline's points only when they differ)
+        overlay.segments.forEach { seg ->
+            key(seg.key) {
                 Polyline(
                     points = seg.latLngs,
                     color = seg.color,
                     width = 10f,
                     jointType = JointType.ROUND,
-                    startCap = RoundCap(),
-                    endCap = RoundCap()
+                    startCap = roundCap,
+                    endCap = roundCap
                 )
             }
         }
 
         // ── Start / Finish flags ─────────────────────────────────────
+        // Icons are remembered: maps-compose calls setIcon whenever the descriptor differs, and a new one never equals
+        // the last (#520)
         if (points.isNotEmpty()) {
             val first = points.first()
             Marker(
                 state = remember(first.lat, first.lng) { MarkerState(position = LatLng(first.lat, first.lng)) },
                 title = "Start",
-                icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN),
+                icon = remember { BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN) },
                 zIndex = 6f
             )
 
@@ -176,24 +184,21 @@ fun DriveMap(
                 Marker(
                     state = remember(last.lat, last.lng) { MarkerState(position = LatLng(last.lat, last.lng)) },
                     title = if (isRecording) "Current" else "Finish",
-                    icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED),
+                    icon = remember { BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED) },
                     zIndex = 6f
                 )
             }
         }
 
         // ── Pause point markers ──────────────────────────────────────
-        if (points.size >= 2) {
-            for (i in 1 until points.size) {
-                val gap = points[i].timestamp - points[i - 1].timestamp
-                if (gap > 5000) {
-                    val pauseIcon = remember { createPauseMarker() }
+        if (overlay.pauses.isNotEmpty()) {
+            val pauseIcon = remember { createPauseMarker() }
+            overlay.pauses.forEach { pause ->
+                key(pause.key) {
                     Marker(
-                        state = remember(points[i - 1].lat, points[i - 1].lng) {
-                            MarkerState(position = LatLng(points[i - 1].lat, points[i - 1].lng))
-                        },
+                        state = remember(pause.position) { MarkerState(position = pause.position) },
                         title = "Paused",
-                        snippet = "%.0fs pause".format(gap / 1000.0),
+                        snippet = pause.snippet,
                         icon = pauseIcon,
                         anchor = Offset(0.5f, 0.5f),
                         zIndex = 4f
@@ -222,24 +227,26 @@ fun DriveMap(
                 PeakType.LATERAL_G -> Orange to "Lat-G: ${"%.2f".format(peak.value)}"
                 PeakType.SPEED -> Frost to "Speed: ${prefs.speed(peak.value).text}"
             }
+            val hue = colorToHue(color)
             Marker(
-                state = MarkerState(position = LatLng(peak.lat, peak.lng)),
+                state = remember(peak.lat, peak.lng) { MarkerState(position = LatLng(peak.lat, peak.lng)) },
                 title = peak.type.label,
                 snippet = label,
-                icon = BitmapDescriptorFactory.defaultMarker(colorToHue(color)),
+                icon = remember(hue) { BitmapDescriptorFactory.defaultMarker(hue) },
                 zIndex = 5f
             )
         }
 
         // ── RTR marker ───────────────────────────────────────────────
         rtrPoint?.let {
+            val hue = colorToHue(Ok)
             Marker(
-                state = MarkerState(position = LatLng(it.lat, it.lng)),
+                state = remember(it.lat, it.lng) { MarkerState(position = LatLng(it.lat, it.lng)) },
                 // Where the thermal verdict first read TEMPS READY: temps inside the openRS_ advisory limits, not a
                 // statement that the car is ready for the track
                 title = "Temps ready",
                 snippet = "Thermal verdict: TEMPS READY",
-                icon = BitmapDescriptorFactory.defaultMarker(colorToHue(Ok)),
+                icon = remember(hue) { BitmapDescriptorFactory.defaultMarker(hue) },
                 zIndex = 5f
             )
         }
@@ -252,11 +259,12 @@ fun DriveMap(
                 if (bm.rpm > 0) append(" · ${bm.rpm} RPM")
                 // no boost: a bookmark stores no source (#207), so its value couldn't be named
             }
+            val hue = colorToHue(Warn)
             Marker(
-                state = MarkerState(position = LatLng(bm.lat, bm.lng)),
+                state = remember(bm.lat, bm.lng) { MarkerState(position = LatLng(bm.lat, bm.lng)) },
                 title = if (bm.label.isNotEmpty()) "Observer note: ${bm.label}" else "Observer note (no text)",
                 snippet = snippet,
-                icon = BitmapDescriptorFactory.defaultMarker(colorToHue(Warn)),
+                icon = remember(hue) { BitmapDescriptorFactory.defaultMarker(hue) },
                 zIndex = 7f
             )
         }
@@ -267,17 +275,56 @@ fun DriveMap(
 // Polyline color segmentation
 // ═══════════════════════════════════════════════════════════════════════════
 
-private data class ColorSegment(val latLngs: List<LatLng>, val color: Color)
+/**
+ * The five colours a route is drawn in, read once per build (#520): each theme getter re-reads the theme mode, and in
+ * AUTO the clock, so reading them per point cost one clock read per point.
+ */
+internal data class RoutePalette(val accent: Color, val ok: Color, val warn: Color, val orange: Color, val dim: Color) {
+    companion object {
+        fun current() = RoutePalette(Accent, Ok, Warn, Orange, com.openrs.dash.ui.Dim)
+    }
+}
 
-private fun buildColorSegments(
+/** One polyline: [key] is its first point's time (made unique), so a polyline keeps its node while its points stay. */
+internal data class ColorSegment(val key: Long, val latLngs: List<LatLng>, val color: Color)
+
+/** A pause marker at the last point before a gap of more than 5 s; [key] is that point's time (made unique). */
+internal data class PauseMark(val key: Long, val position: LatLng, val snippet: String)
+
+/** What the map draws from the points, built in one pass by [buildRouteOverlay]. */
+internal class RouteOverlay(val segments: List<ColorSegment>, val pauses: List<PauseMark>)
+
+/** The longest step between two points that is not a pause: the recorder stores one point a second. */
+private const val PAUSE_GAP_MS = 5000L
+
+/**
+ * The route overlay for [points] in [mode], rebuilt only when the points, the mode or the theme's colours change
+ * (#520). DriveMap recomposes on every fix and every dot tick; the live points list is republished once per recorded
+ * point, so the overlay is built once per point update. [build] is the test seam that counts builds.
+ */
+@Composable
+internal fun rememberRouteOverlay(
     points: List<DrivePointEntity>,
-    mode: ColorMode
-): List<ColorSegment> {
-    if (points.isEmpty()) return emptyList()
+    mode: ColorMode,
+    build: (List<DrivePointEntity>, ColorMode, RoutePalette) -> RouteOverlay = ::buildRouteOverlay,
+): RouteOverlay {
+    val palette = RoutePalette.current()
+    return remember(points, mode, palette) { build(points, mode, palette) }
+}
+
+/** Segments (a new one at each colour change or pause gap) and pause marks, from the points in order. */
+internal fun buildRouteOverlay(points: List<DrivePointEntity>, mode: ColorMode, palette: RoutePalette): RouteOverlay {
+    if (points.size < 2) return RouteOverlay(emptyList(), emptyList())
     val segments = mutableListOf<ColorSegment>()
+    val pauses = mutableListOf<PauseMark>()
     // BOOST colours one measurement only — the drive peak's source (#207); other sources' points are drawn Dim
     val boostSource = if (mode == ColorMode.BOOST) com.openrs.dash.data.StoredBoost.primarySource(points) else null
-    var currentColor = pointColor(points[0], mode, boostSource)
+    var lastSegKey = Long.MIN_VALUE
+    var lastPauseKey = Long.MIN_VALUE
+    fun segKey(ts: Long): Long = (if (ts > lastSegKey) ts else lastSegKey + 1).also { lastSegKey = it }
+
+    var currentColor = pointColor(points[0], mode, boostSource, palette)
+    var currentKey = segKey(points[0].timestamp)
     var currentLatLngs = mutableListOf(LatLng(points[0].lat, points[0].lng))
 
     for (i in 1 until points.size) {
@@ -285,61 +332,73 @@ private fun buildColorSegments(
         val prev = points[i - 1]
 
         // Detect pause gaps (> 5s between consecutive points)
-        val gap = p.timestamp - prev.timestamp > 5000
+        val gapMs = p.timestamp - prev.timestamp
+        val gap = gapMs > PAUSE_GAP_MS
+        if (gap) {
+            val key = (if (prev.timestamp > lastPauseKey) prev.timestamp else lastPauseKey + 1).also { lastPauseKey = it }
+            pauses += PauseMark(key, LatLng(prev.lat, prev.lng), "%.0fs pause".format(gapMs / 1000.0))
+        }
 
-        val color = pointColor(p, mode, boostSource)
-        if (color != currentColor || gap) {
-            segments += ColorSegment(currentLatLngs.toList(), currentColor)
+        val color = pointColor(p, mode, boostSource, palette)
+        if (color != currentColor && !gap && currentLatLngs.size == 1) {
+            // A colour change one point into a segment: that point is the next segment's start anyway, so the segment
+            // takes the new colour instead of leaving a one-point polyline (which draws nothing) whose key the next
+            // segment would collide with — that re-sent every later polyline when the live window slid by a point
             currentColor = color
-            currentLatLngs = mutableListOf(
-                if (gap) LatLng(p.lat, p.lng)
-                else LatLng(prev.lat, prev.lng)  // overlap for seamless join
-            )
+        } else if (color != currentColor || gap) {
+            segments += ColorSegment(currentKey, currentLatLngs, currentColor)
+            currentColor = color
+            val start = if (gap) p else prev   // overlap for seamless join
+            currentKey = segKey(start.timestamp)
+            currentLatLngs = mutableListOf(LatLng(start.lat, start.lng))
         }
         currentLatLngs += LatLng(p.lat, p.lng)
     }
     if (currentLatLngs.size >= 2) {
-        segments += ColorSegment(currentLatLngs.toList(), currentColor)
+        segments += ColorSegment(currentKey, currentLatLngs, currentColor)
     }
-    return segments
+    return RouteOverlay(segments, pauses)
 }
 
-internal fun pointColor(point: DrivePointEntity, mode: ColorMode, boostSource: com.openrs.dash.data.BoostSource? = null): Color = when (mode) {
+internal fun pointColor(point: DrivePointEntity, mode: ColorMode, boostSource: com.openrs.dash.data.BoostSource? = null): Color =
+    pointColor(point, mode, boostSource, RoutePalette.current())
+
+private fun pointColor(point: DrivePointEntity, mode: ColorMode, boostSource: com.openrs.dash.data.BoostSource?, c: RoutePalette): Color = when (mode) {
     ColorMode.SPEED -> when {
-        point.speedKph < 60  -> Ok       // green — slow
-        point.speedKph < 100 -> Accent   // cyan — moderate
-        point.speedKph < 140 -> Warn     // yellow — fast
-        else                 -> Orange   // orange — very fast
+        point.speedKph < 60  -> c.ok       // green — slow
+        point.speedKph < 100 -> c.accent   // cyan — moderate
+        point.speedKph < 140 -> c.warn     // yellow — fast
+        else                 -> c.orange   // orange — very fast
     }
     ColorMode.DRIVE_MODE -> when (point.driveMode) {
-        DriveMode.SPORT.label  -> Warn     // yellow
-        DriveMode.TRACK.label  -> Ok       // green
-        DriveMode.DRIFT.label  -> Orange   // orange
-        else                   -> Accent   // cyan — Normal
+        DriveMode.SPORT.label  -> c.warn     // yellow
+        DriveMode.TRACK.label  -> c.ok       // green
+        DriveMode.DRIFT.label  -> c.orange   // orange
+        else                   -> c.accent   // cyan — Normal
     }
     // #207: no reading, or a reading from another source than the one coloured → Dim; legacy points as recorded
     ColorMode.BOOST -> when (val b = com.openrs.dash.data.StoredBoost.point(point)) {
-        com.openrs.dash.data.StoredBoost.Unavailable -> com.openrs.dash.ui.Dim
-        is com.openrs.dash.data.StoredBoost.Reading -> if (b.source != boostSource) com.openrs.dash.ui.Dim else boostBand(b.psi)
-        is com.openrs.dash.data.StoredBoost.Legacy -> boostBand(b.psi)
+        com.openrs.dash.data.StoredBoost.Unavailable -> c.dim
+        is com.openrs.dash.data.StoredBoost.Reading -> if (b.source != boostSource) c.dim else boostBand(b.psi, c)
+        is com.openrs.dash.data.StoredBoost.Legacy -> boostBand(b.psi, c)
     }
     ColorMode.THROTTLE -> when {
-        point.throttlePct < 25  -> Accent   // cyan — coasting
-        point.throttlePct < 50  -> Ok       // green — light
-        point.throttlePct < 75  -> Warn     // yellow — moderate
-        else                    -> Orange   // orange — full send
+        point.throttlePct < 25  -> c.accent   // cyan — coasting
+        point.throttlePct < 50  -> c.ok       // green — light
+        point.throttlePct < 75  -> c.warn     // yellow — moderate
+        else                    -> c.orange   // orange — full send
     }
     ColorMode.LATERAL_G -> when {
-        kotlin.math.abs(point.lateralG) < 0.3 -> Accent  // cyan — straight
-        kotlin.math.abs(point.lateralG) < 0.6 -> Ok      // green — gentle
-        kotlin.math.abs(point.lateralG) < 0.9 -> Warn    // yellow — spirited
-        else                                  -> Orange   // orange — high-G
+        kotlin.math.abs(point.lateralG) < 0.3 -> c.accent  // cyan — straight
+        kotlin.math.abs(point.lateralG) < 0.6 -> c.ok      // green — gentle
+        kotlin.math.abs(point.lateralG) < 0.9 -> c.warn    // yellow — spirited
+        else                                  -> c.orange   // orange — high-G
     }
     ColorMode.OIL_TEMP -> when {
-        point.oilTempC < 0   -> Accent   // cyan — cold / no data
-        point.oilTempC < 90  -> Ok       // green — warming
-        point.oilTempC < 110 -> Warn     // yellow — operating
-        else                 -> Orange   // orange — hot
+        point.oilTempC < 0   -> c.accent   // cyan — cold / no data
+        point.oilTempC < 90  -> c.ok       // green — warming
+        point.oilTempC < 110 -> c.warn     // yellow — operating
+        else                 -> c.orange   // orange — hot
     }
     ColorMode.AWD -> {
         // Rear-vs-front wheel speed delta: proxy for GKN Twinster engagement
@@ -347,10 +406,10 @@ internal fun pointColor(point: DrivePointEntity, mode: ColorMode, boostSource: c
         val rearAvg = (point.wheelSpeedRL + point.wheelSpeedRR) / 2.0
         val delta = kotlin.math.abs(rearAvg - frontAvg)
         when {
-            delta < 0.5 -> Accent   // cyan — minimal rear drive
-            delta < 2.0 -> Ok       // green — light vectoring
-            delta < 4.0 -> Warn     // yellow — active vectoring
-            else        -> Orange   // orange — heavy torque transfer
+            delta < 0.5 -> c.accent   // cyan — minimal rear drive
+            delta < 2.0 -> c.ok       // green — light vectoring
+            delta < 4.0 -> c.warn     // yellow — active vectoring
+            else        -> c.orange   // orange — heavy torque transfer
         }
     }
     ColorMode.DYNAMICS -> {
@@ -358,11 +417,11 @@ internal fun pointColor(point: DrivePointEntity, mode: ColorMode, boostSource: c
         val braking = point.brakePressure > 50 || point.longitudinalG < -0.2
         val cornering = kotlin.math.abs(point.lateralG) > 0.3
         when {
-            braking && cornering -> Orange   // trail braking
+            braking && cornering -> c.orange   // trail braking
             braking              -> Color(0xFFCC2200)  // hard braking — red-orange
-            cornering && kotlin.math.abs(point.lateralG) > 0.6 -> Warn  // hard corner
-            cornering            -> Ok       // moderate corner
-            else                 -> Accent   // cruise / acceleration
+            cornering && kotlin.math.abs(point.lateralG) > 0.6 -> c.warn  // hard corner
+            cornering            -> c.ok       // moderate corner
+            else                 -> c.accent   // cruise / acceleration
         }
     }
 }
@@ -393,11 +452,11 @@ internal fun colorLegend(mode: ColorMode, prefs: UserPrefs): List<Pair<String, C
     ColorMode.DYNAMICS -> listOf("Cruise" to Accent, "Corner" to Ok, "Hard" to Warn, "Brake" to Orange)
 }
 
-private fun boostBand(psi: Double): Color = when {
-    psi < 0  -> Accent   // cyan — vacuum
-    psi < 8  -> Ok       // green — low boost
-    psi < 16 -> Warn     // yellow — mid boost
-    else     -> Orange   // orange — full boost
+private fun boostBand(psi: Double, c: RoutePalette): Color = when {
+    psi < 0  -> c.accent   // cyan — vacuum
+    psi < 8  -> c.ok       // green — low boost
+    psi < 16 -> c.warn     // yellow — mid boost
+    else     -> c.orange   // orange — full boost
 }
 
 /**
