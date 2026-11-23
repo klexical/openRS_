@@ -9,6 +9,8 @@ Firmware changes are tracked separately in [firmware releases](https://github.co
 
 ## [v2.2.7] — unreleased
 
+> Entries not yet folded in are one file each under [changelog.d/](changelog.d/), at the same commit; stable folds them in (`android/scripts/changelog.py fold`).
+
 ### Added (nightlies)
 - **Units by region, and every unit settable** — Settings → UNITS starts with Region (EU, UK, US, CA, AU / NZ, Custom), then eleven units from speed to mixture; a region sets all eleven, and changing one by hand reads Custom. Every install, and RESET, takes the region from the phone's country setting (nothing is sent); an existing install keeps its speed, temperature, boost and tyre choices beside it, and one that chose km/h with °C on a US or UK phone takes Europe & international's other units. Display only: drives and exports keep their units, and the diagnostic export adds the region and the seven units. (`ui/units/Units.kt`, `ui/AppSettings.kt`, `ui/SettingsSheet.kt`) ([#464](https://github.com/klexical/openRS_/issues/464))
 - **The TPMS threshold editor gains kPa** — in the tyres unit, with the same exact-psi rule: an unchanged SAVE keeps the stored psi, an edit converts once. ([#219](https://github.com/klexical/openRS_/issues/219), [#464](https://github.com/klexical/openRS_/issues/464))
