@@ -165,3 +165,10 @@ paths:
   Numbers only: no clock time, nothing from the car. Every build, not debug only (owner decision, #510). Additive:
   absent when the runtime gives no reading, no schema bump, no existing field changed; Sapphire's import ignores them
   (`import.test.ts` T0B2 on main, `HeapExportTest`)
+- **The crash record is written minimal first (#511)** — `CrashTelemetryBuffer.flushToFile` writes the exception,
+  message, stack, thread, build and heap, ending `"snapshotsWritten": false`, before it formats any snapshot; the full
+  record is then built whole, written as `<name>.part` and renamed over it. So a crash on a full heap leaves at least
+  that record, and readers tell the two apart by `snapshotsWritten` (absent on the full record, whose form is
+  unchanged). Any new field or step that allocates much goes after the minimal write, and a temporary file must not
+  end in `.json` (the crash list and the export take every `crash_telemetry_*.json`). The out-of-memory case is
+  simulated at the snapshot seam, never on a real full heap (`CrashRecordFullHeapTest`)

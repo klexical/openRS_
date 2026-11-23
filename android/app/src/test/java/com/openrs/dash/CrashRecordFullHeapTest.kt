@@ -106,7 +106,7 @@ class CrashRecordFullHeapTest {
             override fun printStackTrace(s: PrintWriter) = throw OutOfMemoryError("stack")
         }
 
-        flush(file, exception = noStack, appendSnapshot = { _, _, _ -> throw OutOfMemoryError("snapshots") })
+        flush(file, noStack, appendSnapshot = { _, _, _ -> throw OutOfMemoryError("snapshots") })
 
         val j = JSONObject(file.readText())
         assertTrue(j.getString("exception").startsWith("com.openrs.dash.CrashRecordFullHeapTest"))
@@ -129,9 +129,10 @@ class CrashRecordFullHeapTest {
         assertEquals(j.getInt("snapshotCount"), j.getJSONArray("snapshots").length())
         val last = text.lines().last { it.startsWith("    {") }
         assertTrue(last, last.matches(Regex(
-            """    \{"ts":\d+,"rpm":6500\.0,"speedKph":200\.0,"boostKpa":[-\d.]+,"throttle":[-\d.]+,"pedal":[-\d.]+,""" +
-                """"brake":[-\d.]+,"coolant":[-\d.]+,"oilTemp":[-\d.]+,"gear":-?\d+,"latG":[-\d.]+,"lonG":[-\d.]+,""" +
-                """"steer":[-\d.]+,"battV":[-\d.]+,"esc":"[^"]*","mode":"[^"]*"}"""
+            """    \{"ts":\d+,"rpm":6500\.0,"speedKph":200\.0,"boostKpa":[-\d.]+,"throttle":[-\d.]+,""" +
+                """"pedal":[-\d.]+,"brake":[-\d.]+,"coolant":[-\d.]+,"oilTemp":[-\d.]+,"gear":-?\d+,""" +
+                """"latG":[-\d.]+,"lonG":[-\d.]+,"steer":[-\d.]+,"battV":[-\d.]+,""" +
+                """"esc":"[^"]*","mode":"[^"]*"}"""
         )))
         assertEquals("only the crash file is left", listOf(file.name), tmp.root.list()!!.toList())
     }
