@@ -132,7 +132,7 @@ describe('#384 ticket 07: the browser is asked to keep the data once, after the 
     await list()
     await choose([await single(3)])
     expect(sm.persist).toHaveBeenCalledTimes(1)
-  })
+  }, 15_000)                                        // three imports and a reload: under 1 s alone, past 5 s under load (#422)
 
   it('a second import while the browser has not answered yet does not ask again', async () => {
     const sm = storageManager()
