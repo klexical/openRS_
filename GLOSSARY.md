@@ -101,6 +101,17 @@ answered or a set time has passed, so each answer's delay can be read from the s
 starts with it off.
 _Avoid_: Capture mode, debug mode, slow polling
 
+### Exports
+
+**Diagnostic export**:
+The ZIP made from the DIAG tab: the diagnostic record of the current connection, with the open drive folded in when one
+is open. "Snapshot" is only the word on its button.
+_Avoid_: Snapshot (for the file)
+
+**Drive export**:
+The ZIP made from TRIP for one or more saved drives.
+_Avoid_: Snapshot
+
 ### Sapphire
 
 **Import**:
@@ -150,6 +161,18 @@ _Avoid_: Compare panel, Compare page
 **Base drive**:
 The first drive ticked for Compare; the other drives' differences are measured against it.
 _Avoid_: Reference, baseline
+
+**Fill-in**:
+What an import of a drive Sapphire already keeps does: it adds only the parts the stored drive lacked (its profile, its
+session log, a fault-code scan that answers "not checked"). The drive stays one drive; nothing stored is replaced.
+
+**Palette**:
+The set of colours Sapphire is drawn in: Match device (Night or Day, from the device's setting), Night, Day or Ultra.
+_Avoid_: Auto, theme, mode, look
+
+**Paint colour**:
+The RS paint picked in Sapphire's Settings, which its accent comes from: on buttons, tabs and highlights only.
+_Avoid_: Theme, palette
 
 ### Releases
 
