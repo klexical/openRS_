@@ -99,7 +99,7 @@ describe('#384 ticket 05: one menu per row', () => {
     fireEvent.click(menuButton(root, 'A scan at the kerb'))
     expect(within(screen.getByRole('menu', { name: 'Actions for A scan at the kerb' })).queryByRole('menuitem', { name: 'Export trip CSV' })).toBeNull()
     expect(screen.getAllByRole('menu')).toHaveLength(1)                  // one menu open at a time
-  })
+  }, 15_000)                                                             // under 1 s alone, past 5 s under load (#422)
 
   it('works by keyboard alone: arrows move, Escape closes and returns to the button, Enter chooses', async () => {
     const { root } = await start()

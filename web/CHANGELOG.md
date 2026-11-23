@@ -5,6 +5,8 @@ The Android app has its own changelog: [android/CHANGELOG.md](../android/CHANGEL
 
 Sections, in this order: Added, Fixed, Changed, Removed. Every entry ends with its issue link.
 A fix shipped after a slice goes into that slice's Fixed list until the next slice's section opens.
+A new entry is a file of its own under [changelog.d/](changelog.d/), not a line typed here: the site folds them into the
+newest section, and the slice's last delivery writes them in.
 
 ---
 

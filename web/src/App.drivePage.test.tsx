@@ -79,7 +79,7 @@ describe('#416 ticket 1: the page shows the drive its address names, read from t
 
     await boot('#/drive/b')                                    // the address, typed or after a reload
     await shows('Invented commute')
-  })
+  }, 15_000)                                                   // two boots: under 1 s alone, past 5 s under load (#422)
 
   it("from one drive's address straight to another's: the second drive, and the first one's view does not stay", async () => {
     await seed([drive('a', 'Invented loop'), drive('b', 'Invented commute', -86_400_000)])

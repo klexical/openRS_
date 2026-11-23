@@ -82,6 +82,8 @@ Comment only on lines the diff adds or changes, once per finding, with the file 
 - Each entry is 1–3 sentences; when it has an issue, it ends with its link, `([#N](https://github.com/klexical/openRS_/issues/N))`
   or `(addresses [#N](https://github.com/klexical/openRS_/issues/N))`; never a bare `(#N)`.
 - A shipped entry is never edited; every fix in a commit has an entry. `.claude/rules/build-release.md`, "Changelog Format".
+- A new entry is a fragment, `android/changelog.d/<added|fixed|changed|removed>/<issue>-<slug>.md`, not a line added to a
+  `(nightlies)` section of `android/CHANGELOG.md`. `.claude/rules/build-release.md`, "Changelog Format".
 
 ## Sapphire (`web/`)
 
