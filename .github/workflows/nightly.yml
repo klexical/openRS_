@@ -63,7 +63,7 @@ jobs:
         run: echo "date=$(date -u +%Y%m%d)" >> "$GITHUB_OUTPUT"
 
       - name: Checkout staging's tip
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: staging
           fetch-depth: 0      # the base tag and today's tags are compared in this checkout
@@ -96,13 +96,13 @@ jobs:
         working-directory: android
     steps:
       - name: Checkout the gate's commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ needs.gate.outputs.sha }}
           persist-credentials: false
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           java-version: '17'
           distribution: 'temurin'
@@ -160,13 +160,13 @@ jobs:
       contents: read
     steps:
       - name: Checkout the gate's commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ needs.gate.outputs.sha }}
           persist-credentials: false
 
       - name: Download the nightly APK
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: release-apk-${{ github.run_id }}
           path: release-apk
@@ -211,7 +211,7 @@ jobs:
       attestations: write
     steps:
       - name: Download the nightly APK
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: release-apk-${{ github.run_id }}
           path: release-apk
@@ -228,7 +228,7 @@ jobs:
           echo "$SHA256  release-apk/$FILE" | sha256sum -c -
 
       - name: Attest build provenance
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: release-apk/openRS_v${{ needs.gate.outputs.name }}.apk
 
@@ -253,13 +253,13 @@ jobs:
       contents: write
     steps:
       - name: Checkout the gate's commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ needs.gate.outputs.sha }}
           persist-credentials: false
 
       - name: Download the nightly APK
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: release-apk-${{ github.run_id }}
           path: release-apk
@@ -297,7 +297,7 @@ jobs:
       contents: write
     steps:
       - name: Checkout the gate's commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ needs.gate.outputs.sha }}
           persist-credentials: false
