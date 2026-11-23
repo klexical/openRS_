@@ -48,7 +48,11 @@ name: project-review
 # No checkout, no `uses:` and no GITHUB_TOKEN permission: this workflow needs no actions.lock entry, runs nothing of a
 # pull request and no third-party code with the key. Its tests: .github/scripts/test-project-review.rb.
 
-run-name: "probe A=${{ inputs.pr >= 1 && inputs.pr <= 999999 && inputs.pr || 'nan' }} B=${{ inputs.pr >= 1 && inputs.pr <= 999999 && format('{0}', fromJSON(inputs.pr)) || 'nan' }} V=${{ contains(fromJSON('["clear","real-gap","withdrawn-gap"]'), inputs.verdict) && inputs.verdict || 'bad' }} raw=${{ inputs.pr }}"
+run-name: >-
+  probe A=${{ inputs.pr >= 1 && inputs.pr <= 999999 && inputs.pr || 'nan' }}
+  B=${{ inputs.pr >= 1 && inputs.pr <= 999999 && format('{0}', fromJSON(inputs.pr)) || 'nan' }}
+  V=${{ contains(fromJSON('["clear","real-gap","withdrawn-gap"]'), inputs.verdict) && inputs.verdict || 'bad' }}
+  raw=${{ inputs.pr }}
 
 on:
   workflow_dispatch:
