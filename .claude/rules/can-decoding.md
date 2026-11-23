@@ -44,3 +44,9 @@ paths:
   byte 0. DIAG's ENGINE reads `engineState360` (byte 7; one car's captures): Off (0x02), Running (top bit set), any other value raw and
   "unidentified"; it is cleared at every new connection. Byte 0 is in no field: the decode trace prints it raw from the
   frame. Byte 7's other bits and byte 0's bit 2 are not identified (#328)
+- **Fuel level 0.0 or below is not yet received (#523)** — `VehicleState.fuelLevelPct` defaults to 0.0, not a sentinel,
+  so a stored point taken before the first 0x380 frame holds 0.0 (and `DrivePointEntity`'s own default is −1.0). A level
+  at or below 0 is no reading everywhere: DRIVE's and TRIP's FUEL cells (`fuelLevelPct > 0`), `FuelUsed.measurable` /
+  `litres`, and the drive exports, which write it as an empty field or leave the GPX element out
+  (`DriveExportBuilder`, `DriveExportBuilderTest`). This is the area rule `CODING_STANDARDS.md`'s "a decoded 0 is a
+  reading" defers to: a genuinely empty tank's 0.0 reads as no reading
