@@ -62,12 +62,13 @@ object FuelEconomy {
     }
 
     /**
-     * Called on every VehicleState update with current fuel level and speed.
+     * Called on every VehicleState update with current fuel level and speed; [nowMs] is the update's time (wall clock;
+     * tests pass their own).
      */
-    fun onUpdate(fuelPct: Double, speedKph: Double): Unit = synchronized(lock) {
+    fun onUpdate(fuelPct: Double, speedKph: Double, nowMs: Long = System.currentTimeMillis()): Unit = synchronized(lock) {
         if (fuelPct < 0 || fuelPct > 110) return  // invalid fuel reading
 
-        val now = System.currentTimeMillis()
+        val now = nowMs
 
         // Integrate distance from speed (trapezoidal)
         if (lastUpdateMs > 0 && now > lastUpdateMs) {
