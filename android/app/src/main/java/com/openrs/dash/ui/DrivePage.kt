@@ -515,11 +515,10 @@ private fun vehicleStatus(vs: VehicleState, p: UserPrefs, knockCount: Int, nowMs
             }
             if (vs.hasTpmsData) {
                 // Same classification as THERMAL's tyre cards (tireLevel) — including over-inflation past High,
-                // which DRIVE used to ignore (ALL NORMAL while THERMAL showed a tyre critical).
-                tyreIssues(
-                    listOf("FL" to vs.tirePressLF, "FR" to vs.tirePressRF, "RL" to vs.tirePressLR, "RR" to vs.tirePressRR),
-                    p.tireLowPsi.toDouble(), p.tireWarnPsi.toDouble(), p.tireHighPsi.toDouble(),
-                ).forEach { (pos, psi, issue) ->
+                // which DRIVE used to ignore (ALL NORMAL while THERMAL showed a tyre critical). Only current
+                // readings are judged, as on THERMAL: a held pressure (> 60 s old) is never a live alert (#307).
+                val (low, warn, high) = Triple(p.tireLowPsi.toDouble(), p.tireWarnPsi.toDouble(), p.tireHighPsi.toDouble())
+                tyreIssues(currentTyrePressures(vs, low, warn, high, nowMs), low, warn, high).forEach { (pos, psi, issue) ->
                     val v = "${p.displayTire(psi)} ${p.tireLabel}"
                     when (issue) {
                         TyreIssue.LOW -> add(VehicleAlert("$pos TYRE LOW", v, Level.CRIT, R.drawable.ic_tt_tyre, chip = "$pos $v LOW"))

@@ -42,4 +42,4 @@ paths:
   `fieldLastUpdateMs["tirePress…"]` stamp (60 s) and the link; card, wheel tint and band, lead line, panel edge and chips all read
   it (`tyrePanel()`). A held pressure is never judged: it keeps its value, its age and "WAS LOW" / "WAS HIGH", never a live alarm,
   the panel level or the imbalance spread. Don't read `vs.anyTireLow` / `vs.maxTirePressSpread` there: they have no freshness
-  (DRIVE's tyre alert still does, see #307). The band on the wheel is the cue that does not rely on colour
+  (DRIVE's tyre alerts read `currentTyrePressures()`, the same rule). The band on the wheel is the cue that does not rely on colour
