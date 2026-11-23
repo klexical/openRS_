@@ -100,6 +100,29 @@ class ReceptionStallReplayTest {
         assertEquals(shown(), 0, reception().size)
     }
 
+    // ── Spans past the bound, and a connection that starts low (#513) ─────────────────────────────────────────────────
+
+    /** [perSecond] frames a second over [fromMs, toMs). */
+    private fun at(fromMs: Long, toMs: Long, perSecond: Int) = frames(fromMs, toMs, ((toMs - fromMs) * perSecond / 1_000).toInt())
+
+    @Test fun `a connection that starts at 14 percent of its later rate names the start with its full length`() = runTest {
+        replay(at(0, 120_000, 70) + at(120_000, 140_000, 500), 145_000)
+        assertEquals(shown(), 1, reception().size)
+        val (_, msg, wallMs) = events("QUIET_SPAN").single()
+        assertTrue(msg, msg.startsWith("120.00 s below 25 % of this connection's rate (500 frames/s"))
+        assertTrue(msg, msg.contains("(70 frames/s); the rate then rose to the rate named."))
+        assertEquals("logged at the connection's first quarter second", 0L, wallMs)
+    }
+
+    @Test fun `a 385 s spell at 10 percent is one quiet span with its full length`() = runTest {
+        replay(at(0, 30_000, 500) + at(30_000, 415_000, 50) + at(415_000, 435_000, 500), 440_000)
+        assertEquals(shown(), 1, reception().size)
+        val (_, msg, wallMs) = events("QUIET_SPAN").single()
+        assertTrue(msg, msg.startsWith("385.00 s below 25 % of this connection's rate (500 frames/s"))
+        assertTrue(msg, msg.contains("; 19250 frames in it (50 frames/s); the rate came back."))
+        assertEquals(30_000L, wallMs)
+    }
+
     // ── The wall clock may jump (a time correction); gaps are measured on the monotonic clock (#356 review C3) ─────────
 
     @Test fun `a wall clock jumping 8 s forward on a steady rate names nothing`() = runTest {

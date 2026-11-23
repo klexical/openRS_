@@ -38,6 +38,10 @@ paths:
   (`BleSlcanTransport.connectedBefore`; an instance flag was dead — every attempt builds a new transport). 15 s setup
   timeout; on timeout `SlcanConnection` retry logic takes over. Emulated only: not exercised on a phone with an adapter
 - **BLE MTU** — `requestMtu(247)` requested after service discovery. If `requestMtu()` returns false (unsupported), proceeds with 23-byte default. SLCAN frames mostly fit; longer frames arrive as multiple BLE notifications and are reassembled by `lineBuffer`
+- **BLE connection priority (#513)** — setup asks for `CONNECTION_PRIORITY_HIGH` once, after the MTU exchange, so no other
+  request is outstanding; a refusal does not fail setup. It asks the phone's stack for a shorter connection interval and
+  changes nothing the adapter is sent as SLCAN. Unverified on hardware: whether the stack renegotiates the link and the
+  rate rises is #513's drive check (`BleTransportTest`)
 - **BLE permissions must be requested at scan time** — `BleDevicePickerDialog` handles runtime permission requests (BLUETOOTH_SCAN + BLUETOOTH_CONNECT on API 31+). Do NOT rely solely on `MainActivity.onCreate()` permission requests — the user may switch to Bluetooth after app startup. `BleDeviceScanner.startScan()` also has a SecurityException safety net
 - **BLE picker (#218)** — never cache `bluetoothLeScanner` (null while the PHONE radio is off); `BleScanBackend`
   seam, `BleScanState.PhoneBluetoothOff` → enable prompt (`ACTION_REQUEST_ENABLE`), retry on accept / `STATE_ON`; the
