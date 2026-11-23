@@ -148,6 +148,8 @@ diagnostics/
                             sessionTransport field: transport label for diagnostic reports and share intents
   DiagnosticExporter.kt   — ZIP orchestrator + share intents + crash history; delegates format generation
                             to DiagnosticReportBuilder and DriveExportBuilder; rc.6 adds drive_knock_session_*.csv (KnockSessionLog)
+                            putBuildIdentity: the build + the Android release and API level, nothing else about the
+                            phone (#373), in every manifest.json and the detail JSON's meta
   DiagnosticReportBuilder.kt — Diagnostic summary text + JSON detail (JSONObject/JSONArray, no hand-rolled strings);
                             `buildSummaryAndDetail` takes one `ExportCounters` snapshot (linkIntegrity / logLimits /
                             nrcUnattributedTotal agree between summary and detail on a live export); UI TIMING / `uiTiming` (#421)
@@ -201,6 +203,7 @@ ui/
                             Scaffold uses contentWindowInsets=statusBars (content extends behind nav bar)
                             hazeSource on content Box inside Scaffold (NOT outer Box — see Haze gotcha)
                             enableEdgeToEdge with transparent navigation bar style
+                            AppSnackbarHost: the one message bar, in the theme's Surf3 / Frost (#368; placement #268)
   DrivePage.kt             — DRIVE tab: StatusLine (permanent 48 dp row: OVERHEATING › critical tyre alert › TEMPERATURE
                             HIGH / HEAT RISING › other alerts (3 s hold) › rest of the ThermalVerdict; temps come only from
                             the verdict — "OVERHEATING  oil 268°F ↑  +4"),
@@ -317,6 +320,7 @@ ui/
     CarDiagram.kt           — TopDownCar: approved top-down RS art (body in ink, tyres tinted per state, TOPDOWN_ASPECT,
                             WHEEL_ANCHORS measured from the tyre layer)
   PidBrowserSection.kt    — DIAG tab: expandable FORScan catalog per module with coverage bar
+                            Long press copies the DID; the app's own "Copied" message only below API 33 (copyPidDid, #368)
   RequestCaptureRow.kt    — DIAG's Request capture switch beside the DID prober (#209): the owner's label and text as constants
   DidProberSection.kt     — DIAG tab: interactive Mode 22 scanner for any ECU+DID (UI only; the scan runs in
                             diagnostics/DidProbeScan.kt)
