@@ -1,1 +1,2 @@
 The project-review proof (ruleset proposal, part (b)). This file only gives the proof pull request a change.
+Second commit: a new head that carries no status from the review app.
