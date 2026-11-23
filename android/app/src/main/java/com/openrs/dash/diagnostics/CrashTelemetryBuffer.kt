@@ -58,7 +58,7 @@ object CrashTelemetryBuffer {
      * message and stack, the thread, the build and the heap, ending `"snapshotsWritten": false`; no snapshot is
      * formatted before it is on disk. Then the full record (the same fields, `snapshotCount` and `snapshots`, no
      * `snapshotsWritten`) is built whole, written beside it as `<name>.part` and renamed over it, so a failure anywhere
-     * in that second step leaves the minimal record whole. A stack that cannot be turned into text is left out
+     * in that second step leaves the minimal record whole. A stack that cannot be turned into escaped text is left out
      * (`stackTrace` absent).
      * Called from the uncaught exception handler — must not throw.
      */
@@ -134,14 +134,16 @@ object CrashTelemetryBuffer {
         buildType: String,
         heap: HeapSample?,
     ): String {
-        val stack = try { exception.stackTraceToString() } catch (_: Throwable) { null }
+        // The stack's text and its escaping are the minimal record's largest allocations: a stack too big for either
+        // is left out, and the rest is still written (#511).
+        val stack = try { exception.stackTraceToString().jsonEsc() } catch (_: Throwable) { null }
         val ts = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
         val sb = StringBuilder(512 + (stack?.length ?: 0))
         sb.append("{\n")
         sb.append("  \"crashedAt\": \"$ts\",\n")
         sb.append("  \"exception\": \"${exception.javaClass.name.jsonEsc()}\",\n")
         sb.append("  \"message\": \"${(exception.message ?: "").jsonEsc()}\",\n")
-        if (stack != null) sb.append("  \"stackTrace\": \"${stack.jsonEsc()}\",\n")
+        if (stack != null) sb.append("  \"stackTrace\": \"").append(stack).append("\",\n")
         sb.append("  \"thread\": \"${threadName.jsonEsc()}\",\n")
         sb.append("  \"appVersion\": \"${appVersion.jsonEsc()}\",\n")
         sb.append("  \"versionCode\": $versionCode,\n")

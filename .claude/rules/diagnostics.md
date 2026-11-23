@@ -170,5 +170,9 @@ paths:
   record is then built whole, written as `<name>.part` and renamed over it. So a crash on a full heap leaves at least
   that record, and readers tell the two apart by `snapshotsWritten` (absent on the full record, whose form is
   unchanged). Any new field or step that allocates much goes after the minimal write, and a temporary file must not
-  end in `.json` (the crash list and the export take every `crash_telemetry_*.json`). The out-of-memory case is
-  simulated at the snapshot seam, never on a real full heap (`CrashRecordFullHeapTest`)
+  end in `.json` (the crash list and the export take every `crash_telemetry_*.json`; "clear crash history" also removes
+  a leftover `crash_telemetry_*.json.part`). Each crash claims its own file by creating it (`CrashReporter.crashFile`:
+  `crash_telemetry_<ts>.json`, then `_2`, `_3` … in the same second), so threads failing together on a full heap never
+  share one. A crash file that is empty or not valid JSON can mean the handler ran out of memory or was killed during
+  the minimal write, not that the format changed. The out-of-memory case is simulated at the snapshot seam, never on a
+  real full heap (`CrashRecordFullHeapTest`, `CrashFileNameTest`, `CrashHistoryClearTest`)

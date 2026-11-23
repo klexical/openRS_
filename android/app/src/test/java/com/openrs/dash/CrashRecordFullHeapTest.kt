@@ -98,6 +98,18 @@ class CrashRecordFullHeapTest {
         assertEquals("only the crash file is left", listOf(file.name), tmp.root.list()!!.toList())
     }
 
+    @Test fun `the full record goes through the part file - when that write fails the minimal record stays`() {
+        CrashTelemetryBuffer.push(VehicleState(rpm = 2500.0))
+        val file = crashFile()
+        // A non-empty folder where the part file would go: the full record cannot be written there. A flush that
+        // wrote the full record straight to the crash file would succeed and fail this test.
+        File(tmp.root, file.name + ".part").apply { mkdirs() }.resolve("keep").writeText("x")
+
+        flush(file)
+
+        assertMinimalRecord(JSONObject(file.readText()))
+    }
+
     @Test fun `a stack trace that cannot be built - the record keeps the exception and the build without it`() {
         CrashTelemetryBuffer.push(VehicleState())
         val file = crashFile()
