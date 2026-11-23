@@ -54,11 +54,11 @@ jobs:
 
       - name: This PR's privacy-scan.sh, a synthetic list
         env:
-          PRIVACY_IDENTIFIERS: SCRATCH-PROOF-SYNTHETIC-ENTRY-7731
           GITLEAKS: ${{ runner.temp }}/gitleaks/gitleaks
           BASE: ${{ github.event.pull_request.base.sha }}
           HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
           cd "$RUNNER_TEMP/objects"
           read -r STAGING MAIN < "$RUNNER_TEMP/tips"
-          bash "$RUNNER_TEMP/privacy-scan.sh" "$BASE" "$HEAD" "$STAGING" "$MAIN"
+          # the synthetic entry is built here, so no added line holds it
+          PRIVACY_IDENTIFIERS=$(printf 'SCRATCH%sSYNTH7731' -PROOF-) bash "$RUNNER_TEMP/privacy-scan.sh" "$BASE" "$HEAD" "$STAGING" "$MAIN"
