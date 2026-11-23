@@ -629,10 +629,10 @@ class CanDecoderTest {
 
     @Test
     fun `decode drive mode Sport requires 0x420 gate`() {
-        // byte6 upper nibble = 1 but no 0x420 received yet -> null (gate blocks)
+        // byte6 upper nibble = 1 but no 0x420 received yet -> UNKNOWN: Sport or Track, not yet told apart (#516)
         val data = byteArrayOf(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00)
         val blocked = CanDecoder.decode(0x1B0, data, blank)
-        assertNull(blocked)
+        assertEquals(DriveMode.UNKNOWN, blocked!!.driveMode)
 
         // After receiving a 0x420 frame (Sport indicator), 0x1B0 nibble=1 resolves to Sport
         val ext420 = byteArrayOf(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x11, 0xCC.toByte())
@@ -641,6 +641,53 @@ class CanDecoderTest {
         val result = CanDecoder.decode(0x1B0, data, blank)
         assertNotNull(result)
         assertEquals(DriveMode.SPORT, result!!.driveMode)
+    }
+
+    /**
+     * #516: with reception degraded the first 0x420 can come minutes after 0x1B0 reports Sport-or-Track. Until then the
+     * mode is not known: the state reads UNKNOWN ("--"), never the default or a mode held from an earlier report, so a
+     * drive recorded meanwhile stores "--", not "Normal". Once 0x420 arrives the next 0x1B0 resolves as before.
+     */
+    @Test
+    fun `0x1B0 Sport-or-Track before any 0x420 reads unknown, not Normal`() {
+        val sportOrTrack = byteArrayOf(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00)
+        assertEquals("a fresh state", DriveMode.UNKNOWN, CanDecoder.decode(0x1B0, sportOrTrack, VehicleState())!!.driveMode)
+        assertEquals("a state holding Normal", DriveMode.UNKNOWN,
+            CanDecoder.decode(0x1B0, sportOrTrack, blank.copy(driveMode = DriveMode.NORMAL))!!.driveMode)
+        assertEquals("the label stored and shown", "--",
+            CanDecoder.decode(0x1B0, sportOrTrack, VehicleState())!!.driveMode.label)
+
+        // The first 0x420 (Sport detail) on its own changes nothing while the mode is unknown; the next 0x1B0 resolves it
+        val afterDetail = CanDecoder.decode(0x420, byteArrayOf(0, 0, 0, 0, 0, 0, 0x11, 0xCC.toByte()),
+            blank.copy(driveMode = DriveMode.UNKNOWN))!!
+        assertEquals(DriveMode.UNKNOWN, afterDetail.driveMode)
+        assertEquals(DriveMode.SPORT, CanDecoder.decode(0x1B0, sportOrTrack, afterDetail)!!.driveMode)
+    }
+
+    @Test
+    fun `a new VehicleState has no drive mode until the car reports one`() {
+        assertEquals(DriveMode.UNKNOWN, VehicleState().driveMode)
+    }
+
+    @Test
+    fun `an unknown report runs on its own, so the resolved mode after it starts a new run`() {
+        // Confirmation (#252) reads runs of resolved reports: the unknown reports must not count towards a Sport run
+        val sportOrTrack = byteArrayOf(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00)
+        var vs = VehicleState()
+        fun feed(id: Int, data: ByteArray, at: Long) {
+            val d = CanDecoder.decode(id, data, vs) ?: return
+            vs = CanDecoder.stampFresh(id, vs, d, at)
+        }
+        feed(0x1B0, sportOrTrack, 1_000L)
+        feed(0x1B0, sportOrTrack, 1_100L)
+        assertEquals(1_000L, vs.fieldLastUpdateMs[CanDecoder.modeRunTag(DriveMode.UNKNOWN)])
+        assertNull(vs.fieldLastUpdateMs[CanDecoder.modeRunTag(DriveMode.SPORT)])
+        feed(0x420, byteArrayOf(0, 0, 0, 0, 0, 0, 0x11, 0xCC.toByte()), 1_200L)
+        feed(0x1B0, sportOrTrack, 1_300L)
+        assertEquals(DriveMode.SPORT, vs.driveMode)
+        assertEquals("the Sport run starts at its first report", 1_300L, vs.fieldLastUpdateMs[CanDecoder.modeRunTag(DriveMode.SPORT)])
+        assertNull("the unknown run is over", vs.fieldLastUpdateMs[CanDecoder.modeRunTag(DriveMode.UNKNOWN)])
+        assertNull("no second Sport report yet", vs.fieldLastUpdateMs[CanDecoder.MODE_RUN_PREV_TAG])
     }
 
     @Test
@@ -756,10 +803,10 @@ class CanDecoderTest {
         // Reset should clear modeDetail420 AND has420Arrived
         CanDecoder.resetSessionState()
 
-        // After reset, 0x1B0 nibble=1 should return null (0x420 gate not yet passed)
+        // After reset, 0x1B0 nibble=1 reads UNKNOWN (0x420 gate not yet passed, #516)
         val modeData = byteArrayOf(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00)
         val blocked = CanDecoder.decode(0x1B0, modeData, blank)
-        assertNull(blocked)
+        assertEquals(DriveMode.UNKNOWN, blocked!!.driveMode)
 
         // Re-prime with 0x420 Sport indicator, then 0x1B0 resolves to Sport
         val sportExt = byteArrayOf(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x11, 0xCC.toByte())

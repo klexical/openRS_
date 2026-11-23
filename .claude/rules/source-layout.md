@@ -151,6 +151,8 @@ diagnostics/
                             sessionTransport field: transport label for diagnostic reports and share intents
   DiagnosticExporter.kt   — ZIP orchestrator + share intents + crash history; delegates format generation
                             to DiagnosticReportBuilder and DriveExportBuilder; rc.6 adds drive_knock_session_*.csv (KnockSessionLog)
+                            putBuildIdentity: the build + the Android release and API level, nothing else about the
+                            phone (#373), in every manifest.json and the detail JSON's meta
   DiagnosticReportBuilder.kt — Diagnostic summary text + JSON detail (JSONObject/JSONArray, no hand-rolled strings);
                             `buildSummaryAndDetail` takes one `ExportCounters` snapshot (linkIntegrity / logLimits /
                             nrcUnattributedTotal agree between summary and detail on a live export); UI TIMING / `uiTiming` (#421)

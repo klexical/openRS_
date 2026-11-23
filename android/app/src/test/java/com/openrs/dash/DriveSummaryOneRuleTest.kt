@@ -92,6 +92,7 @@ class DriveSummaryOneRuleTest {
         val now = System.currentTimeMillis()
         return VehicleState(isConnected = true, speedKph = 60.0, rpm = 3_000.0, throttlePct = 40.0, throttleHasSource = true,
             lateralG = 0.3, oilTempC = oil, coolantTempC = 88.0,
+            driveMode = com.openrs.dash.data.DriveMode.NORMAL,    // the car reports Normal (a new state's mode is unknown, #516)
             fieldLastUpdateMs = mapOf("oilTempC" to now, "coolantTempC" to now))
     }
 
