@@ -48,7 +48,10 @@ class BleTransportTest {
         var callbackDelay: (Int) -> Long = { 10L }
         val cccdWrites = mutableListOf<ByteArray>(); val writes = mutableListOf<Pair<ByteArray, Int>>()
         var bondRequests = 0; var closed = false
-        override fun discoverServices() = true
+        /** The setup calls in order (#513): discovery, MTU, connection priority. */
+        val calls = mutableListOf<String>()
+        var answerPriority = true
+        override fun discoverServices(): Boolean { calls += "discover"; return true }
         override fun setNotify(service: UUID, characteristic: UUID, enable: Boolean) = true
         override fun writeCccd(service: UUID, characteristic: UUID, value: ByteArray): Boolean {
             cccdWrites += value
@@ -61,7 +64,8 @@ class BleTransportTest {
             writeCallback?.let { st -> scope.launch { delay(callbackDelay(index)); core.onWrite(st) } }
             return true
         }
-        override fun requestMtu(mtu: Int): Boolean { scope.launch { delay(10); core.onMtuChanged(mtu, 0) }; return true }
+        override fun requestMtu(mtu: Int): Boolean { calls += "mtu"; scope.launch { delay(10); core.onMtuChanged(mtu, 0) }; return true }
+        override fun requestHighConnectionPriority(): Boolean { calls += "priority"; return answerPriority }
         override fun bondState() = bond
         override fun createBond(): Boolean {
             bondRequests++; bond = BleGattCore.BOND_BONDING
@@ -88,6 +92,24 @@ class BleTransportTest {
         assertEquals(1, g.bondRequests)
         assertEquals(2, g.cccdWrites.size)
         assertEquals(247, core.mtu)
+    }
+
+    // #513: a link carrying about one notification per connection event; the app never asked for a shorter interval
+    @Test fun `setup asks for the high connection priority after service discovery and the MTU exchange`() = runTest {
+        val core = BleGattCore("MEATPI_PRO"); val g = FakeGatt(core, this)
+        connect(core, g)
+        assertEquals(listOf("discover", "mtu", "priority"), g.calls)
+        assertEquals(true, core.connectionPriorityRequested)
+    }
+
+    @Test fun `a refused connection-priority request does not fail setup`() = runTest {
+        val core = BleGattCore("MEATPI_PRO"); val g = FakeGatt(core, this)
+        g.answerPriority = false
+        connect(core, g)
+        assertEquals(listOf("discover", "mtu", "priority"), g.calls)
+        assertEquals(false, core.connectionPriorityRequested)
+        core.writeLine("C\r")                                         // the link works
+        assertEquals(1, g.writes.size)
     }
 
     @Test fun `pairing refused fails setup with a specific message`() = runTest {
