@@ -144,7 +144,7 @@ for editing them:
 | `ui-compose.md` | Compose UI (layout, theme, navigation); theme colours, AppSettings defaults | any file under `ui/` or `res/`, `HudOverlayService.kt` |
 | `thermal.md` | Thermal readiness, temperature freshness, drive thermal record | any `*Thermal*` file, `TempsPage.kt` (home of `TempAvail`), `ChassisPage.kt`, `DrivePage.kt`, `DriveRecorder.kt`, their tests |
 | `demo-mode.md` | Demo mode (debug builds) | any file under `com/openrs/dash/` (its rules bind every writer of live telemetry) |
-| `build-release.md` | Build, release identity, CI, private builds, test runtime; RCs, nightlies, stable, the release checklist, changelog format, release notes | Gradle files, `android/scripts/`, `android/CHANGELOG.md`, `robolectric.properties`, `update/`, `BuildInfo*`, `*Version*`, `.github/workflows/` |
+| `build-release.md` | Build, release identity, CI, private builds, test runtime; RCs, nightlies, stable, the release checklist, changelog format, release notes | Gradle files, `android/scripts/`, `android/CHANGELOG.md`, `android/changelog.d/`, `robolectric.properties`, `update/`, `BuildInfo*`, `*Version*`, `.github/workflows/` |
 | `sapphire.md` | Sapphire, the web dashboard | any file under `web/` |
 
 ## Assets
@@ -225,7 +225,7 @@ results from the Gradle build cache); one test is skipped by decision (`#251 out
 ## Branch / Release Workflow
 
 ```
-feature/* → staging → main          (code, tests, android/CHANGELOG.md)
+feature/* → staging → main          (code, tests, android/changelog.d/ fragments)
 docs/*    → main    (direct)        (README.md, assets/, docs/, firmware/README.md)
                                     CLAUDE.md, .claude/rules/ and GLOSSARY.md follow the code route (staging)
 Release tags: android-v*  (triggers CI signing + GitHub Release)
