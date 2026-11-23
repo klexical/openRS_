@@ -1,5 +1,6 @@
 package com.openrs.dash.ui
 
+import android.os.Build
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -269,9 +270,19 @@ private fun ModuleRow(
     }
 }
 
+/**
+ * A long press on a PID row (#368): the DID goes to the clipboard, and the app's own "Copied <DID>" message is shown only
+ * below Android 13 (API 33). From 13 on Android shows its own clipboard confirmation, so the app's message would double
+ * it; the SDK level is the only documented way to tell.
+ */
+internal fun copyPidDid(did: String, setClip: (String) -> Unit, notify: (String) -> Unit, sdkInt: Int = Build.VERSION.SDK_INT) {
+    setClip(did)
+    if (sdkInt < Build.VERSION_CODES.TIRAMISU) notify("Copied $did")
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun PidRow(
+internal fun PidRow(
     pid: com.openrs.dash.data.ForscanPid,
     accent: androidx.compose.ui.graphics.Color,
     onCopyNotify: (String) -> Unit,
@@ -286,8 +297,7 @@ private fun PidRow(
             .combinedClickable(
                 onClick = {},
                 onLongClick = {
-                    clipboardManager.setText(AnnotatedString(pid.did))
-                    onCopyNotify("Copied ${pid.did}")
+                    copyPidDid(pid.did, setClip = { clipboardManager.setText(AnnotatedString(it)) }, notify = onCopyNotify)
                 }
             )
             .padding(vertical = 3.dp)
