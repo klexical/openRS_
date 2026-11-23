@@ -87,4 +87,24 @@ describe('#266: a damaged diagnostic detail file is skipped with a note, the dri
     expect(sessions[0].diagnostics?.sessionLog).toBeUndefined()
     expect(notes).toEqual([])
   })
+
+  it('a skipped detail file feeds nothing: its export schema version and scan finish time are not taken either', async () => {
+    // valid JSON with fields Sapphire reads elsewhere, and an inventory entry the parser cannot read (review of #545)
+    const detail = JSON.stringify({ exportSchemaVersion: 3, dtcScan: { finishedAtMs: T0 + 5000 }, canFrameInventory: { '0x090': null } })
+    const { sessions, notes } = await load({ 'drive_invented.csv': csv(1), [DETAIL]: detail })
+    expect(sessions[0].trip?.points).toHaveLength(2)
+    expect(sessions[0].diagnostics).toBeNull()
+    expect(sessions[0].meta.exportSchemaVersion).toBeUndefined()
+    expect('exportSchemaVersion' in sessions[0].meta).toBe(false)
+    expect(sessions[0].dtcScanFinishedAtMs).toBeUndefined()
+    expect(notes).toEqual([NOTE])
+  })
+
+  it('a readable detail file still gives its export schema version and scan finish time', async () => {
+    const detail = JSON.stringify({ exportSchemaVersion: 3, dtcScan: { finishedAtMs: T0 + 5000 }, sessionEvents: [] })
+    const { sessions, notes } = await load({ 'drive_invented.csv': csv(1), [DETAIL]: detail })
+    expect(sessions[0].meta.exportSchemaVersion).toBe(3)
+    expect(sessions[0].dtcScanFinishedAtMs).toBe(T0 + 5000)
+    expect(notes).toEqual([])
+  })
 })
