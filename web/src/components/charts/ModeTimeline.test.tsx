@@ -22,3 +22,11 @@ describe('ModeTimeline drive-mode casing', () => {
     expect(legend(container)).toEqual(['NORMAL 6s', 'TRACK 4s'])
   })
 })
+
+// #516: the app stores "--" while it does not know the mode yet; the timeline shows it as its own dim segment
+describe('ModeTimeline mode not known', () => {
+  it('"--" is its own segment and legend entry, not Normal', () => {
+    const { container } = render(<ModeTimeline points={[pt(0, '--'), pt(10_000, '--'), pt(20_000, 'Sport'), pt(30_000, 'Sport')]} />)
+    expect(legend(container)).toEqual(['-- 20s', 'SPORT 10s'])
+  })
+})

@@ -48,6 +48,10 @@ describe('pointColor — mode', () => {
   it('Drift → orange', () => {
     expect(pointColor(pt({ driveMode: 'Drift' }), 'mode')).toBe(colors.orange)
   })
+  // #516: the app stores "--" while it does not know the mode yet (Sport or Track before the first 0x420)
+  it('"--" (mode not known) → dim, never Normal\'s colour', () => {
+    expect(pointColor(pt({ driveMode: '--' }), 'mode')).toBe(colors.dim)
+  })
 })
 
 describe('pointColor — boost', () => {

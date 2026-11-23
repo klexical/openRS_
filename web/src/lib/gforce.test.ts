@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { gForceSamples } from './gforce'
+import { gForceSamples, modeDotColor } from './gforce'
+import { colors, modeColors } from '../styles/tokens'
 import type { TripPoint } from '../types/session'
 
 const pt = (latG: number, speedKph = 50): TripPoint => ({ latG, speedKph, driveMode: 'Normal' }) as TripPoint
@@ -19,5 +20,17 @@ describe('G-force scatter samples', () => {
     expect(out.length).toBeGreaterThan(1500)
     expect(Math.max(...out.map((s) => s.latG))).toBe(1.31)
     expect(Math.min(...out.map((s) => s.latG))).toBe(-1.12)
+  })
+})
+
+// #516: the app stores "--" while it does not know the drive mode yet (Sport or Track before the first 0x420)
+describe('G-force dots coloured by mode', () => {
+  it('each known mode keeps its colour, whatever the casing', () => {
+    expect(['Normal', 'NORMAL', 'Sport', 'Track', 'Drift'].map(modeDotColor))
+      .toEqual([modeColors.normal, modeColors.normal, modeColors.sport, modeColors.track, modeColors.drift])
+  })
+
+  it('"--" is dim, never drawn as Normal', () => {
+    expect(modeDotColor('--')).toBe(colors.dim)
   })
 })

@@ -132,16 +132,18 @@ export function GpsMap({ points, peakEvents, bookmarks, height = '55vh' }: GpsMa
   // #207: the BOOST colour mode colours one measurement — named in the legend (TIP / BOOST 0x0F8 / source not recorded)
   const boostSourceName = useMemo(() => sourceName(primaryBoostSource(points)), [points])
 
-  // Detect pause points (>5s gap)
-  const pausePoints = useMemo(() => {
-    const pauses: { lat: number; lng: number; gapSec: number }[] = []
+  // Spacings over 5 s between points (#392). The points do not say why: the app records a point only when a position
+  // update arrives, so the same spacing follows a pause, a lost adapter connection or a missing fix. The marker says
+  // only that no points were recorded for that long.
+  const gapPoints = useMemo(() => {
+    const gaps: { lat: number; lng: number; gapSec: number }[] = []
     for (let i = 1; i < points.length; i++) {
       const gap = points[i].ts - points[i - 1].ts
       if (gap > 5000) {
-        pauses.push({ lat: points[i - 1].lat, lng: points[i - 1].lng, gapSec: gap / 1000 })
+        gaps.push({ lat: points[i - 1].lat, lng: points[i - 1].lng, gapSec: gap / 1000 })
       }
     }
-    return pauses
+    return gaps
   }, [points])
 
   const hasValidGps = points.some((p) => p.lat !== 0 && p.lng !== 0)
@@ -204,17 +206,17 @@ export function GpsMap({ points, peakEvents, bookmarks, height = '55vh' }: GpsMa
           </CircleMarker>
         )}
 
-        {/* Pause markers */}
-        {pausePoints.map((p, i) => (
+        {/* Recording-gap markers: no cause named (#392) */}
+        {gapPoints.map((p, i) => (
           <CircleMarker
-            key={`pause-${i}`}
+            key={`gap-${i}`}
             center={[p.lat, p.lng]}
             radius={5}
             pathOptions={{ color: colors.warn, fillColor: colors.warn, fillOpacity: 0.9, weight: 1 }}
           >
             <Popup>
               <span style={{ fontFamily: 'JetBrains Mono', fontSize: 12 }}>
-                Paused — {p.gapSec.toFixed(0)}s
+                No points recorded — {p.gapSec.toFixed(0)} s
               </span>
             </Popup>
           </CircleMarker>

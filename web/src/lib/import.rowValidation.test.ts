@@ -28,6 +28,13 @@ describe('drive CSV rows (#204)', () => {
     expect(pts.map((p) => [p.rpm, p.speedKph, p.boostPsi])).toEqual([[3000, 50.5, 12.25], [3500, 60.5, 13.5]])
   })
 
+  it('a drive_mode of "--" (the app did not know the mode yet, #516) is kept, not read as Normal', async () => {
+    const header = 'timestamp_ms,lat,lng,speed_kph,rpm,drive_mode'
+    const csv = [MARKER, header, '1700000000000,0.5,0.5,50,3000,--', '1700000001000,0.5001,0.5001,55,3100,Sport'].join('\n')
+    const trip = (await importZip(await one(csv))).trip!
+    expect(trip.points.map((p) => p.driveMode)).toEqual(['--', 'Sport'])
+  })
+
   it('a non-numeric or empty rpm is rejected with the file and row', async () => {
     for (const rpm of ['abc', '', '3,5']) {
       const bad = [MARKER, HEADER, ROWS[0], ROWS[1].replace(',3500,', `,${rpm},`)].join('\n')
