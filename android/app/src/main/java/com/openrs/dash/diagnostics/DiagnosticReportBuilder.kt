@@ -818,7 +818,7 @@ internal fun logLimitsText(l: DiagnosticLogger.LogLimits, knockDropped: Int, li:
     }
     if (l.vinFramesMaskedPage > 0) add("  ${l.vinFramesMaskedPage} VIN-bearing frame(s) masked: data bytes read 00 in the raw log, ** in the inventory and trace")
     if (l.vinFramesMaskedContent > 0) add("  ${l.vinFramesMaskedContent} further frame(s) masked for holding ${DiagnosticLogger.VIN_RUN_MIN} or more consecutive VIN bytes: can be an unrelated frame")
-    if (l.tpmsFramesMaskedPage > 0) add("  ${l.tpmsFramesMaskedPage} TPMS sensor-ID frame(s) masked: the ID bytes read 00 in the raw log (#562)")
+    if (l.tpmsFramesMaskedPage > 0) add("  ${l.tpmsFramesMaskedPage} TPMS sensor-ID frame(s) masked: the ID bytes read 00 in the raw log, ** in the inventory and trace")
     if (l.tpmsFramesMaskedContent > 0) add("  ${l.tpmsFramesMaskedContent} further frame(s) masked for holding a known TPMS sensor ID: can be an unrelated frame")
     if (l.frames398Masked > 0) add("  ${l.frames398Masked} frame(s) of 0x398 masked: its last ${DiagnosticLogger.TEXT_398_BYTES} data bytes read 00 in the raw log, ** in the inventory (#527)")
 }
