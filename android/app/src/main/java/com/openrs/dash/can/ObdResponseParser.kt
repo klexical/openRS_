@@ -165,7 +165,7 @@ object ObdResponseParser {
                     s.tpmsSensorIdLR -> s.copy(tireTempLR = tempC, tirePressLR = psi, tpmsLastUpdate = now)
                         .markFresh("tireTempLR", "tirePressLR")
                     else -> {
-                        // The ID is a vehicle identifier: never printed (#518)
+                        // The ID is a vehicle identifier: never printed to logcat (#518, TpmsSensorIdLogRedactionTest)
                         Log.d(TAG, "0x280B report from an unmapped sensor, dropped")
                         null
                     }

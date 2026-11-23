@@ -52,7 +52,7 @@ object ObdConstants {
         BCM_QUERY_TPMS_ID_RR, BCM_QUERY_TPMS_ID_LR
     )
     /**
-     * Sensor-ID reads per position per connection, the first cycle's included (#518): about 5 minutes of BCM cycles,
+     * Sensor-ID reads per position per connection, the first cycle's included (#518): about 5½ minutes of BCM cycles,
      * at most 4 × this many read-only single frames to 0x726 per connection. A chosen bound, not a measured one.
      */
     const val TPMS_ID_MAX_SENDS = 10
