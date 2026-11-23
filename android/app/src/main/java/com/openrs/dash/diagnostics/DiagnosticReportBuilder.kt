@@ -372,6 +372,8 @@ internal object DiagnosticReportBuilder {
         appendLine()
         didInventoryText(counters.dids).forEach { appendLine(it) }   // rc.8 #253, additive
         appendLine()
+        repliesText(counters.replies).forEach { appendLine(it) }   // #514, additive
+        appendLine()
         logLimitsText(counters.limits, knockSessionDropped(), counters.integrity).forEach { appendLine(it) }
         appendLine()
         uiTimingText(counters.uiTiming).forEach { appendLine(it) }   // #421, additive
@@ -597,6 +599,7 @@ internal object DiagnosticReportBuilder {
         root.put("requestCapture", requestCaptureJson(counters.capture))   // #209 Step B, additive
         counters.bleMtu?.let { root.put("bleMtu", bleMtuJson(it)) }   // #253, additive; absent unless the attempt is Bluetooth
         root.put("didInventory", didInventoryJson(counters.dids))   // rc.8 #253, additive
+        root.put("mode22Replies", repliesJson(counters.replies))   // #514, additive
         root.put("logLimits", logLimitsJson(counters.limits, knockSessionDropped()))  // additive
         counters.uiTiming?.let { root.put("uiTiming", uiTimingJson(it)) }   // #421, additive; absent before the first connection
         root.put("exportSchemaVersion", EXPORT_SCHEMA_VERSION)   // rc.8 #253, additive; when it changes: see the constant
@@ -753,6 +756,52 @@ internal fun didInventoryJson(inv: DiagnosticLogger.DidInventory): JSONObject = 
         }
     })
     put("overflow", inv.overflow)
+}
+
+/**
+ * MODE 22 REPLIES summary lines (#514): per module, of the Mode 22 requests the app wrote this session, how many got a reply
+ * of any kind within [ReplyCount.NO_REPLY_MS] and how quickly. A rejection names no DID, so it counts as the reply to the
+ * module's newest request that began before it (the [ReplyCount] rules); attribution of NRCs to DIDs is DID INVENTORY's and
+ * LINK INTEGRITY's, unchanged.
+ */
+internal fun repliesText(modules: List<ReplyCount.Module>): List<String> = buildList {
+    add("─── MODE 22 REPLIES (per module, this session) ────────────")
+    add("  no reply = nothing from the module within ${ReplyCount.NO_REPLY_MS} ms of the request's write; a rejection is a reply")
+    if (modules.isEmpty()) { add("  no Mode 22 request written"); return@buildList }
+    for (m in modules) {
+        val share = if (m.resolved > 0) " (%.1f %%)".format(java.util.Locale.ROOT, 100.0 * m.noReply / m.resolved) else ""
+        add("  %-6s : %d requests · %d answered · %d rejected · %d no reply%s · %d late · %d pending only · %d waiting".format(
+            moduleName(m.responseId), m.requests, m.positive, m.negative, m.noReply, share, m.late, m.pendingOnly, m.waiting))
+        val edges = ReplyCount.LATENCY_EDGES_MS.mapIndexed { i, e -> "≤ $e ms ${m.latency[i]}" } +
+            "> ${ReplyCount.LATENCY_EDGES_MS.last()} ms ${m.latency.last()}"
+        val tail = buildList {
+            if (m.longestMs >= 0) add("slowest ${m.longestMs} ms")
+            if (m.longestMissRun > 0) add("longest miss run ${m.longestMissRun} (DID 0x%04X)".format(m.longestMissRunDid))
+            if (m.unmatched > 0) add("${m.unmatched} unmatched replies")
+            if (m.dropped > 0) add("${m.dropped} requests past the queue limit: not counted")
+        }
+        add("           replies ${edges.joinToString(" · ")}${tail.joinToString("") { " · $it" }}")
+    }
+}
+
+internal fun repliesJson(modules: List<ReplyCount.Module>): JSONObject = JSONObject().apply {
+    put("noReplyMs", ReplyCount.NO_REPLY_MS)
+    put("lateKeepMs", ReplyCount.LATE_KEEP_MS)
+    put("latencyEdgesMs", JSONArray().apply { ReplyCount.LATENCY_EDGES_MS.forEach { put(it) } })
+    put("modules", JSONArray().apply {
+        modules.forEach { m ->
+            put(JSONObject().apply {
+                put("module", moduleName(m.responseId)); put("responseId", "%03X".format(m.responseId))
+                put("requests", m.requests); put("positive", m.positive); put("negative", m.negative)
+                put("noReply", m.noReply); put("late", m.late); put("pendingOnly", m.pendingOnly); put("waiting", m.waiting)
+                put("dropped", m.dropped); put("unmatched", m.unmatched)
+                put("latency", JSONArray().apply { m.latency.forEach { put(it) } })
+                if (m.longestMs >= 0) put("longestMs", m.longestMs)
+                put("longestMissRun", m.longestMissRun)
+                if (m.longestMissRun > 0) put("longestMissRunDid", "%04X".format(m.longestMissRunDid))
+            })
+        }
+    })
 }
 
 /** Demo knock events are simulated: like the session-knock CSV, they never reach an export. */

@@ -263,6 +263,8 @@ object DiagnosticLogger {
     }
     fun countDidNrc(responseId: Int, did: Int) = synchronized(lock) { didStatLocked(responseId, did)?.let { it.nrcAttributed++ } }
     val didInventory: DidInventory get() = synchronized(lock) { DidInventory(didInventoryLive.values.map { it.copy() }, didInventoryOverflow) }
+    /** Mode 22 replies per module (#514): fed by [logTxLine] and [logObdFrame], cleared by [sessionStart]. */
+    private val replyCount = ReplyCount()
     private var linkIntegrityLive = LinkIntegrity()
     // ── UI timing (#421) ──────────────────────────────────────────────────────
     /** Main-thread lateness, fed by CanDataService's Main ticker while a connection runs. */
@@ -293,13 +295,16 @@ object DiagnosticLogger {
                          val bleMtu: BleMtuAttempt? = null,
                          val capture: RequestCaptureRecord = RequestCaptureRecord(emptyList(), 0, 0, 0, 0),
                          /** UI timing (#421): null before the first connection of this app run. */
-                         val uiTiming: UiTimingRecord? = null)
+                         val uiTiming: UiTimingRecord? = null,
+                         /** Mode 22 replies per module (#514), in the order modules were first asked. */
+                         val replies: List<ReplyCount.Module> = emptyList())
     val exportCounters: ExportCounters get() = synchronized(lock) {
         ExportCounters(linkIntegrityLive.copy(), nrcUnattributedTotal, logLimits,
             DidInventory(didInventoryLive.values.map { it.copy() }, didInventoryOverflow),
             attemptMtuTrace?.let { BleMtuAttempt(connectionAttempts, it.read()) },
             RequestCaptureRecord(captureSpans.toList(), captureSpansDropped, captureTimeouts, captureLateInWindow, captureLateAfterWindow),
-            if (sessionStartMs > 0) UiTimingRecord(mainThreadLag.read(), frameTimes.read(), linkLockWait.read(), bleDeliveryLocked()) else null)
+            if (sessionStartMs > 0) UiTimingRecord(mainThreadLag.read(), frameTimes.read(), linkLockWait.read(), bleDeliveryLocked()) else null,
+            replyCount.read(relativeMs()))
     }
 
     /** The current connection attempt's MTU context: [attempt] counts this session's attempts from 1 (#253). */
@@ -522,6 +527,7 @@ object DiagnosticLogger {
             bleDeliveryEarlier = null; attemptBleDelivery = null
             uiTimingCounting = true
             didInventoryLive.clear(); didInventoryOverflow = 0
+            replyCount.reset()
             traceDropped = 0L; eventsDropped = 0L; fpsDropped = 0L; probeSessionsDropped = 0L; inventoryNotListed = 0L
             slcanCapHit = false; slcanLinesDropped = 0L
 
@@ -871,7 +877,7 @@ object DiagnosticLogger {
     }
 
     /**
-     * Log an OBD response frame to the SLCAN raw log only.
+     * Log an OBD response frame to the SLCAN raw log, and count it as a Mode 22 reply (#514).
      * OBD responses (0x7E8, 0x72E, 0x70B, etc.) are consumed before reaching
      * processCanFrame, so this ensures they still appear in the SLCAN export.
      */
@@ -881,6 +887,7 @@ object DiagnosticLogger {
         val relMs      = relativeMs()
         val slcanLine  = buildSlcanLine(relMs, canId, compactHex)
         synchronized(lock) {
+            replyCount.reply(canId, rawData, relMs)   // #514: every module reply passes here once
             writePreformattedSlcanLine(relMs, slcanLine)
         }
     }
@@ -899,7 +906,10 @@ object DiagnosticLogger {
      */
     fun logTxLine(slcanFrame: String, stampMs: Long, result: String) {   // no defaults: the time before the write and the result are always the caller's
         val body = requestBody(slcanFrame, stampMs) ?: return
-        synchronized(lock) { writePreformattedSlcanLine(stampMs, "# TX $body $result\n") }
+        synchronized(lock) {
+            replyCount.request(slcanFrame, stampMs, result, relativeMs())   // #514: Mode 22 reads only, before the cap or a write failure
+            writePreformattedSlcanLine(stampMs, "# TX $body $result\n")
+        }
     }
 
     /**
