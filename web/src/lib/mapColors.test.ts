@@ -52,6 +52,9 @@ describe('pointColor — mode', () => {
   it('"--" (mode not known) → dim, never Normal\'s colour', () => {
     expect(pointColor(pt({ driveMode: '--' }), 'mode')).toBe(colors.dim)
   })
+  it('the MODE legend names "--" in the colour its points are drawn in', () => {
+    expect(colorLegend('mode').at(-1)).toEqual({ label: '-- not known yet', color: pointColor(pt({ driveMode: '--' }), 'mode') })
+  })
 })
 
 describe('pointColor — boost', () => {
@@ -126,7 +129,7 @@ describe('colorLegend', () => {
       expect(legend.length).toBeGreaterThan(0)
       for (const entry of legend) {
         expect(entry.label).toBeTruthy()
-        expect(entry.color).toMatch(/^#/)
+        expect(entry.color).toMatch(/^(#|var\(--color-)/)   // a hex or a theme token (the dim of a mode not known, #516)
       }
     }
   })

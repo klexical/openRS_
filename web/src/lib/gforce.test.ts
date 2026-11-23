@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { gForceSamples, modeDotColor } from './gforce'
+import { gForceSamples, modeDotColor, modeLegend } from './gforce'
 import { colors, modeColors } from '../styles/tokens'
 import type { TripPoint } from '../types/session'
 
@@ -32,5 +32,10 @@ describe('G-force dots coloured by mode', () => {
 
   it('"--" is dim, never drawn as Normal', () => {
     expect(modeDotColor('--')).toBe(colors.dim)
+  })
+
+  it('the legend names each mode in its dot colour, "--" last', () => {
+    expect(modeLegend.map((e) => e.label)).toEqual(['Normal', 'Sport', 'Track', 'Drift', '-- not known yet'])
+    for (const e of modeLegend) expect(e.color).toBe(modeDotColor(e.label === '-- not known yet' ? '--' : e.label))
   })
 })
