@@ -104,9 +104,9 @@ paths:
   run whose job did not skip: adding any other label starts a run whose job is skipped, under the same check name, and
   the PR's check list can show that "skipped" over a red smoke. It uploads nothing; screenshots as run artifacts are the
   owner's call (what leaves the runner). It reads the UI text tree, not pixels, so a covered node still reads as shown.
-  In a dump, a tab's "<NAME> tab" description is on the fake first child Compose adds to a merging node
-  (`SemanticsNode.emitFakeNodes`), and the tab's `selected` state is on that child's parent (#472's runs on GitHub's API 36
-  image). CI's build job does not run its test
+  How a dump places a tab's description and state (Compose's fake first child): `scripts/demo-smoke-ui.py`'s comment,
+  pinned by `scripts/test-demo-smoke.sh`. CI's build job does not run its test (that line would need the nightly.yml
+  twin, the exact-commands check)
 - **Unit-test heap is Gradle's default 512 MB (#505)** — `android/app/build.gradle.kts` sets no `maxHeapSize` for the
   unit-test JVM, and the suite ends well under it. A run that slows to tens of minutes is the heap, not a hung test: read
   a `jcmd <pid> GC.class_histogram` before raising it. A Compose test in a tall window (`h1800dp`) kept its themes and
