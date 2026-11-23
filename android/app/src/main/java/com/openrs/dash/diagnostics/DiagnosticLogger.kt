@@ -346,6 +346,7 @@ object DiagnosticLogger {
         val decodeTraceDropped: Long = 0, val eventsDropped: Long = 0, val fpsPointsDropped: Long = 0,
         val probeSessionsDropped: Long = 0, val inventoryFramesNotListed: Long = 0, val slcanCapReached: Boolean = false, val slcanWriteFailed: Boolean = false,
         val vinFramesMaskedPage: Long = 0, val vinFramesMaskedContent: Long = 0, val slcanLinesDropped: Long = 0,
+        val tpmsFramesMaskedPage: Long = 0, val tpmsFramesMaskedContent: Long = 0, val frames398Masked: Long = 0,
     )
     /** Second ID holding the VIN (#260). No decoder. */
     private const val ID_VIN_MUX_2 = 0x405
@@ -355,6 +356,29 @@ object DiagnosticLogger {
     private val f190CfBytesLeft = HashMap<Int, Int>()
     private var vinFramesMaskedPage = 0L
     private var vinFramesMaskedContent = 0L
+
+    /** The BCM's TPMS replies that carry a sensor ID (#562): the four per-position reads and the "last received sensor" report. */
+    private val TPMS_ID_DIDS = setOf(0x280F, 0x2810, 0x2811, 0x2812, 0x280B)
+    /** In each of those replies the ID is the 4 bytes after `62 DH DL`: payload indices 3..6, counting the 0x62 as 0. */
+    private const val TPMS_ID_FIRST = 3
+    private const val TPMS_ID_LAST = 6
+    /** Placeholders, not IDs: matching them would mask every run of 00 or FF bytes. */
+    private val TPMS_ID_PLACEHOLDERS = setOf(0x00000000, -1)
+    /** Sensor IDs the content layer matches; the BCM can report sensors past the four mapped ones, so the list is bounded. */
+    internal const val MAX_KNOWN_SENSOR_IDS = 16
+    /** Copy-on-write: read on every frame without the lock, replaced under it. Cleared at session start. */
+    @Volatile private var knownSensorIds: IntArray = IntArray(0)
+    /** BCM response ID → the payload index the next consecutive frame starts at, while a TPMS reply's ID is not yet past. */
+    private val tpmsCfNext = HashMap<Int, Int>()
+    /** BCM response ID → the ID bytes a first frame carried, completed by its consecutive frame (learned for the content layer). */
+    private val tpmsIdPartial = HashMap<Int, ByteArray>()
+    private var tpmsFramesMaskedPage = 0L
+    private var tpmsFramesMaskedContent = 0L
+
+    /** CAN 0x398 (#527): no decoder; its last [TEXT_398_BYTES] data bytes carry a constant printable text that may identify the car. */
+    internal const val ID_TEXT_398 = 0x398
+    internal const val TEXT_398_BYTES = 6
+    private var frames398Masked = 0L
     private var traceDropped = 0L
     private var eventsDropped = 0L
     private var fpsDropped = 0L
@@ -363,7 +387,8 @@ object DiagnosticLogger {
     /** A consistent copy of this session's counts. */
     val logLimits: LogLimits get() = synchronized(lock) {
         LogLimits(traceDropped, eventsDropped, fpsDropped, probeSessionsDropped, inventoryNotListed, slcanCapHit, slcanWriteFailed,
-            vinFramesMaskedPage, vinFramesMaskedContent, slcanLinesDropped)
+            vinFramesMaskedPage, vinFramesMaskedContent, slcanLinesDropped,
+            tpmsFramesMaskedPage, tpmsFramesMaskedContent, frames398Masked)
     }
 
     /** Identity of the current session — [sessionStart] returns it; adapter-status writes carry it (#233). */
@@ -404,7 +429,8 @@ object DiagnosticLogger {
         get() = synchronized(lock) {
             // At read, not at record: a reply stored before the VIN was decoded is covered once the VIN is decoded before the export. An export
             // written before that (knownVin is cleared at session start) keeps the reply's bytes in every member: cold start only. The exports are the only readers (#260)
-            if (knownVin == null) probeSessionsList.toList()
+            // The same holds for a sensor ID matched by content (#562); a reply to a sensor-ID DID is masked when it is recorded
+            if (knownVin == null && knownSensorIds.isEmpty()) probeSessionsList.toList()
             else probeSessionsList.map { s -> s.copy(results = s.results.map { it.vinRunMasked() }) }
         }
     val frameInventorySnapshot: Map<Int, FrameInfo>
@@ -467,6 +493,12 @@ object DiagnosticLogger {
             f190CfBytesLeft.clear()
             vinFramesMaskedPage = 0L
             vinFramesMaskedContent = 0L
+            knownSensorIds = IntArray(0)
+            tpmsCfNext.clear()
+            tpmsIdPartial.clear()
+            tpmsFramesMaskedPage = 0L
+            tpmsFramesMaskedContent = 0L
+            frames398Masked = 0L
             captureSpans.clear(); captureSpansDropped = 0; captureTimeouts = 0; captureLateInWindow = 0; captureLateAfterWindow = 0
 
             sessionStartMs = sessionClock()
@@ -513,6 +545,7 @@ object DiagnosticLogger {
                     w.write("# Format: (relative_seconds) can0 ID#DATA; the app's requests: # TX (relative_seconds) can0 ID#DATA <result>\n")
                     w.write("# Read by can-utils' canplayer and log2asc, which skip the # lines\n")
                     w.write("# VIN-bearing frames keep ID, length, time and mux; their data bytes read 00\n")
+                    w.write("# TPMS sensor IDs (BCM DIDs 0x280B, 0x280F-0x2812, and a known ID in any frame) and 0x398's last six bytes read 00 too\n")
                     w.flush()
                     slcanWriter = w
                     _slcanFile = f
@@ -612,6 +645,9 @@ object DiagnosticLogger {
      *  - a DID 0xF190 reply on a module ID, with any consecutive frames that follow it;
      *  - once the VIN is decoded, [VIN_RUN_MIN] or more consecutive bytes of it in any other frame, for another car's layout. That can mask an
      *    unrelated frame, so it has its own count. Three bytes collide too easily; a test measures that.
+     * The same point masks the TPMS sensor IDs (#562): the ID bytes of a BCM sensor-ID reply ([TPMS_ID_DIDS], single frame, or first
+     * frame and the consecutive frame that completes the ID), and any 4 bytes equal to a known ID in any other frame; and 0x398's last
+     * [TEXT_398_BYTES] bytes (#527). Each has its own count.
      */
     private fun vinBytes(canId: Int, d: ByteArray): Int {
         if (d.isEmpty()) return 0
@@ -623,10 +659,20 @@ object DiagnosticLogger {
             canId in 0x700..0x7FF -> f190Bytes(canId, d, b0)
             else -> 0
         }
-        if (page != 0) { synchronized(lock) { vinFramesMaskedPage++ }; return page }
+        val tpms = if (canId == com.openrs.dash.can.ObdConstants.BCM_RESPONSE_ID) tpmsIdBytes(canId, d, b0) else 0
+        val text = if (canId == ID_TEXT_398) fromByte((d.size - TEXT_398_BYTES).coerceAtLeast(0), d.size) else 0
+        if (page != 0 || tpms != 0 || text != 0) {
+            synchronized(lock) {
+                if (page != 0) vinFramesMaskedPage++
+                if (tpms != 0) tpmsFramesMaskedPage++
+                if (text != 0) frames398Masked++
+            }
+            return page or tpms or text
+        }
         val run = vinRunBytes(d)
-        if (run != 0) synchronized(lock) { vinFramesMaskedContent++ }
-        return run
+        val ids = sensorIdBytes(d)
+        if (run != 0 || ids != 0) synchronized(lock) { if (run != 0) vinFramesMaskedContent++; if (ids != 0) tpmsFramesMaskedContent++ }
+        return run or ids
     }
 
     private fun fromByte(first: Int, size: Int): Int = if (first >= size) 0 else ((1 shl size) - 1) and ((1 shl first) - 1).inv()
@@ -664,6 +710,82 @@ object DiagnosticLogger {
         return bits
     }
 
+    /**
+     * The sensor-ID bytes of a BCM TPMS reply (#562). SF `0N 62 28 0F ID ID ID ID`: frame bytes 4..7. FF `1L LL 62 28 0B ID ID ID`:
+     * bytes 5..7, and the consecutive frame after it carries the ID's last byte (its byte 1). Any other FF on that ID ends the wait.
+     * The ID is masked whatever it is, a sensor the BCM has not mapped included; the bytes are also learned for the content layer.
+     */
+    private fun tpmsIdBytes(canId: Int, d: ByteArray, b0: Int): Int = synchronized(lock) {
+        fun u(i: Int) = d[i].toInt() and 0xFF
+        /** The frame bytes from [from] to the end that hold payload indices [TPMS_ID_FIRST]..[TPMS_ID_LAST], for payload index [p0] at byte [from]. */
+        fun idBits(from: Int, p0: Int): Int {
+            var bits = 0
+            for (f in from until d.size) if (p0 + f - from in TPMS_ID_FIRST..TPMS_ID_LAST) bits = bits or (1 shl f)
+            return bits
+        }
+        when (b0 and 0xF0) {
+            0x00 -> if (d.size > 4 && u(1) == 0x62 && ((u(2) shl 8) or u(3)) in TPMS_ID_DIDS) {
+                if (d.size >= 8) learnSensorIdLocked(d.copyOfRange(4, 8))
+                idBits(1, 0)
+            } else 0
+            0x10 -> if (d.size >= 5 && u(2) == 0x62 && ((u(3) shl 8) or u(4)) in TPMS_ID_DIDS) {
+                tpmsCfNext[canId] = d.size - 2                       // payload bytes the FF carried = the next CF's first index
+                tpmsIdPartial[canId] = d.copyOfRange(5, d.size)
+                idBits(2, 0)
+            } else { tpmsCfNext.remove(canId); tpmsIdPartial.remove(canId); 0 }
+            0x20 -> {
+                val start = tpmsCfNext[canId] ?: return@synchronized 0
+                val bits = idBits(1, start)
+                val next = start + d.size - 1
+                if (next > TPMS_ID_LAST) {
+                    tpmsCfNext.remove(canId)
+                    val head = tpmsIdPartial.remove(canId)
+                    if (head != null) {
+                        val id = head + d.copyOfRange(1, d.size)
+                        if (id.size >= 4) learnSensorIdLocked(id.copyOfRange(0, 4))
+                    }
+                } else {
+                    tpmsCfNext[canId] = next
+                    tpmsIdPartial[canId] = (tpmsIdPartial[canId] ?: ByteArray(0)) + d.copyOfRange(1, d.size)
+                }
+                bits
+            }
+            else -> 0
+        }
+    }
+
+    /** Adds a 4-byte sensor ID to the content layer's list (#562). Within [synchronized](lock). */
+    private fun learnSensorIdLocked(b: ByteArray) = learnSensorIdLocked(
+        ((b[0].toInt() and 0xFF) shl 24) or ((b[1].toInt() and 0xFF) shl 16) or ((b[2].toInt() and 0xFF) shl 8) or (b[3].toInt() and 0xFF))
+
+    private fun learnSensorIdLocked(id: Int) {
+        val ids = knownSensorIds
+        if (id in TPMS_ID_PLACEHOLDERS || ids.contains(id) || ids.size >= MAX_KNOWN_SENSOR_IDS) return
+        knownSensorIds = ids + id
+    }
+
+    /** The sensor IDs the app holds (VehicleState keeps -1 until a position is read): learned like a logged reply's. */
+    private fun learnSensorIds(s: VehicleState) {
+        val held = longArrayOf(s.tpmsSensorIdLF, s.tpmsSensorIdRF, s.tpmsSensorIdRR, s.tpmsSensorIdLR)
+        fun isNew(id: Long, ids: IntArray) = id in 0L..0xFFFFFFFFL && id.toInt() !in TPMS_ID_PLACEHOLDERS && id.toInt() !in ids &&
+            ids.size < MAX_KNOWN_SENSOR_IDS
+        if (held.none { isNew(it, knownSensorIds) }) return                         // the usual case: nothing new, no lock
+        synchronized(lock) { held.forEach { if (isNew(it, knownSensorIds)) learnSensorIdLocked(it.toInt()) } }
+    }
+
+    /** Content layer for sensor IDs (#562): any 4 consecutive bytes equal to a known ID, in any frame. */
+    private fun sensorIdBytes(d: ByteArray): Int {
+        val ids = knownSensorIds
+        if (ids.isEmpty() || d.size < 4) return 0
+        var bits = 0
+        var o = 0
+        while (o <= d.size - 4) {
+            val w = ((d[o].toInt() and 0xFF) shl 24) or ((d[o + 1].toInt() and 0xFF) shl 16) or ((d[o + 2].toInt() and 0xFF) shl 8) or (d[o + 3].toInt() and 0xFF)
+            if (w in ids) { bits = bits or (0xF shl o); o += 4 } else o++
+        }
+        return bits
+    }
+
     /** "C1 02 ** ** ** ** ** **": the rest still says which page arrived and how long it was. */
     private fun ByteArray.maskedSpacedHex(bits: Int) = indices.joinToString(" ") { i -> if (bits and (1 shl i) != 0) "**" else "%02X".format(this[i]) }
 
@@ -679,6 +801,7 @@ object DiagnosticLogger {
     ) {
         // Pre-compute hex + SLCAN line outside lock — no allocations under contention
         if (newState.vin.isNotEmpty()) knownVin = newState.vin.toByteArray(Charsets.US_ASCII)
+        learnSensorIds(newState)
         val vin        = vinBytes(canId, rawData)
         val rawHex     = if (vin != 0) rawData.maskedSpacedHex(vin) else rawData.toSpacedHex()
         val compactHex = if (vin != 0) rawData.maskedCompactHex(vin) else rawData.toCompactHex()
@@ -811,8 +934,10 @@ object DiagnosticLogger {
         val hex = f.substring(5)
         if (hex.length % 2 != 0 || hex.any { Character.digit(it, 16) < 0 }) return null
         val data = ByteArray(hex.length / 2) { ((Character.digit(hex[2 * it], 16) shl 4) or Character.digit(hex[2 * it + 1], 16)).toByte() }
-        val run = vinRunBytes(data)
-        if (run != 0) synchronized(lock) { vinFramesMaskedContent++ }
+        val vin = vinRunBytes(data)
+        val ids = sensorIdBytes(data)
+        if (vin != 0 || ids != 0) synchronized(lock) { if (vin != 0) vinFramesMaskedContent++; if (ids != 0) tpmsFramesMaskedContent++ }
+        val run = vin or ids
         return buildSlcanLine(stampMs, id, if (run != 0) data.maskedCompactHex(run) else data.toCompactHex()).trimEnd('\n')
     }
 
@@ -909,11 +1034,20 @@ object DiagnosticLogger {
     private fun ProbeResult.vinMasked() =
         if (did == 0xF190 && status != "NRC" && status != PROBE_NRC_AMBIGUOUS) copy(responseHex = responseHex.replace(Regex("[0-9A-Fa-f]{2}"), "00")) else this
 
-    /** The content layer for a stored reply on any DID: the same run rule as a frame. The frame itself is already counted, so this adds no count. */
+    /** A BCM sensor-ID reply's bytes are the ID, or 3 of its 4 bytes for 0x280B's first frame (#562): masked like 0xF190's. */
+    private fun ProbeResult.sensorIdMasked(responseId: Int) =
+        if (responseId == com.openrs.dash.can.ObdConstants.BCM_RESPONSE_ID && did in TPMS_ID_DIDS && status != "NRC" && status != PROBE_NRC_AMBIGUOUS)
+            copy(responseHex = responseHex.replace(Regex("[0-9A-Fa-f]{2}"), "00")) else this
+
+    /**
+     * The content layer for a stored reply on any DID: the same run rules as a frame, VIN and known sensor IDs (#562). The frame itself is
+     * already counted, so this adds no count.
+     */
     private fun ProbeResult.vinRunMasked(): ProbeResult {
         if (!PROBE_HEX.matches(responseHex)) return this
         val tokens = responseHex.split(' ')
-        val bits = vinRunBytes(ByteArray(tokens.size) { tokens[it].toInt(16).toByte() })
+        val bytes = ByteArray(tokens.size) { tokens[it].toInt(16).toByte() }
+        val bits = vinRunBytes(bytes) or sensorIdBytes(bytes)
         if (bits == 0) return this
         return copy(responseHex = tokens.indices.joinToString(" ") { i -> if (bits and (1 shl i) != 0) "00" else tokens[i] })
     }
@@ -930,7 +1064,7 @@ object DiagnosticLogger {
     ) {
         synchronized(lock) {
             probeSessionsList.add(
-                ProbeSession(relativeMs(), module, requestId, responseId, results.map { it.vinMasked() }, outcome, planned)
+                ProbeSession(relativeMs(), module, requestId, responseId, results.map { it.vinMasked().sensorIdMasked(responseId) }, outcome, planned)
             )
             // removeAt(0), not removeFirst(): on a MutableList that compiles to java.util.List.removeFirst
             // (API 35+) and throws NoSuchMethodError on Android 9–14 (#196 lint NewApi)
