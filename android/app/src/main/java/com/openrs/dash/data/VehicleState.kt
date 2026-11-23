@@ -134,7 +134,7 @@ data class VehicleState(
     val vin: String = "",                  // 17-char VIN assembled from mux pages C1 00/01/02
 
     // ── Vehicle Status (CAN Sniffed) ────────────────────────
-    val driveMode: DriveMode = DriveMode.NORMAL,
+    val driveMode: DriveMode = DriveMode.UNKNOWN,   // "--" until a resolved 0x1B0 report (#516)
     val escStatus: EscStatus = EscStatus.UNKNOWN,   // unknown until a 0x1C0 frame arrives (REQ-rc8-esc-owner-wording)
     val gear: Int = 0,
     val batteryVoltage: Double = 0.0,
