@@ -163,12 +163,16 @@ paths:
   outside gaps (delivery in delays and bursts averages out), and writes one session event per gap, stamped at its start:
   `RECEPTION_STALL` only when the half second after the gap holds a burst of queued frames, otherwise `QUIET_SPAN`, a
   name that claims no cause, with a fixed sentence that a quiet bus and lost reception are not told apart. A gap still
-  low at the bound is a quiet span; a connection that ends after a gap with no frame after its first quarter second (an
-  ordinary key-off over Wi-Fi) writes neither. It names gaps and prevents none, and the app takes no WifiLock: in the
+  low at the bound (`MAX_LOW_MS`) becomes a long span: the rate is measured afresh inside it, and the span is one quiet
+  span from its start with its full length, written when the earlier rate comes back or the connection ends (#513). A
+  connection that starts low has no earlier rate: a sustained rise measures the rate afresh, and the time before it is a
+  quiet span when it ran below the share of the new rate (#513); one that starts low and stays low is not named. A
+  connection that ends after a gap with no frame after its first quarter second (an ordinary key-off over Wi-Fi) writes
+  neither. It names gaps and prevents none, and the app takes no WifiLock: in the
   issue's capture the missing frames never entered the TCP stream, so they were lost before the app's socket, and the
   cause is not established; the WifiManager reference says the API 34+ lock is replaced by one active only with the
   screen on and the app in front. Thresholds are named constants in `ReceptionStall.kt`; their values and status belong
-  to #356 (`ReceptionStallTest`, `ReceptionStallReplayTest`)
+  to #356 and #513 (`ReceptionStallTest`, `ReceptionStallReplayTest`)
 - **The adapter network (#324)** — over Wi-Fi the app connects on the adapter network: a Wi-Fi network on which the
   adapter gave its own protocol reply (the USB adapter's WebSocket `101`; for the Pro, the first line after the SLCAN init:
   a CR, a BEL, an `OPENRS:` reply or an SLCAN frame; any other line, a banner or a web page, does not count). A TCP accept

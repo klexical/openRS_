@@ -37,6 +37,9 @@ jobs:
       - name: The review workflows' shape
         run: ruby .github/scripts/test-review-workflows.rb
 
+      - name: The project-review workflow's shape and steps
+        run: ruby .github/scripts/test-project-review.rb
+
       - name: Every new commit in the pull request
         # only commits on neither staging nor main: history already there is not checked again, so a promotion passes
         env:
