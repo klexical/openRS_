@@ -513,7 +513,9 @@ object DiagnosticExporter {
         o.put("buildType", BuildConfig.BUILD_TYPE)
         // #373: the platform the export was written on, and nothing else about the phone. Android's background, Wi-Fi and
         // Bluetooth rules change per release, so a report reads against these two values. Never add the manufacturer,
-        // model, device, product, brand or fingerprint: with the version they start to narrow down one phone.
+        // model, device, product, brand or fingerprint, nor any other build identifier (the build ID, the incremental
+        // build number, the security patch level, hardware, board, serial, radio or chip names): with the version they
+        // start to narrow down one phone.
         o.put("androidRelease", Build.VERSION.RELEASE)
         o.put("androidApiLevel", Build.VERSION.SDK_INT)
     }

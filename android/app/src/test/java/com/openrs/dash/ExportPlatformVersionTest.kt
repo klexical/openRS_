@@ -25,7 +25,8 @@ import java.util.zip.ZipFile
  * #373 — every export names the Android release and API level, and nothing else about the phone. Production exporter on
  * Robolectric files: a ZIP each of the four kinds (diagnostic snapshot, drive with and without diagnostics, batch), read back
  * as a reader would. The release is set to a value no real phone reports, so a hard-coded or cached value fails; the device
- * fields are set to sentinels that must not reach any member. Synthetic data only.
+ * and build identifiers (maker, model, fingerprint, build ID, incremental, security patch, hardware, serial …) are set to
+ * sentinels that must not reach any member. Synthetic data only.
  */
 @RunWith(RobolectricTestRunner::class)
 class ExportPlatformVersionTest {
@@ -44,6 +45,13 @@ class ExportPlatformVersionTest {
             "PRODUCT" to "sentinelproductname",
             "BRAND" to "SentinelBrandName",
             "FINGERPRINT" to "sentinel/fingerprint/value:15/AP0A.000000.000/1:user/release-keys",
+            "ID" to "SENTINELBUILDID.4242",
+            "VERSION.INCREMENTAL" to "sentinelincremental4242",
+            "VERSION.SECURITY_PATCH" to "2093-07-05",
+            "HARDWARE" to "sentinelhardware",
+            "BOARD" to "sentinelboard",
+            "SERIAL" to "SENTINELSERIAL4242",
+            "SOC_MODEL" to "SentinelSocModel",
         )
     }
 
@@ -56,6 +64,13 @@ class ExportPlatformVersionTest {
         ShadowBuild.setProduct(SENTINELS.getValue("PRODUCT"))
         ShadowBuild.setBrand(SENTINELS.getValue("BRAND"))
         ShadowBuild.setFingerprint(SENTINELS.getValue("FINGERPRINT"))
+        ShadowBuild.setId(SENTINELS.getValue("ID"))
+        ShadowBuild.setVersionIncremental(SENTINELS.getValue("VERSION.INCREMENTAL"))
+        ShadowBuild.setVersionSecurityPatch(SENTINELS.getValue("VERSION.SECURITY_PATCH"))
+        ShadowBuild.setHardware(SENTINELS.getValue("HARDWARE"))
+        ShadowBuild.setBoard(SENTINELS.getValue("BOARD"))
+        ShadowBuild.setSerial(SENTINELS.getValue("SERIAL"))
+        ShadowBuild.setSystemOnChipModel(SENTINELS.getValue("SOC_MODEL"))
         DiagnosticLogger.sessionStart("test", 0, prefs = null)
     }
 
