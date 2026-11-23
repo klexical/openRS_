@@ -26,13 +26,11 @@ paths:
   pins the encoding (#185). 0x340 byte7 is still signed per RS_HS.dbc — if it wraps in hot weather, the same fix applies.
 - **0x435 airbag crosstalk** — 0x435 stays OUT of `KNOWN_IDS`; the SRS lamp comes from 0x040 only (CAN table in
   CLAUDE.md). Do not add 0x435 decoding without a verified fault vs occupancy capture.
-- **Oil / PTU byte mapping (#229, PR #238)** — `OilPtuMapping.CURRENT` (`0f8-oil-b7-ptu-b1`) is
-  saved on every new drive (Room v14 `drives.oilPtuMapping`, nullable, never backfilled). NULL = recorded before the
-  correction: never restamp, infer (date / version / thermal record v2 / re-export) or recompute; TRIP and exports say
-  "not recorded" / "map n/r" (summary note, chart chip, legend, replay, CSV format line, GPX metadata, profile JSON).
-  Trends and comparisons never join the two kinds. Thermal record stays v2 (decode rejects other versions). The Custom
-  editor's ranges follow the bytes (OIL −60..195, PTU −50..205); saved limits are never changed on load. AWD 0x1E3F is NOT a
-  separate rear reading: in the capture it equalled byte1−50 in 67/67 (labels conflict between sources); 0x1E8A is the rear one
+- **Oil / PTU byte mapping (#229)** — `OilPtuMapping.CURRENT` (`0f8-oil-b7-ptu-b1`) is saved on every new drive
+  (`drives.oilPtuMapping`, nullable, never backfilled). NULL = recorded before the correction: never restamp, infer (date /
+  version / thermal record / re-export) or recompute; TRIP and exports say "not recorded" / "map n/r", and trends and
+  comparisons never join the two kinds. Saved limits are never changed on load. AWD 0x1E3F is NOT a separate rear
+  reading: in the capture it equalled byte1−50 in 67/67 (labels conflict between sources); 0x1E8A is the rear one
 - **Throttle may not broadcast** — CAN 0x076 is absent on some cars (`throttleHasSource` stays false). Anything keyed on throttle (PullTracker, knock snapshot, recorded throttle) must read `throttleOrPedalPct`, never `throttlePct` directly
 - **VehicleState slot ceiling** — `copy$default` on the 125-param data class uses 222 of the JVM's 255 parameter slots (#199; it was at the limit). `VehicleStateSlotsTest` fails with fewer than 16 free. Add a field by grouping fields that change together into a nested value (`session: SessionMarks`, `lamps: Lamps`) or by storing it off-state (DiagnosticLogger / genericValues Map). The 0x040 SRS lamp is stored as `lamps.srs` and cleared to unknown at connection start
 - **ESC names and raw 3 (#288)** — `EscStatus` labels are Ford's Normal / Sport / Off (2018 RS supplement); the raw 0x1C0
@@ -44,3 +42,9 @@ paths:
   byte 0. DIAG's ENGINE reads `engineState360` (byte 7; one car's captures): Off (0x02), Running (top bit set), any other value raw and
   "unidentified"; it is cleared at every new connection. Byte 0 is in no field: the decode trace prints it raw from the
   frame. Byte 7's other bits and byte 0's bit 2 are not identified (#328)
+- **Fuel level 0.0 or below is not yet received (#523)** — `VehicleState.fuelLevelPct` defaults to 0.0, not a sentinel,
+  so a stored point taken before the first 0x380 frame holds 0.0 (and `DrivePointEntity`'s own default is −1.0). A level
+  at or below 0 is no reading everywhere: DRIVE's and TRIP's FUEL cells (`fuelLevelPct > 0`), `FuelUsed.measurable` /
+  `litres`, and the drive exports, which write it as an empty field or leave the GPX element out
+  (`DriveExportBuilder`, `DriveExportBuilderTest`). This is the area rule `CODING_STANDARDS.md`'s "a decoded 0 is a
+  reading" defers to: a genuinely empty tank's 0.0 reads as no reading

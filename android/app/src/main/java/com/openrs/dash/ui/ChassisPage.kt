@@ -1,6 +1,7 @@
 package com.openrs.dash.ui
 
 import com.openrs.dash.ui.units.speedUnitText
+import com.openrs.dash.ui.units.tyre
 import com.openrs.dash.ui.units.torque
 import com.openrs.dash.ui.units.torqueUnitText
 import com.openrs.dash.ui.units.torqueValue
@@ -125,10 +126,10 @@ import kotlin.math.roundToInt
     )
 
     // Deltas
-    val deltaLF = tpmsDeltaText(vs.tirePressLF, vs.session.tireStartLF)
-    val deltaRF = tpmsDeltaText(vs.tirePressRF, vs.session.tireStartRF)
-    val deltaLR = tpmsDeltaText(vs.tirePressLR, vs.session.tireStartLR)
-    val deltaRR = tpmsDeltaText(vs.tirePressRR, vs.session.tireStartRR)
+    val deltaLF = tpmsDeltaText(vs.tirePressLF, vs.session.tireStartLF, p)
+    val deltaRF = tpmsDeltaText(vs.tirePressRF, vs.session.tireStartRF, p)
+    val deltaLR = tpmsDeltaText(vs.tirePressLR, vs.session.tireStartLR, p)
+    val deltaRR = tpmsDeltaText(vs.tirePressRR, vs.session.tireStartRR, p)
 
     val panelLevel = panel.level
 
@@ -739,12 +740,17 @@ private fun AwdMetrics(held: VehicleState, p: UserPrefs) {
     }
 }
 
-private fun tpmsDeltaText(currentPsi: Double, startPsi: Double): String {
+/**
+ * The change since the session's first reading under a tyre (#509): in the tyre unit with its unit text, through the
+ * units formatter ("▲ +0.07 bar", "▼ -10 kPa"). Shown only when the change is over 0.5 psi, compared in psi whatever the
+ * unit; blank without a start or a current reading.
+ */
+internal fun tpmsDeltaText(currentPsi: Double, startPsi: Double, p: UserPrefs): String {
     if (startPsi < 0 || currentPsi <= 0) return ""
     val delta = currentPsi - startPsi
     if (abs(delta) <= 0.5) return ""
-    return if (delta > 0) "\u25B2 +${"%.1f".format(delta)}"
-    else "\u25BC ${"%.1f".format(delta)}"
+    val shown = p.tyre(delta).text
+    return if (delta > 0) "\u25B2 +$shown" else "\u25BC $shown"
 }
 
 /**

@@ -11,41 +11,25 @@ paths:
 
 - **BLE writes have three outcomes (#248)** — `BleGattCore.write` returns a `WriteOutcome`: SENT, POSSIBLY_DELIVERED
   (GATT 13) or a `WriteFailure` (not sent / uncertain).
-  - **Why:** the WiCAN Pro (upstream v4.48p) declares FFF2 with a 20-byte maximum but its stack (ESP-IDF 5.2.3) delivers a longer
-    write and then answers 0x0D. Every 22-byte `t…` frame (PCM polls, DTC requests, probes) is one ATT write at MTU 247.
-    Source-level only: no GATT trace from a real adapter. USB FEE1 allows 64 bytes.
-  - **Rule:** POSSIBLY_DELIVERED keeps the request outstanding until its own reply, but the PCM poller does not wait for that
-    reply: the batch gap paces the next request, as in rc.7 (#333); only while Request capture is on does it wait for that
-    reply too, up to 2,000 ms (#209). Replies slower than the gap then overlap, so their NRCs are
-    charged to nobody and, by the ledger's rule, no DID is suppressed for the rest of that connection (KR2 / KR3 on the
-    reporting car; `BleWriteOutcomeTest`). Nothing is ever resent, and it is never a drive-mode / ESC confirmation (CAN
-    only). Only a certainly-not-sent failure withdraws the request (`PcmRequestLedger.withdraw`). Other post-send failures
-    are uncertain and kept. TCP / WebSocket unchanged.
-  - The first GATT 13 on a connection logs one BLE_WRITE event. `OPENRS?` / `AT+FRS…` (≤ 19 bytes) are unaffected.
+  - **Why:** the WiCAN Pro (upstream v4.48p) declares FFF2 with a 20-byte maximum but its stack (ESP-IDF 5.2.3) delivers a
+    longer write and then answers 0x0D, and every 22-byte `t…` frame is one ATT write at MTU 247. Source-level only: no
+    GATT trace from a real adapter. USB FEE1 allows 64 bytes.
+  - **Rule:** POSSIBLY_DELIVERED keeps the request outstanding until its own reply; it is never resent and never a
+    drive-mode / ESC confirmation (CAN only). Only a certainly-not-sent failure withdraws the request
+    (`PcmRequestLedger.withdraw`); other post-send failures are uncertain and kept. Never throw on GATT 13 (`BleWriteOutcomeTest`).
   - Don't chunk to ≤ 20 bytes: the firmware rebuilds a split line only if the pieces arrive within 100 ms (`slcan_parse_str`
     static state). The MTU-23 path (20 + 2) already depends on that window — pre-existing, hardware-unverified.
-  - Throwing on GATT 13 caused the DID prober crash (#249) and never-attributed NRCs over BLE (#216); since #333 a link slower
-    than the gap again leaves them unattributed, by the ledger's rule, never charged to the wrong DID.
-- **BLE GATT layouts (#218)** — upstream WiCAN Pro v4.45p–v4.48p: FFF0, write FFF2, notify FFF1; USB v4.13u–v4.21u: FEE0, FEE1
-  write + notify; both need an encrypted, MITM-authenticated (bonded) link (upstream source reading, not a capture).
-  - FFE0/FFE1/FFE2 is declared only: `firmware/components/ble_transport/ble_transport.h` is a forward declaration;
-    openrs-fw v1.x keeps upstream wican-fw's `ble.c` at the pinned tag (USB v4.20u_beta-01, PRO v4.48p —
-    `firmware/patches/` doesn't touch it). The app keeps FFE0 as an unverified fallback (v2.2.6 scanned / connected FFE0 only).
-  - Which layout an openrs-fw adapter advertises is unknown: there is no GATT trace, and a successful BLE session doesn't
-    name the layout. Never infer a shipped layout from that header.
+- **BLE GATT layouts (#218)** — upstream WiCAN Pro v4.45p–v4.48p: FFF0, write FFF2, notify FFF1; USB v4.13u–v4.21u: FEE0,
+  FEE1 write + notify; both need a bonded link (upstream source reading, not a capture). FFE0/FFE1/FFE2 is declared only
+  (`firmware/components/ble_transport/ble_transport.h`); the app keeps FFE0 as an unverified fallback. Which layout an
+  openrs-fw adapter advertises is unknown: never infer a shipped layout from that header.
   - FFF0 / FFE0 are also used by unrelated cheap BLE peripherals; the scan filter passes them through. `BleDevicePickerDialog` shows an orange "not a known adapter" hint for unrecognized device names. `SlcanConnection` has a 3s SLCAN handshake that rejects non-SLCAN devices before declaring Connected
 - **BLE auto-reconnect** — `autoConnect=true` on `connectGatt()` once setup has succeeded with that MAC in this process
-  (`BleSlcanTransport.connectedBefore`; an instance flag was dead — every attempt builds a new transport). 15 s setup
-  timeout; on timeout `SlcanConnection` retry logic takes over. Emulated only: not exercised on a phone with an adapter
-- **BLE MTU** — `requestMtu(247)` requested after service discovery. If `requestMtu()` returns false (unsupported), proceeds with 23-byte default. SLCAN frames mostly fit; longer frames arrive as multiple BLE notifications and are reassembled by `lineBuffer`
-- **BLE connection priority (#513)** — setup asks for `CONNECTION_PRIORITY_HIGH` once, after the MTU exchange, so no other
-  request is outstanding; a refusal does not fail setup. It asks the phone's stack for a shorter connection interval and
-  changes nothing the adapter is sent as SLCAN. Unverified on hardware: whether the stack renegotiates the link and the
-  rate rises is #513's drive check (`BleTransportTest`)
+  (`BleSlcanTransport.connectedBefore`, companion state: every attempt builds a new transport, so an instance flag is
+  dead). Emulated only: not exercised on a phone with an adapter
+- **BLE connection priority (#513)** — setup asks for `CONNECTION_PRIORITY_HIGH` once, after the MTU exchange; a refusal
+  does not fail setup. Unverified on hardware: whether the stack renegotiates the link and the rate rises is #513's drive
+  check (`BleTransportTest`)
 - **BLE permissions must be requested at scan time** — `BleDevicePickerDialog` handles runtime permission requests (BLUETOOTH_SCAN + BLUETOOTH_CONNECT on API 31+). Do NOT rely solely on `MainActivity.onCreate()` permission requests — the user may switch to Bluetooth after app startup. `BleDeviceScanner.startScan()` also has a SecurityException safety net
-- **BLE picker (#218)** — never cache `bluetoothLeScanner` (null while the PHONE radio is off); `BleScanBackend`
-  seam, `BleScanState.PhoneBluetoothOff` → enable prompt (`ACTION_REQUEST_ENABLE`), retry on accept / `STATE_ON`; the
-  emulator AVD has a virtual Bluetooth adapter (`adb shell cmd bluetooth_manager enable|disable`) for picker checks.
-  Every scan has an id (`activeScan`): stop / restart / Bluetooth-off invalidate it and callbacks of an old scan are dropped;
-  the enable result only starts a scan while still `PhoneBluetoothOff` (broadcast + result in either order = one scan). The
-  picker Column scrolls — in landscape its content is taller than the window (CANCEL was unreachable)
+- **BLE picker (#218)** — never cache `bluetoothLeScanner` (null while the phone's radio is off). For picker checks the
+  emulator AVD has a virtual Bluetooth adapter: `adb shell cmd bluetooth_manager enable|disable`

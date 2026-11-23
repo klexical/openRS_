@@ -241,12 +241,83 @@ class DriveExportBuilderTest {
         assertEquals("3", DriveExportBuilder.csvEscape("3"))
     }
 
-    @Test fun `csv sentinel values preserved`() {
-        val pt = testPoint(coolantTempC = -99.0, oilTempC = -99.0, fuelLevelPct = -1.0)
-        val csv = DriveExportBuilder.buildCsv(listOf(pt))
-        val dataLine = csv.lines().filter { it.isNotBlank() }[2]
-        assertTrue(dataLine.contains("-99.0"))
-        assertTrue(dataLine.contains("-1.0"))
+    // ── #523: a reading not yet received is an empty field in every format, never its sentinel ──
+
+    /** A point recorded before any of these readings arrived: the recorder stores the VehicleState sentinels as they are. */
+    private fun notYetReceivedPoint(fuelLevelPct: Double = 0.0) = testPoint(
+        coolantTempC = -99.0, oilTempC = -99.0, ambientTempC = -99.0, rduTempC = -99.0, ptuTempC = -99.0,
+        fuelLevelPct = fuelLevelPct,
+    ).copy(
+        tirePressLF = -1.0, tirePressRF = -1.0, tirePressLR = -1.0, tirePressRR = -1.0,
+        tireTempLF = -99.0, tireTempRF = -99.0, tireTempLR = -99.0, tireTempRR = -99.0,
+        tipActualKpa = 0.0, boostTargetKpa = 0.0, wgdcPct = -1.0,
+    )
+
+    private fun csvRow(csv: String, headerLine: Int, row: Int = 1): Map<String, String> {
+        val lines = csv.lines().filter { it.isNotBlank() }
+        val header = lines[headerLine].split(",")
+        val values = lines[headerLine + row].split(",")
+        assertEquals("one field per column", header.size, values.size)
+        return header.zip(values).toMap()
+    }
+
+    private val notYetReceivedCsvColumns = listOf(
+        "coolant_c", "oil_c", "ambient_c", "rdu_c", "ptu_c", "fuel_pct",
+        "tire_press_lf_psi", "tire_press_rf_psi", "tire_press_lr_psi", "tire_press_rr_psi",
+        "tire_temp_lf_c", "tire_temp_rf_c", "tire_temp_lr_c", "tire_temp_rr_c",
+        "tip_actual_kpa", "boost_target_kpa", "wgdc_pct",
+    )
+
+    @Test fun `csv writes readings not yet received as empty fields`() {
+        // fuel 0.0 = VehicleState's default before 0x380 arrives; -1.0 = the point's own default
+        for (fuel in listOf(0.0, -1.0)) {
+            val r = csvRow(DriveExportBuilder.buildCsv(listOf(notYetReceivedPoint(fuel))), headerLine = 1)
+            notYetReceivedCsvColumns.forEach { assertEquals("$it (fuel $fuel)", "", r.getValue(it)) }
+            assertEquals("4500", r.getValue("rpm"))                      // the rest of the row is unchanged
+            assertEquals("100.00", r.getValue("speed_kph"))
+        }
+    }
+
+    @Test fun `csv keeps received readings, including the low ones`() {
+        val pt = testPoint(coolantTempC = -20.0, fuelLevelPct = 0.4).copy(
+            tirePressLF = 0.0, tireTempLF = -30.0, tipActualKpa = 101.3, boostTargetKpa = 100.0, wgdcPct = 0.0,
+        )
+        val r = csvRow(DriveExportBuilder.buildCsv(listOf(pt)), headerLine = 1)
+        assertEquals("-20.0", r.getValue("coolant_c"))
+        assertEquals("0.4", r.getValue("fuel_pct"))
+        assertEquals("0.0", r.getValue("tire_press_lf_psi"))
+        assertEquals("-30.0", r.getValue("tire_temp_lf_c"))
+        assertEquals("101.30", r.getValue("tip_actual_kpa"))
+        assertEquals("100.00", r.getValue("boost_target_kpa"))
+        assertEquals("0.0", r.getValue("wgdc_pct"))
+    }
+
+    @Test fun `gpx leaves out readings not yet received`() {
+        val gpx = DriveExportBuilder.buildGpx(testDrive(), listOf(notYetReceivedPoint()), "ts")
+        listOf("coolantC", "oilC", "ambientC", "rduC", "ptuC", "fuelPct").forEach {
+            assertFalse("openrs:$it", gpx.contains("<openrs:$it>"))
+        }
+        assertTrue(gpx.contains("<openrs:rpm>4500</openrs:rpm>"))
+        assertFalse(gpx.contains("-99.0"))
+    }
+
+    @Test fun `gpx keeps a received fuel level`() {
+        val gpx = DriveExportBuilder.buildGpx(testDrive(), listOf(testPoint(fuelLevelPct = 40.4)), "ts")
+        assertTrue(gpx.contains("<openrs:fuelPct>40.4</openrs:fuelPct>"))
+    }
+
+    @Test fun `racechrono csv writes temperatures not yet received as empty fields`() {
+        val r = csvRow(DriveExportBuilder.buildRaceChronoCsv(listOf(notYetReceivedPoint())), headerLine = 0)
+        assertEquals("", r.getValue("Coolant Temp (C)"))
+        assertEquals("", r.getValue("Oil Temp (C)"))
+        assertEquals("4500", r.getValue("RPM (rpm)"))
+    }
+
+    @Test fun `trackaddict csv writes temperatures not yet received as empty fields`() {
+        val r = csvRow(DriveExportBuilder.buildTrackAddictCsv(listOf(notYetReceivedPoint())), headerLine = 0)
+        assertEquals("", r.getValue("Coolant Temp (F)"))
+        assertEquals("", r.getValue("Oil Temp (F)"))
+        assertEquals("4500", r.getValue("RPM"))
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -310,6 +381,23 @@ class DriveExportBuilderTest {
         val gpx = DriveExportBuilder.buildGpx(testDrive(), points, "ts")
         val segmentCount = Regex("<trkseg>").findAll(gpx).count()
         assertEquals(1, segmentCount)
+    }
+
+    // ── #524: no made-up elevation, and times to the millisecond ──
+
+    @Test fun `gpx points 500 ms apart get two distinct millisecond times and no ele element`() {
+        val points = listOf(testPoint(timestamp = 1700000000000L), testPoint(timestamp = 1700000000500L))
+        val gpx = DriveExportBuilder.buildGpx(testDrive(), points, "ts")
+        val doc = javax.xml.parsers.DocumentBuilderFactory.newInstance().apply { isNamespaceAware = true }
+            .newDocumentBuilder().parse(org.xml.sax.InputSource(java.io.StringReader(gpx)))
+        val gpxNs = "http://www.topografix.com/GPX/1/1"
+        val trkpts = doc.getElementsByTagNameNS(gpxNs, "trkpt")
+        val times = (0 until trkpts.length).map {
+            (trkpts.item(it) as org.w3c.dom.Element).getElementsByTagNameNS(gpxNs, "time").item(0).textContent
+        }
+        assertEquals(listOf("2023-11-14T22:13:20.000Z", "2023-11-14T22:13:20.500Z"), times)
+        assertEquals(0, doc.getElementsByTagNameNS(gpxNs, "ele").length)
+        assertTrue(gpx.contains("<time>2023-11-14T22:13:20.000Z</time>"))    // the metadata's drive start, same form
     }
 
     @Test fun `gpx metadata includes timestamp`() {

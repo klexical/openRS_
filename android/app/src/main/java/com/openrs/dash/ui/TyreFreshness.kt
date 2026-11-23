@@ -1,5 +1,7 @@
 package com.openrs.dash.ui
 
+import com.openrs.dash.data.VehicleState
+
 /**
  * One wheel as THERMAL's TYRES panel shows it. The pressure classification ([level]) counts only while the reading is
  * current; a held pressure (its own stamp older than 60 s, or the link down) is last-known: it keeps its value and, when
@@ -51,6 +53,20 @@ internal fun tyreView(
         overHigh = psi > high,
     )
 }
+
+/**
+ * DRIVE's tyre alert input (#307): the pressures of the wheels whose reading is current by [tyreView]'s rule, labelled
+ * FL / FR / RL / RR for [tyreIssues]. A held pressure is left out, so it raises no live LOW / PRESSURE / HIGH alert on
+ * DRIVE; a current wheel beside it still does.
+ */
+internal fun currentTyrePressures(
+    vs: VehicleState, low: Double, warn: Double, high: Double, nowMs: Long,
+): List<Pair<String, Double>> = listOf(
+    Triple("FL", vs.tirePressLF, "tirePressLF"), Triple("FR", vs.tirePressRF, "tirePressRF"),
+    Triple("RL", vs.tirePressLR, "tirePressLR"), Triple("RR", vs.tirePressRR, "tirePressRR"),
+).map { (pos, psi, tag) -> tyreView(pos, psi, vs.fieldLastUpdateMs[tag], vs.isConnected, low, warn, high, nowMs) }
+    .filter { it.current }
+    .map { it.position to it.psi }
 
 /** "45s" / "3m" / "2h" — the same steps as the TPMS footer. */
 internal fun tyreAgeText(ageMs: Long): String {

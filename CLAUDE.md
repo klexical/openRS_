@@ -34,13 +34,12 @@ when any file under `android/` is read or edited. It is not complete: list the f
 0x040  SRS/airbag frame — byte2 bits 7:6 == 0xC0 → lamp ON (DigiCluster v1.0.73 reference)
 0x070  torque at trans (Motorola 11-bit bits 37-47, offset −500 Nm) + RS suspension button (byte7 bit7)
 0x076  throttle % (byte0 × 0.392) — ABSENT on some RS PCMs (the owner's car among them); use VehicleState.throttleOrPedalPct
-0x080  accel pedal (bits 0-9 LE × 0.1%), reverse (bit 5)
+0x080  accel pedal (byte0 bits 1–0 + byte1, Motorola 1|10, × 0.1 %), reverse (byte0 bit 5)
 0x090  RPM (bytes 4-5) + baro (byte2 × 0.5 kPa)
 0x0C8  gauge brightness (bits 0-4), e-brake (byte3 bit 6), ignition (byte2 bits 3-6)
 0x0F8  engine oil temp (byte7−60°C), boost (byte5, gauge — see the boost gotcha), PTU temp (byte1−50°C)
-       — confirmed on one car against ICM DID 0x6017 and PCM DID 0x070D (#229); the reverse of RS_HS.dbc's names and of
-         builds before rc.7 (they read oil = byte1, PTU = byte7). Drives carry `DriveEntity.oilPtuMapping` (null = recorded
-         before the fix, never relabelled). Not validated on other cars
+       — one car, against ICM DID 0x6017 and PCM DID 0x070D (#229); the reverse of RS_HS.dbc's names; not validated on other
+         cars. Recorded drives: can-decoding.md, "Oil / PTU byte mapping"
 0x130  speed (bytes 6-7 BE × 0.01 kph)
 0x138  clutch pedal % (17|10 × 0.1) — decoded for diagnostics only; NOT shown on DRIVE (#225)
 0x160  longitudinal G (bits 48-57 LE)
@@ -48,27 +47,26 @@ when any file under `android/` is read or edited. It is not complete: list the f
 0x190  wheel speeds FL/FR/RL/RR (4 × Motorola 15-bit × 0.011343 km/h)
 0x1A4  ambient temp from MS-CAN bridge — byte4 **UNSIGNED** × 0.25°C (DigiCluster v1.0.46 fix); > 55°C rejected (#185)
 0x1B0  drive mode nibble (byte6>>4); combine with 0x420 to distinguish Sport vs Track
-0x1C0  ESC setting (2-bit at bit position 10): 0 Normal, 1 Off, 2 Sport — Ford's names (2018 RS supplement); the value → name
-       mapping is CAN-mapped only (RS_HS.dbc VAL_ 448, #125). 3 = unrecognized (the name "Launch" rests only on the community
-       DBC; never seen) → unknown, as is no frame yet; while unknown the app sends no ESC command (owner decision, #288)
+0x1C0  ESC setting (2-bit at bit position 10): 0 Normal, 1 Off, 2 Sport; 3 unrecognized → unknown (#125, #288;
+       can-decoding.md, "ESC names and raw 3"); while unknown the app sends no ESC command (owner decision, #288)
 0x225  launch control (byte5 bit3) — MS-CAN per DigiCluster, never seen in an HS capture; diagnostics only, never on
        screen (#289)
 0x230  gear (4-bit) — does NOT broadcast on this car
 0x252  brake pressure (12-bit Motorola)
-0x2C0  AWD actual left/right torque Nm — RS_HS.dbc AWDmsg02 19|12 / 51|12 Motorola (MSB-first 20 / 52); requested L/R
-       at 3|12 / 35|12 not decoded; drivetrain reference point undocumented (#226).
-       DBC excerpt + source: android/app/src/test/resources/dbc/ — a second decoder checks the extraction arithmetic only,
-       not the physical meaning. Front/rear % (rear ÷ 0x070 engine torque) is WITHDRAWN everywhere — not a physical split;
-       saved dashboard cells read "WITHDRAWN …" (`DashLayout.WITHDRAWN_FIELDS`), never deleted
+0x2C0  AWD actual left/right torque Nm — RS_HS.dbc AWDmsg02 19|12 / 51|12 Motorola (MSB-first 20 / 52); requested L/R at
+       3|12 / 35|12 not decoded; drivetrain reference point undocumented (#226). The DBC excerpt in
+       android/app/src/test/resources/dbc/ checks the extraction arithmetic only, not the physical meaning. Front/rear %
+       is WITHDRAWN everywhere (not a physical split); saved dashboard cells read "WITHDRAWN …"
+       (`DashLayout.WITHDRAWN_FIELDS`), never deleted
 0x2F0  coolant + intake air temp (10-bit each)
 0x300  battery/charging fault — reserved; bit mapping unknown
 0x340  PCM ambient (byte7 signed × 0.25°C) — NOT TPMS
-0x360  odometer (bytes [3:5] 24-bit BE) + engine state (byte7: 0x02 off, top bit set running; one car, #328) — byte0 is NOT an
-       engine status (0xC0 with the engine off, 0xC0 / 0xC4 while running); the decode trace prints it raw from the frame
+0x360  odometer (bytes [3:5] 24-bit BE) + engine state (byte7; one car, #328) — byte0 is NOT an engine status
+       (can-decoding.md, "0x360 engine state is byte 7")
 0x380  fuel level (Motorola 10-bit × 0.4%, clamped 0-100)
-0x420  drive mode detail + launch control flag (byte6/7, ~600 ms broadcast; bit0=0→Sport, bit0=1→Track). The flag, byte 6
-       bit 2 (DBC LaunchControlStatus, unverified against the cluster), is the only source of the one "LC" (header, DRIVE,
-       GARAGE), shown while a documented 0x420 is ≤ 1.5 s old on this connection (`data/LaunchControl.kt`, #289)
+0x420  drive mode detail + launch control flag (byte6/7, ~600 ms broadcast; bit0=0→Sport, bit0=1→Track). Byte 6 bit 2
+       (DBC LaunchControlStatus, unverified against the cluster) is the only source of "LC" (connection-link.md, "Launch
+       control has one rule", #289)
 0x435  per-zone airbag status — **INTENTIONALLY NOT DECODED**: crosstalks with passenger-occupancy and false-triggers SRS lamp (DigiCluster v1.0.73)
 ```
 
@@ -124,10 +122,9 @@ for editing them:
   test or a CI check fails on when it is broken is not kept here: the test is the rule, and its name and KDoc carry the
   reason. An entry stays when its rule binds code not yet written ("any new writer …"), when it records evidence or an
   unverified point (hardware, emulator-only, a source read but not run), when an owner decision behind it is not in a
-  test, or when `CODING_STANDARDS.md` points at it or at its file. A pointer that names a file alone, with no entry
-  title, keeps every entry in that file.
-- `CODING_STANDARDS.md` points at rule files, by file alone or by file and title, and the CI reviewer reads the rule file
-  a standard points to. Renaming or removing an entry it reaches changes a review rule: change `CODING_STANDARDS.md` in
+  test, or when `CODING_STANDARDS.md` points at it.
+- `CODING_STANDARDS.md` points at rule-file entries by file and title, and the CI reviewer reads the entry a standard
+  points to. Renaming or removing an entry it reaches changes a review rule: change `CODING_STANDARDS.md` in
   the same round (it is a twin, see "Branch / Release Workflow").
 
 | File | Area | Loads when a matching file is read / edited |
@@ -141,10 +138,10 @@ for editing them:
 | `ble.md` | BLE GATT transport and picker | `Ble*.kt`, `BleDevicePickerDialog.kt`, `SlcanConnection.kt`, `*Ledger*`, `WriteOutcome.kt`, their tests |
 | `recorder-trip.md` | Drive recorder, laps and the TRIP tab | `DriveRecorder.kt`, `data/Drive*.kt`, lap files, `ui/trip/` (incl. `TripPage.kt`), `TripPreview.kt`, `MainActivity.kt`, `DriveExportBuilder.kt`, their tests |
 | `diagnostics.md` | DTC scans, DID prober, diagnostic export | `diagnostics/`, `DiagPage.kt`, `SlcanConnection.kt`, `*Ledger*`, `CanDataService.kt`, `DidProberSection.kt`, `PidBrowserSection.kt`, `data/Dtc*.kt`, their tests |
-| `ui-compose.md` | Compose UI (layout, theme, navigation); theme colours, AppSettings defaults | any file under `ui/` or `res/`, `HudOverlayService.kt` |
+| `ui-compose.md` | Compose UI (layout, theme, navigation) | any file under `ui/` or `res/`, `HudOverlayService.kt` |
 | `thermal.md` | Thermal readiness, temperature freshness, drive thermal record | any `*Thermal*` file, `TempsPage.kt` (home of `TempAvail`), `ChassisPage.kt`, `DrivePage.kt`, `DriveRecorder.kt`, their tests |
 | `demo-mode.md` | Demo mode (debug builds) | any file under `com/openrs/dash/` (its rules bind every writer of live telemetry) |
-| `build-release.md` | Build, release identity, CI, private builds, test runtime; RCs, nightlies, stable, the release checklist, changelog format, release notes | Gradle files, `android/scripts/`, `android/CHANGELOG.md`, `robolectric.properties`, `update/`, `BuildInfo*`, `*Version*`, `.github/workflows/` |
+| `build-release.md` | Build, release identity, CI, private builds, test runtime; RCs, nightlies, stable, the release checklist, changelog format, release notes | Gradle files, `android/scripts/`, `android/CHANGELOG.md`, `android/changelog.d/`, `robolectric.properties`, `update/`, `BuildInfo*`, `*Version*`, `.github/workflows/` |
 | `sapphire.md` | Sapphire, the web dashboard | any file under `web/` |
 
 ## Assets
@@ -225,7 +222,7 @@ results from the Gradle build cache); one test is skipped by decision (`#251 out
 ## Branch / Release Workflow
 
 ```
-feature/* → staging → main          (code, tests, android/CHANGELOG.md)
+feature/* → staging → main          (code, tests, android/changelog.d/ fragments)
 docs/*    → main    (direct)        (README.md, assets/, docs/, firmware/README.md)
                                     CLAUDE.md, .claude/rules/ and GLOSSARY.md follow the code route (staging)
 Release tags: android-v*  (triggers CI signing + GitHub Release)
@@ -233,8 +230,7 @@ RCs: one pre-release per RC tag (android-v<ver>-rc.N), tagged on staging; stable
 Nightlies (#363): android-v<ver>-nightly.YYYYMMDD, from staging's tip
 ```
 
-Android RCs ship from **staging**; **main** carries stable Android (v2.2.6) and Sapphire. Sapphire may reach main web/-only
-without the Android RC.
+**main** carries stable Android and Sapphire; nightlies build from staging's tip. Sapphire reaches main `web/`-only.
 
 `CODING_STANDARDS.md` (the standards `.github/workflows/claude-review.yml` reviews against) is kept byte-identical on
 staging and main: a change lands on both in one round (two PRs), or on staging alone with main taking it at stable.
@@ -244,17 +240,14 @@ pushes that would publish a private address (GH007), and fixing that afterwards 
 identity check (`.github/workflows/commit-identity.yml`) fails a pull request whose new commits are not the owner's
 noreply identity or carry a `Claude-Session:` line.
 
-The RC, nightly and stable procedures, the release checklist, the changelog format and the release-note rules are in
-`.claude/rules/build-release.md`.
+Release procedures, the release checklist, the changelog format and release notes: `.claude/rules/build-release.md`.
+Release facts live in `android/CHANGELOG.md` and on the Releases page, open work in the issue tracker; this file takes no
+dated status or work-log entries.
 
-**Release records.** Release facts live in `android/CHANGELOG.md` and on the GitHub Releases page; open work lives in the
-issue tracker. This file takes no dated status or work-log entries.
-
-Docs branches skip staging entirely: branch from main, PR to main. The root `README.md` and the root `assets/` and
-`docs/` folders never go through staging. `CLAUDE.md`, `.claude/rules/` and `GLOSSARY.md` describe the code on staging,
-so they take the code route, and a change that makes one of them wrong corrects it in the same branch. Documentation
-under `android/` that describes a code change travels with that code, through staging (`android/README.md` and
-`android/CONTRIBUTING.md` included).
+Docs branches (root `README.md`, `assets/`, `docs/`) branch from main and PR to main, never through staging. `CLAUDE.md`,
+`.claude/rules/` and `GLOSSARY.md` describe the code on staging, so they take the code route, and a change that makes one
+of them wrong corrects it in the same branch. Documentation under `android/` that describes a code change travels with
+that code (`android/README.md` and `android/CONTRIBUTING.md` included).
 
 ## Sapphire (`web/`)
 

@@ -68,6 +68,9 @@ can/
   Mode22Frames.kt         — `Mode22`: request DID / positive DID / NRC helpers + `RawReply` (Frame / AmbiguousNrc) for probe matching
   WriteOutcome.kt         — transport write outcome: SENT / POSSIBLY_DELIVERED (GATT 13) / WriteFailure (not sent / uncertain)
   IsoTpBuffer.kt          — ISO-TP SF/FF/CF reassembly; caller sends BCM_FLOW_CONTROL after FF
+  TpmsIdReads.kt          — TPMS sensor-ID reads per BCM cycle (#518): all four on a connection's first cycle, then only a
+                            position still unmapped in the state and only after a BCM frame since its last read, at most
+                            ObdConstants.TPMS_ID_MAX_SENDS each per connection
   ReceptionStall.kt       — gaps on an open connection (#356): frames per quarter second of elapsedRealtime against the
                             connection's own rate (frames over time outside gaps); a gap whose next half second holds a burst
                             of queued frames = RECEPTION_STALL, any other = QUIET_SPAN (claims no cause); a gap with no frame
@@ -159,9 +162,13 @@ diagnostics/
                             the link lock); count, strictly-over edges, longest; pure, each locks itself; DiagnosticLogger
                             holds one of each, reset at sessionStart (UiTimingTest, UiTimingExportTest)
   DriveExportBuilder.kt   — Pure-function builders: GPX track, CSV telemetry, drive summary, DTC report
+                            A reading not yet received (its sentinel) = empty CSV field / no GPX element (#523);
+                            GPX times to the ms, no <ele> (#524)
   DtcDatabase.kt          — 873-code bundled Ford DTC lookup (from res/raw/dtc_database.json)
-  CrashReporter.kt        — Installs UncaughtExceptionHandler; persists CrashTelemetryBuffer to disk
-  CrashTelemetryBuffer.kt — 300-snapshot ring buffer of VehicleState (`CAPACITY`); flushed on crash to JSON (+ heap, #510)
+  CrashReporter.kt        — Installs UncaughtExceptionHandler; persists CrashTelemetryBuffer to disk; one file per crash
+                            (crashFile: `_2`, `_3` … for crashes in the same second, #511)
+  CrashTelemetryBuffer.kt — 300-snapshot ring buffer of VehicleState (`CAPACITY`); flushed on crash to JSON (+ heap, #510),
+                            a minimal record first, then the full one renamed over it (#511)
   HeapSample.kt           — one reading of Java heap used / size / limit + native heap, KiB (#510): FPS timeline points and
                             the crash record; never throws
   ReplyCount.kt           — Mode 22 replies per module for the export (#514): requests from `# TX` lines, replies from
@@ -331,7 +338,12 @@ ui/
   DidProberSection.kt     — DIAG tab: interactive Mode 22 scanner for any ECU+DID (UI only; the scan runs in
                             diagnostics/DidProbeScan.kt)
   WhatsNewDialog.kt       — Version changelog dialog; shown on first launch after update
+                            Title row: the title (FlowRow, version drops to a second line) takes only the width the
+                            48 dp ✕ leaves; ✕ top-aligned (#508, WhatsNewTitleFitTest: 360 dp, font 1.0 / 1.3 / 2.0, stable / RC / nightly)
   trip/
+    DriveReplayView.kt    — Drive replay: header, map + readings, fixed slider + transport row. The readings take their
+                            height and the map the rest, never under MIN_MAP_HEIGHT (160 dp); past that, map + readings
+                            scroll (large system fonts, #301, DriveReplayFitTest)
     DriveHistory.kt       — rc.7 (#228) — TRIP history: observe (Room Flow, the list's only source) + delete / tags / rename
                             (writes only — never re-read the list by hand)
     DriveMap.kt           — Google Maps Compose wrapper: 6 color modes (SPD/MODE/BOOST/THRTL/G-LAT/TEMP),
