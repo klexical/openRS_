@@ -77,16 +77,22 @@ class TpmsIdPollTest {
     private class Link(val bus: Bus, var state: VehicleState)
 
     /** Connects with the production merge (ObdMerge, as CanDataService.mergeObdState) feeding getCurrentState. */
-    private fun TestScope.link(bus: Bus): Link {
-        val out = Link(bus, VehicleState())
+    private fun TestScope.link(bus: Bus): Link = link(listOf(bus))
+
+    /** As [link], with one adapter per connection attempt: a closed one ends its connection and the next attempt opens the next. */
+    private fun TestScope.link(buses: List<Bus>): Link {
+        val out = Link(buses.first(), VehicleState())
+        var attempt = 0
         val conn = SlcanConnection(
-            transportFactory = { bus }, maxRetries = 1,
+            transportFactory = { buses[attempt++] }, maxRetries = 1, reconnectDelayMs = RECONNECT_MS,
             ioDispatcher = StandardTestDispatcher(testScheduler), debugSink = {}, clock = { testScheduler.currentTime },
         )
         backgroundScope.launch { conn.connectHybrid({ out.state = ObdMerge.merge(out.state, it) }, { out.state }).collect {} }
         runCurrent()
         return out
     }
+
+    private companion object { const val RECONNECT_MS = 2_000L }
 
     private fun Bus.sends(i: Int) = writes.count { it == reads[i] }
     private fun mapped(s: VehicleState) = listOf(s.tpmsSensorIdLF, s.tpmsSensorIdRF, s.tpmsSensorIdRR, s.tpmsSensorIdLR)
@@ -135,6 +141,37 @@ class TpmsIdPollTest {
         assertEquals("the four reads come first on the first cycle, in their order, before the BCM's own polls",
             reads + ObdConstants.BCM_QUERIES.first(),
             l.bus.writes.filter { it in reads || it == ObdConstants.BCM_QUERIES.first() }.take(5))
+    }
+
+    @Test fun `a reconnect starts a new budget - all four read again and an unanswered one up to the bound again`() = runTest {
+        val never = Int.MAX_VALUE
+        val first = bcm(answerFrom = listOf(1, never, 1, 1))
+        val second = bcm(answerFrom = listOf(1, never, 1, 1))
+        val l = link(listOf(first, second))
+        advanceTimeBy(ObdConstants.BCM_INITIAL_DELAY_MS + (ObdConstants.TPMS_ID_MAX_SENDS + 2) * cycleMs)
+        assertEquals("first connection: RF up to the bound", listOf(1, ObdConstants.TPMS_ID_MAX_SENDS, 1, 1),
+            reads.indices.map { first.sends(it) })
+        assertEquals("three positions mapped from the first connection", listOf(true, false, true, true), mapped(l.state))
+
+        first.close()                                     // the link drops; the next attempt opens the second adapter
+        advanceTimeBy(RECONNECT_MS + ObdConstants.BCM_INITIAL_DELAY_MS + (ObdConstants.TPMS_ID_MAX_SENDS + 2) * cycleMs)
+        assertEquals("the new connection re-reads all four once, though three are still mapped in the state, " +
+            "and the unanswered one up to the bound again", listOf(1, ObdConstants.TPMS_ID_MAX_SENDS, 1, 1),
+            reads.indices.map { second.sends(it) })
+    }
+
+    @Test fun `a session reset while connected clears the IDs and the next cycle reads all four again`() = runTest {
+        val l = link(bcm(answerFrom = listOf(1, 1, 1, 1)))
+        advanceTimeBy(ObdConstants.BCM_INITIAL_DELAY_MS + 2 * cycleMs)
+        assertEquals(listOf(1, 1, 1, 1), reads.indices.map { l.bus.sends(it) })
+
+        l.state = VehicleState()                          // GARAGE's reset: CanDataService.resetSession() replaces the state
+        advanceTimeBy(cycleMs)
+        assertEquals("every position unmapped by the reset is read once more", listOf(2, 2, 2, 2),
+            reads.indices.map { l.bus.sends(it) })
+        assertEquals(listOf(true, true, true, true), mapped(l.state))
+        advanceTimeBy(5 * cycleMs)
+        assertEquals("then mapped again: no more reads", listOf(2, 2, 2, 2), reads.indices.map { l.bus.sends(it) })
     }
 
     // ── TpmsIdReads, the rule alone ──────────────────────────────────────────
