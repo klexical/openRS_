@@ -337,7 +337,12 @@ class CanDataService : Service() {
         unregisterWifiCallback()
         unregisterBluetoothCallback()
         finder.stopAll()
-        stopConnection(LinkStopReason.SERVICE_DESTROYED)   // flush sessionEnd() before scope is torn down
+        link.transition {
+            stopConnection(LinkStopReason.SERVICE_DESTROYED)   // flush sessionEnd() before scope is torn down
+            // #294: the demote a recording drive defers (#262) dies with the scope below, and a collector body already past
+            // its cancellation check runs after this returns: end the foreground here, so that body finds nothing to change
+            foreground.release()
+        }
         scope.cancel()
         super.onDestroy()
     }
