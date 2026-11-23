@@ -13,6 +13,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -23,6 +25,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.res.imageResource
 import com.openrs.dash.R
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.Alignment
@@ -56,6 +60,7 @@ import kotlinx.coroutines.launch
 import com.openrs.dash.ui.Tokens.CardBorder
 import com.openrs.dash.ui.anim.pageEntrance
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -259,10 +264,12 @@ fun SettingsDialog(
                 Spacer(Modifier.height(4.dp))
                 SettingsRow(
                     label = "Classic fonts",
+                    stacked = true,
                     help = "CLASSIC revives Orbitron for hero numerics.",
                 ) {
                     SettingsPicker(
                         options = listOf("MODERN", "CLASSIC"),
+                        fill = true,
                         selected = if (classicFontsLocal) "CLASSIC" else "MODERN",
                         onSelect = { sel ->
                             val on = sel == "CLASSIC"
@@ -303,12 +310,12 @@ fun SettingsDialog(
                     Spacer(Modifier.height(4.dp))
                     SettingsRow(
                         label = "Color",
-                    stacked = true,
+                        stacked = true,
                         help = "PROGRESSIVE fades green→yellow→red as you approach the shift point.",
                     ) {
                         SettingsPicker(
                             options = listOf("Accent", "White", "Progressive"),
-                        fill = true,
+                            fill = true,
                             selected = when (edgeShiftColor) {
                                 "white" -> "White"; "progressive" -> "Progressive"; else -> "Accent"
                             },
@@ -322,10 +329,12 @@ fun SettingsDialog(
                     Spacer(Modifier.height(4.dp))
                     SettingsRow(
                         label = "Intensity",
+                        stacked = true,
                         help = "Glow opacity at peak. HIGH is most visible in daylight.",
                     ) {
                         SettingsPicker(
                             options = listOf("Low", "Med", "High"),
+                            fill = true,
                             selected = when (edgeShiftIntensity) {
                                 "low" -> "Low"; "med" -> "Med"; else -> "High"
                             },
@@ -479,9 +488,9 @@ fun SettingsDialog(
             // Sections are laid out in a Box — keep this page's blocks in one Column
             Column {
             SettingsSection("THERMAL PROFILE") {
-                SettingsRow("Active profile", stacked = options.size > 3) {
+                SettingsRow("Active profile", stacked = true) {
                     SettingsPicker(options = options, selected = thermalPreset.uppercase(),
-                        onSelect = { thermalPreset = it.lowercase() }, fill = options.size > 3)
+                        onSelect = { thermalPreset = it.lowercase() }, fill = true)
                 }
                 Spacer(Modifier.height(6.dp))
                 SettingsNote(
@@ -1093,6 +1102,7 @@ fun SettingsDialog(
                 OutlinedButton(
                     onClick = cancel,
                     modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                    contentPadding = ActionPadding,
                     border = androidx.compose.foundation.BorderStroke(1.dp, Brd),
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = Mid),
                 ) {
@@ -1145,6 +1155,7 @@ fun SettingsDialog(
                         resetConfirm  = true
                     },
                     modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                    contentPadding = ActionPadding,
                     colors = ButtonDefaults.textButtonColors(contentColor = Mid),
                 ) {
                     Text("RESET", fontFamily = ShareTechMono, fontSize = 12.sp, fontWeight = FontWeight.Bold)
@@ -1223,6 +1234,7 @@ fun SettingsDialog(
                         }
                     },
                     modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                    contentPadding = ActionPadding,
                     colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = OnAccent),
                 ) {
                     Text("SAVE", fontFamily = ShareTechMono, fontWeight = FontWeight.Bold, fontSize = 12.sp)
@@ -1231,6 +1243,12 @@ fun SettingsDialog(
         }
     }
 }
+
+/**
+ * CANCEL / RESET / SAVE padding: three buttons share the dialog's width, and Material's 24 dp a side left CANCEL too
+ * little room at 360 dp, font 1.3 (#508). 8 dp a side, as the picker chips.
+ */
+private val ActionPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
 
 // ── Navigation affordances ───────────────────────────────────────────────────
 
@@ -1500,7 +1518,11 @@ private fun SettingsSwitchRow(
  * Option picker (Settings, PERF knock scope): the selected option is an accent tint with its label in [actionInk] (dark on
  * DAY) — the chip style used across the app — instead of a solid fill. Every option is at least a [minTarget] chip
  * (44 dp tall on PERF; 48 × 48 dp in Settings) in a control 4 dp taller. [fill] spreads the options across the row
- * (stacked rows).
+ * (stacked rows; see [FillRow]).
+ *
+ * A screen reader hears each option as a radio button with its selected state (#504). The picker is its own selectable
+ * group unless [group] is false, for a set split over several pickers whose caller marks the group (Region, Economy).
+ * [descriptions] gives an option a spoken name in place of its short label (the region names).
  */
 @Composable
 fun SegmentedPicker(
@@ -1509,17 +1531,18 @@ fun SegmentedPicker(
     onSelect: (String) -> Unit,
     fill: Boolean = false,
     minTarget: androidx.compose.ui.unit.Dp = 44.dp,
+    descriptions: Map<String, String> = emptyMap(),
+    group: Boolean = true,
 ) {
     val accent = LocalThemeAccent.current
     val haptic = LocalHapticFeedback.current
-    Row(
-        Modifier
-            .then(if (fill) Modifier.fillMaxWidth() else Modifier)
-            .background(Surf2, RoundedCornerShape(8.dp))
-            .border(CardBorder, Brd, RoundedCornerShape(8.dp))
-            .padding(2.dp),
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
-    ) {
+    val frame = Modifier
+        .then(if (fill) Modifier.fillMaxWidth() else Modifier)
+        .then(if (group) Modifier.selectableGroup() else Modifier)
+        .background(Surf2, RoundedCornerShape(8.dp))
+        .border(CardBorder, Brd, RoundedCornerShape(8.dp))
+        .padding(2.dp)
+    val chips: @Composable () -> Unit = {
         options.forEach { option ->
             val isSelected = option == selected
             val bgColor by animateColorAsState(
@@ -1530,14 +1553,17 @@ fun SegmentedPicker(
                 targetValue = if (isSelected) accent.copy(alpha = borderAlpha(0.6f)) else Color.Transparent,
                 animationSpec = tween(250), label = "segBrd",
             )
+            val spoken = descriptions[option]
             Box(
                 Modifier
-                    .then(if (fill) Modifier.weight(1f) else Modifier)
                     .defaultMinSize(minWidth = if (minTarget >= 48.dp) minTarget else Dp.Unspecified, minHeight = minTarget)
                     .clip(RoundedCornerShape(6.dp))
                     .background(bgColor, RoundedCornerShape(6.dp))
                     .border(CardBorder, borderColor, RoundedCornerShape(6.dp))
-                    .clickable { haptic.performHapticFeedback(HapticFeedbackType.Confirm); onSelect(option) }
+                    .selectable(selected = isSelected, role = Role.RadioButton) {
+                        haptic.performHapticFeedback(HapticFeedbackType.Confirm); onSelect(option)
+                    }
+                    .then(if (spoken != null) Modifier.semantics { contentDescription = spoken } else Modifier)
                     .padding(horizontal = 8.dp, vertical = 4.dp),
                 contentAlignment = Alignment.Center,
             ) {
@@ -1554,7 +1580,39 @@ fun SegmentedPicker(
             }
         }
     }
+    if (fill) FillRow(frame, gap = 2.dp, content = chips)
+    else Row(frame, horizontalArrangement = Arrangement.spacedBy(2.dp)) { chips() }
 }
+
+/**
+ * A full-width picker row: equal widths when every option fits in an equal share, as before. When one does not (the edge
+ * glow's "Progressive" at 360 dp, #507), each option gets its own one-line width plus an equal share of what is left, so
+ * a long option keeps one line beside short ones. Options that cannot all fit on one line even so share equally and wrap.
+ */
+@Composable
+private fun FillRow(modifier: Modifier, gap: Dp, content: @Composable () -> Unit) =
+    Layout(content, modifier) { measurables, constraints ->
+        val gapPx = gap.roundToPx()
+        val n = measurables.size
+        val avail = (constraints.maxWidth - gapPx * (n - 1)).coerceAtLeast(0)
+        // JetBrains Mono's bold and regular share one advance width, so selecting an option never moves the others
+        val natural = measurables.map { it.maxIntrinsicWidth(Constraints.Infinity) }
+        val even = avail / n
+        val widths = if (natural.all { it <= even } || natural.sum() > avail) {
+            List(n) { even + if (it < avail % n) 1 else 0 }
+        } else {
+            val spare = avail - natural.sum()
+            natural.mapIndexed { i, w -> w + spare / n + if (i < spare % n) 1 else 0 }
+        }
+        val placeables = measurables.mapIndexed { i, m ->
+            m.measure(Constraints(minWidth = widths[i], maxWidth = widths[i], maxHeight = constraints.maxHeight))
+        }
+        val h = (placeables.maxOfOrNull { it.height } ?: 0).coerceIn(constraints.minHeight, constraints.maxHeight)
+        layout(constraints.maxWidth, h) {
+            var x = 0
+            placeables.forEach { it.place(x, 0); x += it.width + gapPx }
+        }
+    }
 
 /** Settings' picker — the shared [SegmentedPicker], every option a 48 dp touch target (PERF keeps its 44 dp chips). */
 @Composable
@@ -1563,7 +1621,9 @@ private fun SettingsPicker(
     selected: String,
     onSelect: (String) -> Unit,
     fill: Boolean = false,
-) = SegmentedPicker(options, selected, onSelect, fill, minTarget = 48.dp)
+    descriptions: Map<String, String> = emptyMap(),
+    group: Boolean = true,
+) = SegmentedPicker(options, selected, onSelect, fill, minTarget = 48.dp, descriptions = descriptions, group = group)
 
 
 /**
@@ -1581,13 +1641,16 @@ internal fun UnitsSection(units: UnitSet, onStage: (UnitSet) -> Unit) {
             help = "A region sets every unit below. Changing any unit by hand makes it Custom. " +
                 "Display only: drives and exports keep their units.",
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            // One selectable group over both lines, so a screen reader counts the six regions as one choice (#504)
+            Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Region.entries.chunked(3).forEach { row ->
                     SettingsPicker(
                         options = row.map { it.label },
                         selected = stagedRegion.label,
                         onSelect = { label -> Region.entries.first { it.label == label }.units?.let(onStage) },
                         fill = true,
+                        descriptions = row.mapNotNull { r -> r.spokenName?.let { r.label to it } }.toMap(),
+                        group = false,
                     )
                 }
             }
@@ -1598,6 +1661,20 @@ internal fun UnitsSection(units: UnitSet, onStage: (UnitSet) -> Unit) {
         }
     }
 }
+
+/**
+ * What a screen reader says for a region's short name on the Region picker (#504): TalkBack spells "EU" or "CA" letter
+ * by letter. Null where the label reads as it is (Custom).
+ */
+internal val Region.spokenName: String?
+    get() = when (this) {
+        Region.EUROPE -> "Europe and international"
+        Region.UK -> "United Kingdom"
+        Region.US -> "United States"
+        Region.CANADA -> "Canada"
+        Region.AUS_NZ -> "Australia and New Zealand"
+        Region.CUSTOM -> null
+    }
 
 /** One row of Settings → UNITS: its label, options, whether it stacks at 360 dp, and its unit in a [UnitSet]. */
 internal class UnitRowSpec(
@@ -1636,9 +1713,10 @@ private fun UnitRow(
     SettingsRow(label, stacked = stacked) {
         if (stacked && options.size > 3) {
             // Four options (Economy) go two to a row, so "L/100 km" and "MPG (UK)" keep one line at 360 dp
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 options.chunked(2).forEach { row ->
-                    SettingsPicker(options = row.map { it.second }, selected = selected, onSelect = pick, fill = true)
+                    SettingsPicker(options = row.map { it.second }, selected = selected, onSelect = pick, fill = true,
+                        group = false)
                 }
             }
         } else {
@@ -1728,6 +1806,7 @@ private fun AppUpdatesSection(
         // ── Channel picker ──────────────────────────────────────────────
         SettingsRow(
             label = "Update channel",
+            stacked = true,
             help = if (updateChannel == "beta") "Includes nightly and pre-release builds from GitHub"
                    else "Only stable releases from GitHub",
         ) {
@@ -1735,6 +1814,7 @@ private fun AppUpdatesSection(
                 options = listOf("stable", "beta"),
                 selected = updateChannel,
                 onSelect = onChannelChange,
+                fill = true,
             )
         }
 
