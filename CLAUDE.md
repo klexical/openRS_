@@ -9,8 +9,8 @@ Android app → `android/`  |  Firmware → `firmware/`  |  Sapphire (web dashbo
 
 ## Source Layout
 
-The per-file map of `android/app/src/main/java/com/openrs/dash/` is `.claude/rules/source-layout.md`; Claude Code loads it
-when any file under `android/` is read or edited. It is not complete: list the folder for files it does not name.
+The app's source is under `android/app/src/main/java/com/openrs/dash/`: list the folder, and read a file's opening comment
+for what it holds. `demo/` is compiled into debug builds only (`DemoMode.AVAILABLE = BuildConfig.DEBUG`).
 
 ## ECU Addresses
 
@@ -132,7 +132,6 @@ for editing them:
 
 | File | Area | Loads when a matching file is read / edited |
 |---|---|---|
-| `source-layout.md` | Source Layout (the android/ source map) | any file under `android/` |
 | `android-general.md` | Android, any file | any file under `android/app/src/` |
 | `can-decoding.md` | CAN decoding and VehicleState | `CanDecoder.kt`, `VehicleState.kt`, `DemoSimulator.kt`, `PullTracker.kt`, `Knock*.kt`, `data/Drive*.kt`, `OilPtuMapping*`, `DriveRecorder.kt`, their tests, `test/resources/dbc/` |
 | `obd-polling.md` | OBD Mode 22 polling, decoders and freshness | `Obd*.kt`, `PcmPollSchedule.kt`, `PidRegistry.kt`, `NrcTracker.kt`, `CanDecoder.kt`, `SlcanConnection.kt`, `CanDataService.kt`, `ObdMerge.kt`, `FreshnessGate.kt`, `VehicleState.kt`, `*ModeProvenance*`, `PowerPage.kt`, `CustomDashPage.kt`, the PID assets, their tests |
