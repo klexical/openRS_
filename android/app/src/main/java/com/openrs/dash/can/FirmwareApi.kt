@@ -162,6 +162,8 @@ object FirmwareApi {
                 // Parse Content-Length from headers and read exactly that many
                 // bytes — do NOT loop until EOF, because the ESP-IDF HTTP server
                 // may keep the connection open longer than our soTimeout.
+                // The claimed length never sizes a buffer: at most MAX_REPLY_CHARS are read (an Int.MAX_VALUE claim was
+                // an OutOfMemoryError, an Error this catch does not hold).
                 if (checkBusy) {
                     var contentLength = -1
                     while (true) {
@@ -171,14 +173,7 @@ object FirmwareApi {
                             contentLength = hdr.substringAfter(":").trim().toIntOrNull() ?: -1
                     }
                     if (contentLength > 0) {
-                        val buf = CharArray(contentLength)
-                        var read = 0
-                        while (read < contentLength) {
-                            val n = reader.read(buf, read, contentLength - read)
-                            if (n < 0) break
-                            read += n
-                        }
-                        val body = String(buf, 0, read)
+                        val body = WicanApi.readUpTo(reader, minOf(contentLength, WicanApi.MAX_REPLY_CHARS))
                         if (body.contains("\"busy\":true"))
                             return@withContext Result.failure(BusyException())
                     }
@@ -242,6 +237,28 @@ data class DeviceStatus(
 object WicanApi {
 
     /**
+     * The most of an adapter HTTP reply's body that is read into memory, in characters. The adapter's replies are a
+     * few hundred characters; a reply's own `Content-Length` never sizes a buffer, so a reply that claims or sends more
+     * cannot ask for an arbitrary allocation (`FirmwareHttpBodyLimitTest`).
+     */
+    const val MAX_REPLY_CHARS = 65_536
+
+    /** Reads at most [limit] characters from [reader], fewer if the reply ends first. [limit] is at most [MAX_REPLY_CHARS] + 1. */
+    internal fun readUpTo(reader: BufferedReader, limit: Int): String {
+        require(limit in 0..MAX_REPLY_CHARS + 1)
+        val buf = CharArray(limit)
+        var read = 0
+        while (read < limit) {
+            val n = reader.read(buf, read, limit - read)
+            if (n < 0) break
+            read += n
+        }
+        return String(buf, 0, read)
+    }
+
+    private const val TOO_LONG = "reply over $MAX_REPLY_CHARS characters"
+
+    /**
      * Query the device's `/check_status` endpoint.
      * Returns null on any failure (timeout, parse error, not on WiFi).
      *
@@ -289,18 +306,20 @@ object WicanApi {
                             contentLength = hdr.substringAfter(":").trim().toIntOrNull() ?: -1
                     }
 
-                    // Read body
+                    // Read body: never more than MAX_REPLY_CHARS, whatever the reply claims or sends
+                    if (contentLength > MAX_REPLY_CHARS) {
+                        logFailure("check_status", TOO_LONG)
+                        return@withContext null
+                    }
                     val body = if (contentLength > 0) {
-                        val buf = CharArray(contentLength)
-                        var read = 0
-                        while (read < contentLength) {
-                            val n = reader.read(buf, read, contentLength - read)
-                            if (n < 0) break
-                            read += n
-                        }
-                        String(buf, 0, read)
+                        readUpTo(reader, contentLength)
                     } else {
-                        reader.readText()
+                        readUpTo(reader, MAX_REPLY_CHARS + 1).also {
+                            if (it.length > MAX_REPLY_CHARS) {
+                                logFailure("check_status", TOO_LONG)
+                                return@withContext null
+                            }
+                        }
                     }
 
                     DeviceStatus.fromJson(JSONObject(body))
@@ -352,8 +371,9 @@ object WicanApi {
         }
 
     /**
-     * The one log line for a failed adapter request (#370): [what] is the HTTP status code's three digits or an
-     * exception's class name, never other text the adapter sent. No throwable: its message can repeat the reply.
+     * The one log line for a failed adapter request (#370): [what] is the HTTP status code's three digits, an
+     * exception's class name or the fixed over-limit text, never other text the adapter sent. No throwable: its
+     * message can repeat the reply.
      */
     private fun logFailure(request: String, what: String) =
         android.util.Log.d("WicanApi", "$request failed: $what")
