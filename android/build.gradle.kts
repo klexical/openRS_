@@ -7,4 +7,7 @@ plugins {
     id("org.jetbrains.kotlin.android") version "2.0.21" apply false
     id("org.jetbrains.kotlin.plugin.compose") version "2.0.21" apply false
     id("com.google.devtools.ksp") version "2.0.21-1.0.27" apply false
+    // Screenshot tests on Robolectric (MainScreensScreenshotTest); test-only. 1.60.0 is the last release built for
+    // Kotlin 2.0 metadata: 1.61.0 and later carry 2.3 metadata, which this Kotlin 2.0.21 compiler refuses
+    id("io.github.takahirom.roborazzi") version "1.60.0" apply false
 }
