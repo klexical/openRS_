@@ -307,7 +307,9 @@ ui/
                             2-way adapter picker (MeatPi USB / Pro) + connection method toggle (WiFi / Bluetooth)
                             Design pass: instrument-panel sections, SettingsPicker (accent tint + actionInk; stacked full
                             width where options don't fit at 360 dp), 48 dp rows / actions; every exit except SAVE reverts
-                            the live theme / font / paint preview (`cancel()`). Public SegmentedPicker is PERF's (unchanged)
+                            the live theme / font / paint preview (`cancel()`). Public SegmentedPicker (PERF's knock scope too):
+                            options are radio buttons in a selectable group, short Region names spoken in full (#504); a
+                            full-width row widens an option that an equal share would wrap (`FillRow`, #507)
   anim/
     EdgeShiftLight.kt     — Peripheral shift light: multi-zone edge glow overlay (breathing → fill → flash)
                             Three phases keyed to shiftRpm: 70% breathing, 81% progressive, 95.5% flash
