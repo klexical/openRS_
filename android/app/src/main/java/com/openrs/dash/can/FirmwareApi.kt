@@ -154,20 +154,21 @@ object FirmwareApi {
                 }
 
                 val reader = BufferedReader(InputStreamReader(s.getInputStream()))
-                val statusLine = reader.readLine() ?: ""
+                val head = WicanApi.HeadReader(reader)   // status line + headers: at most MAX_HEAD_CHARS, else it throws
+                val statusLine = head.readLine() ?: ""
                 if (!statusLine.contains("200"))
                     return@withContext Result.failure(RuntimeException(statusLine))
 
                 // Read response body to check for busy status.
-                // Parse Content-Length from headers and read exactly that many
-                // bytes — do NOT loop until EOF, because the ESP-IDF HTTP server
-                // may keep the connection open longer than our soTimeout.
+                // Parse Content-Length from headers and read that many characters (the reader counts characters,
+                // Content-Length counts bytes: the same for the firmware's ASCII reply) — do NOT loop until EOF,
+                // because the ESP-IDF HTTP server may keep the connection open longer than our soTimeout.
                 // The claimed length never sizes a buffer: at most MAX_REPLY_CHARS are read (an Int.MAX_VALUE claim was
                 // an OutOfMemoryError, an Error this catch does not hold).
                 if (checkBusy) {
                     var contentLength = -1
                     while (true) {
-                        val hdr = reader.readLine() ?: break
+                        val hdr = head.readLine() ?: break
                         if (hdr.isBlank()) break
                         if (hdr.startsWith("Content-Length:", ignoreCase = true))
                             contentLength = hdr.substringAfter(":").trim().toIntOrNull() ?: -1
@@ -238,10 +239,40 @@ object WicanApi {
 
     /**
      * The most of an adapter HTTP reply's body that is read into memory, in characters. The adapter's replies are a
-     * few hundred characters; a reply's own `Content-Length` never sizes a buffer, so a reply that claims or sends more
-     * cannot ask for an arbitrary allocation (`FirmwareHttpBodyLimitTest`).
+     * few hundred characters. A reply's own `Content-Length` never sizes a buffer, so a body that claims or sends more
+     * cannot ask for an arbitrary allocation (`FirmwareHttpBodyLimitTest`). The head is bounded by [MAX_HEAD_CHARS].
      */
     const val MAX_REPLY_CHARS = 65_536
+
+    /**
+     * The most of an adapter HTTP reply's head (status line, header lines and the blank line, line ends included) that
+     * is read, in characters: the WebSocket upgrade's header bound, far above an ESP-IDF httpd head. Read through
+     * [HeadReader], so one endless header line cannot grow a buffer for ever (`FirmwareHttpBodyLimitTest`).
+     */
+    const val MAX_HEAD_CHARS = 16 * 1024
+
+    /** A reply's head ran past [MAX_HEAD_CHARS]. Its message is fixed text, never the adapter's. */
+    class ReplyHeadTooLongException : java.io.IOException("reply head over $MAX_HEAD_CHARS characters")
+
+    /**
+     * Reads a reply's head line by line from [reader], [MAX_HEAD_CHARS] in all across every line it returns. A line
+     * ends at LF; a CR before it is dropped. Leaves [reader] at the first body character after the blank line.
+     */
+    internal class HeadReader(private val reader: BufferedReader) {
+        private var used = 0
+
+        /** The next line without its line end; null at the end of the reply before any character. */
+        fun readLine(): String? {
+            val sb = StringBuilder()
+            while (true) {
+                val c = reader.read()
+                if (c < 0) return if (sb.isEmpty()) null else sb.toString()
+                if (++used > MAX_HEAD_CHARS) throw ReplyHeadTooLongException()
+                if (c == '\n'.code) return sb.removeSuffix("\r").toString()
+                sb.append(c.toChar())
+            }
+        }
+    }
 
     /** Reads at most [limit] characters from [reader], fewer if the reply ends first. [limit] is at most [MAX_REPLY_CHARS] + 1. */
     internal fun readUpTo(reader: BufferedReader, limit: Int): String {
@@ -257,6 +288,7 @@ object WicanApi {
     }
 
     private const val TOO_LONG = "reply over $MAX_REPLY_CHARS characters"
+    private const val HEAD_TOO_LONG = "reply head over $MAX_HEAD_CHARS characters"
 
     /**
      * Query the device's `/check_status` endpoint.
@@ -290,7 +322,8 @@ object WicanApi {
                     }
 
                     val reader = BufferedReader(InputStreamReader(s.getInputStream()))
-                    val statusLine = reader.readLine() ?: return@withContext null
+                    val head = HeadReader(reader)
+                    val statusLine = head.readLine() ?: return@withContext null
                     val code = httpStatusCode(statusLine)
                     if (code != 200) {
                         logFailure("check_status", httpStatusText(code))
@@ -300,7 +333,7 @@ object WicanApi {
                     // Skip headers until blank line
                     var contentLength = -1
                     while (true) {
-                        val hdr = reader.readLine() ?: break
+                        val hdr = head.readLine() ?: break
                         if (hdr.isBlank()) break
                         if (hdr.startsWith("Content-Length:", ignoreCase = true))
                             contentLength = hdr.substringAfter(":").trim().toIntOrNull() ?: -1
@@ -324,6 +357,9 @@ object WicanApi {
 
                     DeviceStatus.fromJson(JSONObject(body))
                 }
+            } catch (e: ReplyHeadTooLongException) {
+                logFailure("check_status", HEAD_TOO_LONG)   // fixed text: R8 renames the app's own class names
+                null
             } catch (e: Exception) {
                 logFailure("check_status", e.javaClass.simpleName)
                 null
@@ -359,11 +395,14 @@ object WicanApi {
                     }
 
                     val reader = BufferedReader(InputStreamReader(s.getInputStream()))
-                    val statusLine = reader.readLine() ?: return@withContext false
+                    val statusLine = HeadReader(reader).readLine() ?: return@withContext false
                     val code = httpStatusCode(statusLine)
                     if (code != 200) logFailure("reboot", httpStatusText(code))
                     code == 200
                 }
+            } catch (e: ReplyHeadTooLongException) {
+                logFailure("reboot", HEAD_TOO_LONG)
+                false
             } catch (e: Exception) {
                 logFailure("reboot", e.javaClass.simpleName)
                 false
@@ -372,7 +411,7 @@ object WicanApi {
 
     /**
      * The one log line for a failed adapter request (#370): [what] is the HTTP status code's three digits, an
-     * exception's class name or the fixed over-limit text, never other text the adapter sent. No throwable: its
+     * exception's class name or one of the fixed over-limit texts (body, head), never other text the adapter sent. No throwable: its
      * message can repeat the reply.
      */
     private fun logFailure(request: String, what: String) =
