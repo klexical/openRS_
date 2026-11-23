@@ -69,9 +69,15 @@ class TpmsIdPollTest {
         override val stockFirmwareLabel = "scripted"
     }
 
-    private fun bcm(answerFrom: List<Int>) = Bus { bus, frame ->
+    /** The BCM's positive reply to its first ordinary poll (BCM_QUERIES.first(), SOC): the BCM answering at all. */
+    private val socReply = line(0x72E, bytes(0x04, 0x62, 0x40, 0x28, 0x50, 0, 0, 0))
+
+    /** Answers the sensor-ID reads per [answerFrom] and the SOC poll from [answersFromMs] of virtual time on. */
+    private fun TestScope.bcm(answerFrom: List<Int>, answersFromMs: Long = 0L) = Bus { bus, frame ->
+        if (testScheduler.currentTime < answersFromMs) return@Bus
         val i = reads.indexOf(frame)
         if (i >= 0 && bus.writes.count { it == frame } >= answerFrom[i]) bus.rx(listOf(idReply(i)))
+        if (frame == ObdConstants.BCM_QUERIES.first()) bus.rx(listOf(socReply))
     }
 
     private class Link(val bus: Bus, var state: VehicleState)
@@ -174,7 +180,28 @@ class TpmsIdPollTest {
         assertEquals("then mapped again: no more reads", listOf(2, 2, 2, 2), reads.indices.map { l.bus.sends(it) })
     }
 
+    @Test fun `while the BCM answers nothing no re-read is spent, and the reads resume once it answers`() = runTest {
+        // A degraded start longer than the ten reads would last at one per cycle (#513): nothing from the BCM for 12 cycles
+        val silentMs = ObdConstants.BCM_INITIAL_DELAY_MS + 12 * cycleMs
+        val l = link(bcm(answerFrom = listOf(1, 1, 1, 1), answersFromMs = silentMs))
+        advanceTimeBy(silentMs)
+        assertEquals("only the first cycle's reads while the BCM is silent", listOf(1, 1, 1, 1),
+            reads.indices.map { l.bus.sends(it) })
+        advanceTimeBy(3 * cycleMs)
+        assertEquals("every position mapped once the BCM answers", listOf(true, true, true, true), mapped(l.state))
+        assertTrue("within the bound", reads.indices.all { l.bus.sends(it) <= ObdConstants.TPMS_ID_MAX_SENDS })
+    }
+
     // ── TpmsIdReads, the rule alone ──────────────────────────────────────────
+
+    @Test fun `with no BCM frame since a position's last read, its re-read waits`() {
+        val r = TpmsIdReads()
+        assertEquals(reads, r.due(VehicleState()))
+        assertEquals("nothing heard: no re-read", emptyList<String>(), r.due(VehicleState()))
+        r.bcmAnswered()
+        assertEquals("heard: every unmapped position once", reads, r.due(VehicleState()))
+        assertEquals("nothing heard since: none", emptyList<String>(), r.due(VehicleState()))
+    }
 
     @Test fun `the first cycle reads every position even when the state already holds IDs`() {
         val held = VehicleState(tpmsSensorIdLF = ids[0], tpmsSensorIdRF = ids[1], tpmsSensorIdRR = ids[2], tpmsSensorIdLR = ids[3])
@@ -191,6 +218,7 @@ class TpmsIdPollTest {
         reads.indices.forEach { i ->
             val r = TpmsIdReads()
             r.due(VehicleState())
+            r.bcmAnswered()
             assertEquals("position $i set", reads - reads[i], r.due(one[i]))
         }
         // The DIDs behind that order (the decoder's own mapping: 0x280F LF, 0x2810 RF, 0x2811 RR, 0x2812 LR)
