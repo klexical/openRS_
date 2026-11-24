@@ -31,9 +31,12 @@ class LiveTelemetry(
     private val wallClock: () -> Long = System::currentTimeMillis,
     private val thermal: Thermal = Thermal.NONE,
 ) {
-    /** Thermal readiness hears the two reset events it acts on; it keeps its own warm-up history otherwise. */
+    /**
+     * Thermal readiness hears the two reset events it acts on. It also starts over by itself whenever the link goes
+     * down (`ThermalReadinessEngine.evaluate`, while `isConnected` is false), so a reconnect after a drop starts it again.
+     */
     interface Thermal {
-        /** A new connection began (readiness keeps its warm-up history across a reconnect). */
+        /** A new connection began (the app does nothing here: readiness has already started over if the link dropped). */
         fun newConnection() {}
         /** The user reset live telemetry (DIAG): readiness starts over. */
         fun userReset() {}

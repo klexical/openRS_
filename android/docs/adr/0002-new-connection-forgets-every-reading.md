@@ -10,10 +10,11 @@ the old values until they were polled again, up to about 30 seconds. We decided 
 however it started (launch, Connect, RETRY, an automatic reconnect): each reading is "not received" until this
 connection reads it, and the running figures restart.
 
-Thermal readiness is the exception: it keeps its warm-up history across a reconnect, because its temperatures age out
-on their own (`VehicleState.tempAvail`) and a short drop should not send a warm car back to "warming". The user's reset
-(DIAG) forgets the same as a new connection, and also clears peaks and thermal readiness, without touching the
-connection.
+Thermal readiness keeps its own rule and is not reset by a new connection: it starts over whenever the link goes down
+(`ThermalReadinessEngine.evaluate` resets while `isConnected` is false, a rule older than this decision), so every
+reconnect after a drop, an automatic one included, starts it again; only a new connection begun while the link stays up
+(Connect tapped while linked) leaves its warm-up history in place. The user's reset (DIAG) forgets the same as a new
+connection, and also clears peaks and thermal readiness, without touching the connection.
 
 ## Consequences
 
