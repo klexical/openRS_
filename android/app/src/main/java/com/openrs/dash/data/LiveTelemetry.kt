@@ -152,8 +152,8 @@ class LiveTelemetry(
      * A new connection began (every start path: launch, Connect, RETRY, an automatic start, and the same job's reconnect
      * after a drop). Every reading is "not received" until this connection reads it again, polled and CAN alike, and the
      * running figures restart (android/docs/adr/0002-new-connection-forgets-every-reading.md, #600). Kept: the link
-     * flags (the connection publishes them) and the peaks (only the user's reset clears those). Thermal readiness keeps
-     * its warm-up history.
+     * flags (the connection publishes them) and the peaks (only the user's reset clears those). Thermal readiness is not
+     * reset here: it starts over by itself whenever the link goes down (see [Thermal]).
      */
     fun newConnection() {
         CanDecoder.resetSessionState()
