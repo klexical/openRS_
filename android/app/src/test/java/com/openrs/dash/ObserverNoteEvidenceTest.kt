@@ -54,7 +54,7 @@ class ObserverNoteEvidenceTest {
     private lateinit var db: DriveDatabase
     private val gps = FakeGps()
     private lateinit var rec: DriveRecorder
-    private val appVs get() = OpenRSDashApp.instance.vehicleState
+    private val appVs get() = OpenRSDashApp.instance.liveTelemetry
     private val dao get() = db.driveDao()
 
     @Before fun setUp() {
@@ -65,11 +65,11 @@ class ObserverNoteEvidenceTest {
         // thread, and a teardown that reaches db.close() meanwhile deadlocks: close() holds Room's close lock and waits
         // for the open helper's lock; the open holds that lock and, in onOpen, waits for the close lock.
         db.openHelper.writableDatabase
-        rec = DriveRecorder(app, appVs, WeatherRepository(""), db, db.driveDao(), { _, _ -> null }, gps, { })
+        rec = DriveRecorder(app, appVs.readings, WeatherRepository(""), db, db.driveDao(), { _, _ -> null }, gps, { })
         DiagnosticLogger.sessionStart("test", 0, prefs = null)
     }
 
-    @After fun tearDown() { rec.cancel(); db.close(); appVs.value = VehicleState() }
+    @After fun tearDown() { rec.cancel(); db.close(); appVs.showForTest(VehicleState()) }
 
     private fun waitUntil(timeoutMs: Long = 5_000, cond: () -> Boolean): Boolean {
         val end = System.currentTimeMillis() + timeoutMs
@@ -78,7 +78,7 @@ class ObserverNoteEvidenceTest {
     }
 
     private fun start(fixes: Int): Long {
-        appVs.value = VehicleState(isConnected = true, speedKph = 62.0, rpm = 2_400.0)
+        appVs.showForTest(VehicleState(isConnected = true, speedKph = 62.0, rpm = 2_400.0))
         rec.startDrive()
         check(waitUntil { rec.driveState.value.let { it.isRecording && it.driveId > 0 } && gps.opened.get() > 0 }) { "drive did not start" }
         repeat(fixes) { i ->
@@ -154,7 +154,7 @@ class ObserverNoteEvidenceTest {
 
         Thread.sleep(120)                                                   // the driver types; the car moves on
         DiagnosticLogger.event("STATE", "something later")
-        appVs.value = appVs.value.copy(rpm = 5_100.0, speedKph = 99.0)
+        appVs.showForTest(appVs.readings.value.copy(rpm = 5_100.0, speedKph = 99.0))
         val n = rec.driveState.value.totalPointCount
         gps.current!!.trySend(Location("test").apply { latitude = 10.5; longitude = 20.0; time = System.currentTimeMillis() })
         check(waitUntil { rec.driveState.value.totalPointCount == n + 1 })

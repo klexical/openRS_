@@ -137,7 +137,7 @@ class SlcanFramingModeTest {
         val queue = ArrayDeque(listOf<SlcanTransport>(first, second))
         val state = MutableStateFlow(VehicleState(isConnected = true))
         val own = LinkOwnership()
-        val session = LinkSession(own, own.begin(), state, NoRecorder, onFrameCounted = {}, perfRunSink = { _: PerfRunEntity -> })
+        val session = LinkSession(own, own.begin(), com.openrs.dash.data.LiveTelemetry(state), NoRecorder, onFrameCounted = {}, perfRunSink = { _: PerfRunEntity -> })
         val conn = SlcanConnection(
             transportFactory = { queue.removeFirst() }, maxRetries = 2, rpmProvider = { 0.0 },
             ioDispatcher = StandardTestDispatcher(testScheduler), debugSink = {}, clock = { testScheduler.currentTime },

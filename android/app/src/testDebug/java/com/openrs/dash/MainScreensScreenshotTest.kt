@@ -133,7 +133,7 @@ class MainScreensScreenshotTest(private val fontScale: Float) {
     }
 
     @After fun tearDown() {
-        OpenRSDashApp.instance.vehicleState.value = VehicleState()
+        OpenRSDashApp.instance.liveTelemetry.showForTest(VehicleState())
         RuntimeEnvironment.setFontScale(1f)
         UserPrefsStore.resetForTest()
         RuntimeEnvironment.getApplication().getSharedPreferences("openrs_settings", 0).edit().clear().commit()
@@ -181,7 +181,7 @@ class MainScreensScreenshotTest(private val fontScale: Float) {
      */
     private fun shoot(name: String, vs: VehicleState, before: () -> Unit = {}, paged: Boolean = true,
                       content: @Composable () -> Unit) {
-        OpenRSDashApp.instance.vehicleState.value = vs
+        OpenRSDashApp.instance.liveTelemetry.showForTest(vs)
         ThermalReadinessSession.reset()
         ShadowChoreographer.setPaused(true)
         ShadowChoreographer.setFrameDelay(Duration.ofMillis(16))

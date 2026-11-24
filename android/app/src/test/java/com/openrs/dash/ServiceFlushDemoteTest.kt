@@ -89,7 +89,7 @@ class ServiceFlushDemoteTest {
     private val host = CountingHost()
     private lateinit var fg: ForegroundController
     private val gps = FakeGps()
-    private val appVs get() = OpenRSDashApp.instance.vehicleState
+    private val appVs get() = OpenRSDashApp.instance.liveTelemetry
 
     @Before fun setUp() {
         app = ApplicationProvider.getApplicationContext()
@@ -97,7 +97,7 @@ class ServiceFlushDemoteTest {
         db = Room.inMemoryDatabaseBuilder(app, DriveDatabase::class.java).allowMainThreadQueries().build()
         db.openHelper.writableDatabase      // open before any recorder (see ObserverNoteEvidenceTest)
         gated = GatedDao(db.driveDao())
-        rec = DriveRecorder(app, appVs, WeatherRepository(""), db, gated.dao, { _, _ -> null }, gps, { })
+        rec = DriveRecorder(app, appVs.readings, WeatherRepository(""), db, gated.dao, { _, _ -> null }, gps, { })
         CanDataService.recorderProvider = { rec }                      // #316 seam 5
         service = TestServices.create()
         fg = ForegroundController(host)
@@ -120,7 +120,7 @@ class ServiceFlushDemoteTest {
         return cond()
     }
     private fun recordPoints(n: Int): Long {
-        appVs.value = VehicleState(isConnected = true, speedKph = 50.0)
+        appVs.showForTest(VehicleState(isConnected = true, speedKph = 50.0))
         rec.startDrive()
         check(waitUntil { rec.driveState.value.let { it.isRecording && it.driveId > 0 } && gps.opened.get() > 0 })
         for (i in 0 until n) {

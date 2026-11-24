@@ -79,7 +79,7 @@ class SlcanHexAndParserEdgesTest {
         val state = MutableStateFlow(VehicleState(isConnected = true))
         init {
             val own = LinkOwnership()
-            val session = LinkSession(own, own.begin(), state, NoRecorder, onFrameCounted = {}, perfRunSink = { _: PerfRunEntity -> })
+            val session = LinkSession(own, own.begin(), com.openrs.dash.data.LiveTelemetry(state), NoRecorder, onFrameCounted = {}, perfRunSink = { _: PerfRunEntity -> })
             val transport = ReplayTransport(scope.backgroundScope, lines.mapIndexed { i, l -> ReplayRow(100L + i * stepMs, "RX", l) })
             val conn = SlcanConnection(
                 transportFactory = { factories++; transport }, maxRetries = 3, rpmProvider = { 0.0 },
@@ -546,7 +546,7 @@ class SlcanHexAndParserEdgesTest {
         fun notifyAt(atMs: Long, text: String, scope: TestScope) { scope.backgroundScope.launch { delay(atMs); core.onNotify(pro.notify, text.toByteArray()) } }
         init {
             val own = LinkOwnership()
-            val session = LinkSession(own, own.begin(), state, NoRecorder, onFrameCounted = {}, perfRunSink = { _: PerfRunEntity -> })
+            val session = LinkSession(own, own.begin(), com.openrs.dash.data.LiveTelemetry(state), NoRecorder, onFrameCounted = {}, perfRunSink = { _: PerfRunEntity -> })
             val gatt = FakeGatt(core, scope.backgroundScope, poll)
             val transport = object : SlcanTransport {
                 override suspend fun open() {

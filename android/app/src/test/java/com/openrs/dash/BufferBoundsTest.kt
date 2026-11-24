@@ -235,7 +235,7 @@ class BufferBoundsTest {
         val b = Ble()
         val state = MutableStateFlow(VehicleState(isConnected = true))
         val link = LinkOwnership()
-        val session = LinkSession(link, link.begin(), state, NoRecorder, onFrameCounted = {}, perfRunSink = { _: PerfRunEntity -> })
+        val session = LinkSession(link, link.begin(), com.openrs.dash.data.LiveTelemetry(state), NoRecorder, onFrameCounted = {}, perfRunSink = { _: PerfRunEntity -> })
         connect(b, onObd = { state.value = ObdMerge.merge(state.value, it) }) { (id, d) -> session.onCanFrame(id, d, 0.0) }
         b.notifyText(frame(0) + "\r"); runCurrent()
         b.notifyText(oil(195) + "0".repeat(300) + "\r"); runCurrent()

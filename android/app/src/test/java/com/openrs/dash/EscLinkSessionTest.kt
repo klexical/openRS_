@@ -35,7 +35,7 @@ class EscLinkSessionTest {
     private val state = MutableStateFlow(VehicleState(isConnected = true))
     private val own = LinkOwnership()
     private val gen = own.transition { own.begin() }
-    private val s = LinkSession(own, gen, state, Rec(), onFrameCounted = {}, perfRunSink = {})
+    private val s = LinkSession(own, gen, com.openrs.dash.data.LiveTelemetry(state), Rec(), onFrameCounted = {}, perfRunSink = {})
     private val stamp get() = state.value.fieldLastUpdateMs[EscCommand.STAMP_TAG]
     private fun f(raw: Int) = s.onCanFrame(0x1C0, byteArrayOf(0, (raw shl 4).toByte(), 0, 0, 0, 0, 0, 0), 0.0)
     @Before fun fresh() { DiagnosticLogger.sessionStart("test", 0, prefs = null); FuelEconomy.reset(); PerformanceTimer.resetSession(); CanDecoder.resetSessionState() }
@@ -57,7 +57,7 @@ class EscLinkSessionTest {
     @Test fun `held state after a reconnect - same value inside 1 s not stamped, changed value stamped`() {
         // startConnection keeps VehicleState: the 'previous' of a new link's first frame is the old link's value + stamps
         f(1); val a = stamp!!
-        val nextLink = LinkSession(own, gen, state, Rec(), onFrameCounted = {}, perfRunSink = {})
+        val nextLink = LinkSession(own, gen, com.openrs.dash.data.LiveTelemetry(state), Rec(), onFrameCounted = {}, perfRunSink = {})
         fun g(raw: Int) = nextLink.onCanFrame(0x1C0, byteArrayOf(0, (raw shl 4).toByte(), 0, 0, 0, 0, 0, 0), 0.0)
         Thread.sleep(20); g(1); assertEquals(a, stamp)
         Thread.sleep(20); g(0); assertTrue("$a -> $stamp", stamp!! > a)

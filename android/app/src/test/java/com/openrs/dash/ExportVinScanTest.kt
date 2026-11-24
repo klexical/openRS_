@@ -57,7 +57,7 @@ class ExportVinScanTest {
         com.openrs.dash.can.CanDecoder.resetSessionState()   // the first pages of a VIN decode to nothing: the path that kept their hex
         val own = LinkOwnership()
         val gen = own.transition { own.begin() }
-        val s = LinkSession(own, gen, state, Rec(), onFrameCounted = {}, perfRunSink = {})
+        val s = LinkSession(own, gen, com.openrs.dash.data.LiveTelemetry(state), Rec(), onFrameCounted = {}, perfRunSink = {})
         repeat(2) {
             s.onCanFrame(0x40A, page(0, VIN.substring(0, 6)), 0.0)
             s.onCanFrame(0x40A, page(1, VIN.substring(6, 12)), 0.0)
@@ -282,7 +282,7 @@ class ExportVinScanTest {
         DiagnosticLogger.sessionStart("test", 0, prefs = null, logDir = File(root, "diagnostics"))
         DiagnosticLogger.recordProbeSession("BCM", 0x726, 0x72E, listOf(DiagnosticLogger.ProbeResult(0xFD11, "FOUND", "7A " + spaced(VIN.substring(4, 8)) + " 7B")))
         val own = LinkOwnership(); val gen = own.transition { own.begin() }
-        val s = LinkSession(own, gen, state, Rec(), onFrameCounted = {}, perfRunSink = {})
+        val s = LinkSession(own, gen, com.openrs.dash.data.LiveTelemetry(state), Rec(), onFrameCounted = {}, perfRunSink = {})
         s.onCanFrame(0x40A, page(0, VIN.substring(0, 6)), 0.0); s.onCanFrame(0x40A, page(1, VIN.substring(6, 12)), 0.0); s.onCanFrame(0x40A, page(2, VIN.substring(12)), 0.0)
         DiagnosticExporter.export(ctx)
         val csv = zip("openrs_diag_").entries.single { it.key.startsWith("did_probe_") }.value
@@ -302,7 +302,7 @@ class ExportVinScanTest {
         for (prefix in listOf("did_probe_", "diagnostic_summary_", "diagnostic_detail_"))
             assertTrue(prefix, before.entries.single { it.key.startsWith(prefix) }.value.contains(run))
         val own = LinkOwnership(); val gen = own.transition { own.begin() }
-        val s = LinkSession(own, gen, state, Rec(), onFrameCounted = {}, perfRunSink = {})
+        val s = LinkSession(own, gen, com.openrs.dash.data.LiveTelemetry(state), Rec(), onFrameCounted = {}, perfRunSink = {})
         s.onCanFrame(0x40A, page(0, VIN.substring(0, 6)), 0.0); s.onCanFrame(0x40A, page(1, VIN.substring(6, 12)), 0.0); s.onCanFrame(0x40A, page(2, VIN.substring(12)), 0.0)
         File(root, "diagnostics").listFiles { x -> x.name.startsWith("openrs_diag_") }.orEmpty().forEach { it.delete() }   // zip() reads the one export
         DiagnosticExporter.export(ctx)

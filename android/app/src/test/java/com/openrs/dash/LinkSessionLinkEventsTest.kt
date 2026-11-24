@@ -25,7 +25,7 @@ class LinkSessionLinkEventsTest {
 
     private val own = LinkOwnership()
     private fun session(gen: Int, rec: Rec, hook: () -> Unit = {}) =
-        LinkSession(own, gen, MutableStateFlow(VehicleState()), rec, onFrameCounted = {}, perfRunSink = {}, afterOwnershipCheck = hook)
+        LinkSession(own, gen, com.openrs.dash.data.LiveTelemetry(MutableStateFlow(VehicleState())), rec, onFrameCounted = {}, perfRunSink = {}, afterOwnershipCheck = hook)
 
     @Test fun `the current job's events reach the recorder, the loss with its own moment`() {
         val rec = Rec()

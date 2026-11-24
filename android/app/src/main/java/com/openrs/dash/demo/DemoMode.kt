@@ -4,21 +4,14 @@ import android.os.SystemClock
 import com.openrs.dash.BuildConfig
 import com.openrs.dash.OpenRSDashApp
 import com.openrs.dash.can.BusyException
-import com.openrs.dash.can.CanDecoder
 import com.openrs.dash.can.FirmwareCommandSender
 import com.openrs.dash.can.driveModePending
-import com.openrs.dash.data.BoostSessionLog
 import com.openrs.dash.data.DriveMode
 import com.openrs.dash.data.DtcResult
 import com.openrs.dash.data.DtcScanResult
 import com.openrs.dash.data.DtcStatus
 import com.openrs.dash.data.EscStatus
-import com.openrs.dash.data.FuelEconomy
-import com.openrs.dash.data.KnockCapture
-import com.openrs.dash.data.KnockSessionLog
 import com.openrs.dash.data.ModuleScanStatus
-import com.openrs.dash.data.PerformanceTimer
-import com.openrs.dash.data.VehicleState
 import com.openrs.dash.diagnostics.DiagnosticLogger
 import com.openrs.dash.diagnostics.DtcDatabase
 import com.openrs.dash.diagnostics.DtcScanner
@@ -92,7 +85,6 @@ object DemoMode {
     private val simTimeMs = AtomicLong(0L)
     @Volatile private var pauseAtMs = -1L
     private var lastStampMs = 0L
-    private var lastKrCountedMs = 0L
 
     @Volatile private var simDriveMode = DriveMode.NORMAL
     @Volatile private var simEsc = EscStatus.ON
@@ -163,16 +155,10 @@ object DemoMode {
         modeJob?.cancel(); modeJob = null
         driveModePending.value = null
         simDtcs = dtcsFor(scenario)
-        OpenRSDashApp.instance.knockEventCount.value = 0
         OpenRSDashApp.instance.activeDtcCount.value = 0
         DiagnosticLogger.dtcScans.newSession()
-        KnockSessionLog.reset()
-        BoostSessionLog.reset()
-        com.openrs.dash.data.BoostSession.reset()
-        FuelEconomy.reset()
-        PerformanceTimer.resetSession()
         _status.update { it.copy(elapsedMs = 0L) }
-        OpenRSDashApp.instance.vehicleState.value = VehicleState(isConnected = true)
+        OpenRSDashApp.instance.liveTelemetry.demoReplay()   // readings + running figures from t = 0
         _sessionEpoch.update { it + 1 }
     }
 
@@ -180,17 +166,10 @@ object DemoMode {
     private fun clearSessionState() {
         driveModePending.value = null
         simDtcs = emptyList()
-        CanDecoder.resetSessionState()
-        OpenRSDashApp.instance.vehicleState.value = VehicleState()
-        OpenRSDashApp.instance.knockEventCount.value = 0
+        OpenRSDashApp.instance.liveTelemetry.demoExit()     // every simulated reading and running figure
         OpenRSDashApp.instance.activeDtcCount.value = 0
         OpenRSDashApp.instance.deviceStatus.value = null
         DiagnosticLogger.dtcScans.newSession()
-        KnockSessionLog.reset()
-        BoostSessionLog.reset()
-        com.openrs.dash.data.BoostSession.reset()
-        FuelEconomy.reset()
-        PerformanceTimer.resetSession()
     }
 
     // ── Tick loop ────────────────────────────────────────────────────────────
@@ -219,7 +198,7 @@ object DemoMode {
         val stamp = now - lastStampMs >= STAMP_MS
         if (stamp) lastStampMs = now
         val app = OpenRSDashApp.instance
-        app.vehicleState.update { cur ->
+        app.liveTelemetry.onSimulated { cur ->
             if (!isActive) cur
             else DemoSimulator.apply(cur, scenario, tMs, simDriveMode, simEsc, now, stamp)
         }
@@ -228,20 +207,7 @@ object DemoMode {
         if (paused || link == DemoLink.LOST || !isActive) return
 
         // Same side effects CanDataService runs for real frames — in-memory only, cleared on exit.
-        val vs = app.vehicleState.value
-        FuelEconomy.onUpdate(vs.fuelLevelPct, vs.speedKph)
-        val boost = com.openrs.dash.data.BoostSession.onState(vs, now)
-        PerformanceTimer.onSpeedUpdate(vs.speedKph, vs.rpm, boost)
-        if (stamp && link == DemoLink.LIVE) {
-            KnockSessionLog.onState(vs, now)
-            BoostSessionLog.onState(vs, now)
-            val krStamp = KnockCapture.KR_TAGS.maxOf { vs.fieldLastUpdateMs[it] ?: 0L }
-            if (krStamp > lastKrCountedMs) {
-                lastKrCountedMs = krStamp
-                val kr = maxOf(vs.ignCorrCyl1, vs.ignCorrCyl2, vs.ignCorrCyl3, vs.ignCorrCyl4)
-                if (kr > 1.0) app.knockEventCount.update { it + 1 }
-            }
-        }
+        app.liveTelemetry.feedSimulated(now, feedLogs = stamp && link == DemoLink.LIVE)
     }
 
     // ── Simulated vehicle commands ───────────────────────────────────────────

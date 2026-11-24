@@ -206,7 +206,7 @@ class ExportTpmsIdMaskTest {
     @Test fun `a sensor ID the app holds in its state is matched too, before any reply is logged`() {
         val state = MutableStateFlow(VehicleState(isConnected = true, tpmsSensorIdLF = IDS[0]))
         val own = LinkOwnership(); val gen = own.transition { own.begin() }
-        val s = LinkSession(own, gen, state, Rec(), onFrameCounted = {}, perfRunSink = {})
+        val s = LinkSession(own, gen, com.openrs.dash.data.LiveTelemetry(state), Rec(), onFrameCounted = {}, perfRunSink = {})
         s.onCanFrame(0x0F8, OTHER_0F8, 0.0)                                      // a decoded frame carries the state to the logger
         s.onCanFrame(0x3A2, idBytes(IDS[0]) + byteArrayOf(0x11, 0x22), 0.0)
         assertEquals(listOf("000000001122"), frames(exportNow().member("slcan_log_"), "3A2"))
@@ -267,7 +267,7 @@ class ExportTpmsIdMaskTest {
     private fun feed398() {
         val state = MutableStateFlow(VehicleState(isConnected = true))
         val own = LinkOwnership(); val gen = own.transition { own.begin() }
-        val s = LinkSession(own, gen, state, Rec(), onFrameCounted = {}, perfRunSink = {})
+        val s = LinkSession(own, gen, com.openrs.dash.data.LiveTelemetry(state), Rec(), onFrameCounted = {}, perfRunSink = {})
         repeat(3) { s.onCanFrame(0x398, FRAME_398, 0.0); s.onCanFrame(0x0F8, OTHER_0F8, 0.0) }
     }
 

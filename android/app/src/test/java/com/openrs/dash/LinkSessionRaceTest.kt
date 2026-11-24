@@ -49,7 +49,7 @@ class LinkSessionRaceTest {
 
     private fun session(gen: Int, rec: LinkSession.Recorder, frames: AtomicInteger, runs: MutableList<PerfRunEntity>,
                         hook: () -> Unit = {}) =
-        LinkSession(own, gen, state, rec, onFrameCounted = { frames.incrementAndGet() }, perfRunSink = { runs += it },
+        LinkSession(own, gen, com.openrs.dash.data.LiveTelemetry(state), rec, onFrameCounted = { frames.incrementAndGet() }, perfRunSink = { runs += it },
             afterOwnershipCheck = hook)
 
     /** Reconnect as CanDataService does: old job loses ownership, session state is reset, a new job begins. */

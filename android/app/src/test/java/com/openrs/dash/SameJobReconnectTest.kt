@@ -39,7 +39,7 @@ class SameJobReconnectTest {
         val id = rec.driveState.value.driveId
         val own = LinkOwnership()
         val running = VehicleState(isConnected = true, rpm = 2_000.0)
-        val s = LinkSession(own, own.begin(), h.vs, adapter(rec), onFrameCounted = {}, perfRunSink = {})
+        val s = LinkSession(own, own.begin(), com.openrs.dash.data.LiveTelemetry(h.vs), adapter(rec), onFrameCounted = {}, perfRunSink = {})
         s.onConnectionBack()
         s.rpmFrame()
         s.onVehicleState(running) { 0L }                               // the job's first connected state: the drive is kept
@@ -80,7 +80,7 @@ class SameJobReconnectTest {
         val rec = with(h) { recorder(autoRecord = true).recording() }
         val id = rec.driveState.value.driveId
         val own = LinkOwnership()
-        val s = LinkSession(own, own.begin(), h.vs, adapter(rec), onFrameCounted = {}, perfRunSink = {})
+        val s = LinkSession(own, own.begin(), com.openrs.dash.data.LiveTelemetry(h.vs), adapter(rec), onFrameCounted = {}, perfRunSink = {})
         droppedWithHeldRpm(s, rec)
         h.now += 60_000L                                                      // parked, engine off
         backWithHeldRpm(s)
@@ -95,7 +95,7 @@ class SameJobReconnectTest {
         val rec = with(h) { recorder(autoRecord = true).recording() }
         val old = rec.driveState.value.driveId
         val own = LinkOwnership()
-        val s = LinkSession(own, own.begin(), h.vs, adapter(rec), onFrameCounted = {}, perfRunSink = {})
+        val s = LinkSession(own, own.begin(), com.openrs.dash.data.LiveTelemetry(h.vs), adapter(rec), onFrameCounted = {}, perfRunSink = {})
         droppedWithHeldRpm(s, rec)
         h.now += 16 * 60_000L
         backWithHeldRpm(s)
@@ -114,17 +114,17 @@ class SameJobReconnectTest {
         val rec = with(h) { recorder(autoRecord = true).recording() }
         val old = rec.driveState.value.driveId
         val own = LinkOwnership()
-        val s1 = LinkSession(own, own.begin(), h.vs, adapter(rec), onFrameCounted = {}, perfRunSink = {})
+        val s1 = LinkSession(own, own.begin(), com.openrs.dash.data.LiveTelemetry(h.vs), adapter(rec), onFrameCounted = {}, perfRunSink = {})
         s1.onConnectionBack()
         s1.rpmFrame()
         s1.onVehicleState(VehicleState(isConnected = true, rpm = 2_000.0)) { 0L }
         val dropAt = h.now                                             // the old connection drops; its loss is held
         h.now += 16 * 60_000L                                          // the user taps RCN much later
-        val s2 = LinkSession(own, own.begin(), h.vs, adapter(rec), onFrameCounted = {}, perfRunSink = {})
+        val s2 = LinkSession(own, own.begin(), com.openrs.dash.data.LiveTelemetry(h.vs), adapter(rec), onFrameCounted = {}, perfRunSink = {})
         s2.onConnectionLost(atMs = dropAt)                             // the new attempts failed: the carried moment
         assertEquals("premise", DrivePhase.PAUSED to PauseReason.LINK, rec.driveState.value.phase to rec.driveState.value.pauseReason)
         h.now += 60_000L
-        val s3 = LinkSession(own, own.begin(), h.vs, adapter(rec), onFrameCounted = {}, perfRunSink = {})
+        val s3 = LinkSession(own, own.begin(), com.openrs.dash.data.LiveTelemetry(h.vs), adapter(rec), onFrameCounted = {}, perfRunSink = {})
         s3.onConnectionBack()                                          // a later connection is up and sees the engine running
         s3.rpmFrame()
         s3.onVehicleState(VehicleState(isConnected = true, rpm = 2_000.0)) { 0L }
