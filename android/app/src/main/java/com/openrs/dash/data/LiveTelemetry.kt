@@ -152,20 +152,23 @@ class LiveTelemetry(
      * A new connection began (every start path: launch, Connect, RETRY, an automatic start, and the same job's reconnect
      * after a drop). Every reading is "not received" until this connection reads it again, polled and CAN alike, and the
      * running figures restart (android/docs/adr/0002-new-connection-forgets-every-reading.md, #600). Kept: the link
-     * flags (the connection publishes them) and the peaks (only the user's reset clears those). Thermal readiness is not
-     * reset here: it starts over by itself whenever the link goes down (see [Thermal]).
+     * flags (the connection publishes them), the peaks (only the user's reset clears those), and the session knock log
+     * with the knock count (the owner's decision: a drop must not empty what the export and PERF show; only the user's
+     * reset and demo mode clear them). Thermal readiness is not reset here: it starts over by itself whenever the link
+     * goes down (see [Thermal]).
      */
     fun newConnection() {
         CanDecoder.resetSessionState()
         state.update { VehicleState(isConnected = it.isConnected, isReconnecting = it.isReconnecting, session = it.session) }
-        restartRunningFigures()
+        restartCalculators()
         thermal.newConnection()
     }
 
     /** The user's reset (DIAG): every reading, the running figures, peaks and thermal readiness; the link is untouched. */
     fun userReset() {
         CanDecoder.resetSessionState()
-        restartRunningFigures()
+        restartCalculators()
+        restartKnocks()
         state.update { VehicleState(isConnected = it.isConnected) }
         thermal.userReset()
     }
@@ -191,13 +194,18 @@ class LiveTelemetry(
         restartLogsAndCalculators()
     }
 
-    private fun restartRunningFigures() {
+    /** Every running figure but the knock record (fuel economy, performance timer, boost sweep and rule). */
+    private fun restartCalculators() {
         FuelEconomy.reset()
         PerformanceTimer.resetSession()
-        knocks.value = 0
-        KnockSessionLog.reset()
         BoostSessionLog.reset()
         BoostSession.reset()
+    }
+
+    /** The knock record: the session knock log and the header's knock count. */
+    private fun restartKnocks() {
+        knocks.value = 0
+        KnockSessionLog.reset()
     }
 
     private fun restartLogsAndCalculators() {

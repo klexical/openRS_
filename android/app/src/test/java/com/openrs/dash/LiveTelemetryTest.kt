@@ -4,6 +4,7 @@ import com.openrs.dash.can.CanDecoder
 import com.openrs.dash.data.BoostSession
 import com.openrs.dash.data.EscStatus
 import com.openrs.dash.data.FuelEconomy
+import com.openrs.dash.data.KnockSessionLog
 import com.openrs.dash.data.Lamps
 import com.openrs.dash.data.LaunchControl
 import com.openrs.dash.data.LiveTelemetry
@@ -33,7 +34,7 @@ class LiveTelemetryTest {
     private val lt = LiveTelemetry(wallClock = { now }, thermal = thermal)
 
     @Before fun freshFigures() {
-        FuelEconomy.reset(); PerformanceTimer.resetSession(); BoostSession.reset()
+        FuelEconomy.reset(); PerformanceTimer.resetSession(); BoostSession.reset(); KnockSessionLog.reset(nowMs = 0L)
     }
 
     /** A state "held from the previous link": readings of every kind, a peak, link up. */
@@ -52,24 +53,35 @@ class LiveTelemetryTest {
 
     // ── Reset events: one table ─────────────────────────────────────────────
 
-    @Test fun `a new connection forgets every reading, keeps peaks and the link, and restarts the figures`() {
+    @Test fun `a new connection forgets every reading, keeps peaks, the link and the knock log, and restarts the other figures`() {
         lt.showForTest(held())
         lt.onObdReply(krReply(2.0, now))
         assertEquals(1, lt.knockCount.value)
+        val knockEvents = KnockSessionLog.events.value
+        assertTrue("the KR reply was captured", knockEvents.isNotEmpty())
 
         lt.newConnection()
         // ADR 0002: every reading is "not received" until this connection reads it — polled ones included
         assertEquals(VehicleState(isConnected = true, session = held().session), lt.readings.value)
-        assertEquals("running figures restart", 0, lt.knockCount.value)
+        // The owner's decision (ADR 0002): the session knock log and the header's knock count survive a reconnect
+        assertEquals("knock count kept", 1, lt.knockCount.value)
+        assertEquals("session knock log kept", knockEvents, KnockSessionLog.events.value)
         assertEquals(listOf("newConnection"), thermalCalls)
+
+        // This connection's own KR reply adds to them
+        lt.onObdReply(krReply(2.0, now + 1_000))
+        assertEquals(2, lt.knockCount.value)
+        assertTrue(KnockSessionLog.events.value.size > knockEvents.size)
     }
 
     @Test fun `the user's reset forgets every reading, the figures, peaks and readiness, and keeps the link`() {
         lt.showForTest(held())
         lt.onObdReply(krReply(2.0, now))
+        assertTrue(KnockSessionLog.events.value.isNotEmpty())
         lt.userReset()
         assertEquals(VehicleState(isConnected = true), lt.readings.value)
         assertEquals(0, lt.knockCount.value)
+        assertTrue("the user's reset clears the knock log", KnockSessionLog.events.value.isEmpty())
         assertEquals(listOf("userReset"), thermalCalls)
     }
 
