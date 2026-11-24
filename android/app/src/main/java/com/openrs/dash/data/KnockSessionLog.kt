@@ -11,7 +11,7 @@ import kotlinx.coroutines.flow.asStateFlow
  *
  * Uses the same fresh-only rule as the recorder ([KnockCapture] + its own
  * [FreshnessGate]), so a KR reading is logged once per decode and never from before the
- * session started. Fed from `CanDataService.mergeObdState` OUTSIDE the state `update{}`.
+ * session started. Fed by `LiveTelemetry.onObdReply` OUTSIDE the state `update{}`.
  */
 object KnockSessionLog {
 

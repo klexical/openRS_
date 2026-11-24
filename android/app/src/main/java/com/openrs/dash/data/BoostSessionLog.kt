@@ -11,7 +11,7 @@ import kotlinx.coroutines.flow.asStateFlow
  * A sample is taken once per fresh `tipActualKpa` decode (own [FreshnessGate], so never a
  * held value and never from before the session). Target and WGDC ride along only if they
  * were themselves decoded within [PAIR_MAX_AGE_MS] — they are in the same fast PCM group,
- * so a stale one means its DID stopped answering. Fed from `CanDataService.mergeObdState`
+ * so a stale one means its DID stopped answering. Fed by `LiveTelemetry.onObdReply`
  * OUTSIDE the state `update{}`, reset with the knock session log.
  */
 object BoostSessionLog {
