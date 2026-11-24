@@ -87,8 +87,22 @@ internal class LinkSession(
      */
     fun onConnectionLost(atMs: Long) { link.deliver(gen) { recorder.onConnectionLost(atMs) } }
 
-    /** #316: this job's connection is up (CONNECTED published). Reaches the recorder only while this job owns the link. */
-    fun onConnectionBack() { link.deliver(gen) { engineReported = false; rpmSeen = false; recorder.onConnectionBack() } }
+    /** This job has published CONNECTED before: a later CONNECTED is the same job's reconnect after a drop. */
+    private var connectedBefore = false
+
+    /**
+     * #316: this job's connection is up (CONNECTED published). Reaches the recorder only while this job owns the link.
+     * A reconnect on the same job (SlcanConnection's own retry, which never passes beginConnection) is a new connection
+     * too: [telemetry] forgets the previous connection's readings (#600). The job's first connection was reset when it
+     * began. Its pollers wait seconds after CONNECTED before their first request (ObdConstants.BCM_INITIAL_DELAY_MS), so
+     * no reply of this connection is lost; CAN frames decoded before this runs arrive again within their broadcast period.
+     */
+    fun onConnectionBack() { link.deliver(gen) {
+        engineReported = false; rpmSeen = false
+        if (connectedBefore) telemetry.newConnection()
+        connectedBefore = true
+        recorder.onConnectionBack()
+    } }
 
     /**
      * Applies one frame (caller holds ownership); returns a finished perf run to persist, if any. Decoding and its

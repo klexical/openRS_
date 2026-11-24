@@ -146,44 +146,17 @@ class LiveTelemetry(
     // ── Reset events ─────────────────────────────────────────────────────────
 
     /**
-     * A new connection began (every start path: launch, Connect, RETRY, an automatic start). Readings that need this
-     * connection's own frame are forgotten, and the running figures restart.
+     * A new connection began (every start path: launch, Connect, RETRY, an automatic start, and the same job's reconnect
+     * after a drop). Every reading is "not received" until this connection reads it again, polled and CAN alike, and the
+     * running figures restart (android/docs/adr/0002-new-connection-forgets-every-reading.md, #600). Kept: the link
+     * flags (the connection publishes them) and the peaks (only the user's reset clears those). Thermal readiness keeps
+     * its warm-up history.
      */
     fun newConnection() {
         CanDecoder.resetSessionState()
-        state.update {
-            LaunchControl.clearedForNewConnection(it).copy(
-                // ESC is unknown until this connection's first 0x1C0 frame — a value held from an earlier link is not a reading
-                escStatus = EscStatus.UNKNOWN,
-                // SRS lamp (#199): unknown until this connection's first 0x040 frame. The IPC lamps are not reset here.
-                lamps = it.lamps.copy(srs = null),
-                // Engine state (0x360 byte 7, #328): not received until this connection's first 0x360 frame
-                engineState360 = -1,
-            ).let { s ->
-                // The car's speed is known only once this connection's 0x130 arrives: a parked drive drops GPS steps (#335)
-                s.copy(fieldLastUpdateMs = s.fieldLastUpdateMs - CanDecoder.SPEED_TAG)
-            }
-        }
+        state.update { VehicleState(isConnected = it.isConnected, isReconnecting = it.isReconnecting, session = it.session) }
         restartRunningFigures()
         thermal.newConnection()
-    }
-
-    /**
-     * RETRY's own blanking, before its new connection: OBD-polled fields go back to their sentinels so stale values from
-     * the previous connection don't persist for up to 30 s while new polls complete.
-     */
-    fun retryForgetPolled() {
-        state.update {
-            it.copy(
-                isConnected  = false, isReconnecting = false,
-                tirePressLF  = -1.0,  tirePressRF  = -1.0,
-                tirePressLR  = -1.0,  tirePressRR  = -1.0,
-                rduTempC     = -99.0, ptuTempC     = -99.0,
-                odometerKm   = -1L,
-                batterySoc   = -1.0,
-                batteryTempC = -99.0, cabinTempC   = -99.0,
-            )
-        }
     }
 
     /** The user's reset (DIAG): every reading, the running figures, peaks and thermal readiness; the link is untouched. */

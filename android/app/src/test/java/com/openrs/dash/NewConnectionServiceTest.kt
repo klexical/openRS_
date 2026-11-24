@@ -25,9 +25,9 @@ import org.robolectric.annotation.Config
 /**
  * Every start path of the real service tells Live telemetry "new connection" (android/docs/adr/0001): Connect, the
  * automatic start once the adapter answers on its Wi-Fi network (#324), and RETRY. What a new connection forgets is
- * Live telemetry's own rule (LiveTelemetryTest); this test checks that each path reaches it, with a held reading of each
- * kind the rule covers: ESC (#288), the SRS lamp but not the IPC lamps (#199), the speed stamp (#335), the 0x360 engine
- * state (#328) and launch control's flags and stamps (#289).
+ * Live telemetry's own rule (LiveTelemetryTest, ADR 0002: every reading); this test checks that each path reaches it, with
+ * held readings of several kinds: ESC (#288), the lamps (#199), the speed stamp (#335), the 0x360 engine state (#328),
+ * launch control's flags and stamps (#289), and polled and CAN temperatures, a tyre pressure and the odometer.
  *
  * A sentinel diagnostic session first: only a real connection start replaces it, so each case also proves a connection
  * really began (else the test would be vacuous).
@@ -60,6 +60,7 @@ class NewConnectionServiceTest {
         telemetry.showForTest(VehicleState(
             escStatus = EscStatus.PARTIAL, lamps = Lamps(mil = false, srs = true), engineState360 = 0xB2, speedKph = 0.0,
             launchControlActive = true, launchControlEngaged = true,
+            tirePressLF = 2.4, odometerKm = 12_345L, oilTempC = 95.0, coolantTempC = 90.0,
             fieldLastUpdateMs = mapOf(CanDecoder.SPEED_TAG to now, LaunchControl.TAG_420 to now, LaunchControl.TAG_225 to now),
         ))
         DiagnosticLogger.sessionStart("before", 0, transport = "before", prefs = null)
@@ -70,12 +71,17 @@ class NewConnectionServiceTest {
         val vs = telemetry.readings.value
         assertEquals("$path: ESC", EscStatus.UNKNOWN, vs.escStatus)
         assertNull("$path: SRS lamp", vs.lamps.srs)
-        assertEquals("$path: the IPC lamps are not reset", false, vs.lamps.mil)
+        assertNull("$path: the IPC lamps are unknown too (ADR 0002: every reading)", vs.lamps.mil)
         assertNull("$path: speed stamp", vs.fieldLastUpdateMs[CanDecoder.SPEED_TAG])
         assertEquals("$path: engine state", -1, vs.engineState360)
         assertFalse("$path: LC flag", vs.launchControlActive)
         assertFalse("$path: LC engaged", vs.launchControlEngaged)
         assertTrue("$path: LC stamps", LaunchControl.CAN_TAGS.none { it in vs.fieldLastUpdateMs })
+        // ADR 0002: polled and CAN readings alike are "not received" until this connection reads them
+        assertEquals("$path: tyre pressure", -1.0, vs.tirePressLF, 0.0)
+        assertEquals("$path: odometer", -1L, vs.odometerKm)
+        assertEquals("$path: oil temp", -99.0, vs.oilTempC, 0.0)
+        assertEquals("$path: coolant temp", -99.0, vs.coolantTempC, 0.0)
     }
 
     @Test fun `Connect is a new connection`() {

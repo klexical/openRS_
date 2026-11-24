@@ -116,7 +116,7 @@ data/
   LiveTelemetry.kt        — Live telemetry (GLOSSARY.md; android/docs/adr/0001): the only writer of the live readings and the
                             only feeder / resetter of the running figures (LiveTelemetryWriterGuardTest). Feeds: a decoded CAN
                             frame (returns a finished perf run; the service saves it), an OBD reply (+ the drive's GPS fix),
-                            demo ticks. Resets: newConnection / retryForgetPolled / userReset / resetPeaks / demoReplay / demoExit.
+                            demo ticks. Resets: newConnection (every reading, #600) / userReset / resetPeaks / demoReplay / demoExit.
                             No Room, GPS or recorder; wall clock passed in; tells ThermalReadinessSession through Thermal
   FuelEconomy.kt          — Real-time fuel economy: 60s rolling window, instant/avg, distance-to-empty
   FuelUsed.kt             — Fuel used from the gauge (#336): a figure only after a drop of 4 steps (0.4 % each); a start on

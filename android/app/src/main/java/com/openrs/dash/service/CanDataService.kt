@@ -1085,9 +1085,8 @@ class CanDataService : Service() {
         // Old job, its session record and diagnostic session end before the new ones begin
         val rec = recNow()
         teardownJob(LinkPhase.OFF, LinkStopReason.USER_RETRY, rec)
-        // L-6 fix: OBD-polled fields back to their sentinels so stale values from the previous session don't persist for
-        // up to 30 s while new polls complete
-        OpenRSDashApp.instance.liveTelemetry.retryForgetPolled()
+        // The new connection below forgets every reading (LiveTelemetry.newConnection, #600); until it starts the link is down
+        OpenRSDashApp.instance.liveTelemetry.setLink(connected = false, reconnecting = false)
         // Transport down (or no foreground allowed): nothing started, so release instead of keeping a stale notification
         if (!beginConnection(heldDropAtMs = heldDrop, origin = "retry")) {
             // #316: nothing started, so this RCN closed the connection: a "connection lost", as every closure by the service

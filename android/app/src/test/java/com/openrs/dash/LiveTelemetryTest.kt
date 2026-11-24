@@ -19,7 +19,7 @@ import org.junit.Test
 
 /**
  * Live telemetry through its own interface (android/docs/adr/0001-live-telemetry-single-writer.md): the reset events
- * (new connection, RETRY's polled blanking, user reset, peaks, demo replay / exit) and the feeds (a decoded CAN frame, an
+ * (new connection, user reset, peaks, demo replay / exit) and the feeds (a decoded CAN frame, an
  * OBD reply, the knock count, a finished performance run). Plain JVM, wall clock passed in.
  */
 class LiveTelemetryTest {
@@ -52,32 +52,16 @@ class LiveTelemetryTest {
 
     // ── Reset events: one table ─────────────────────────────────────────────
 
-    @Test fun `a new connection forgets the readings that need this connection's own frame and restarts the figures`() {
+    @Test fun `a new connection forgets every reading, keeps peaks and the link, and restarts the figures`() {
         lt.showForTest(held())
         lt.onObdReply(krReply(2.0, now))
         assertEquals(1, lt.knockCount.value)
 
         lt.newConnection()
-        val vs = lt.readings.value
-        assertEquals(EscStatus.UNKNOWN, vs.escStatus)
-        assertNull("SRS lamp unknown until this connection's 0x040", vs.lamps.srs)
-        assertEquals("the IPC lamps are not part of this reset", false, vs.lamps.mil)
-        assertEquals(-1, vs.engineState360)
-        assertFalse(vs.launchControlActive); assertFalse(vs.launchControlEngaged)
-        assertNull(vs.fieldLastUpdateMs[CanDecoder.SPEED_TAG])
-        assertNull(vs.fieldLastUpdateMs[LaunchControl.TAG_420]); assertNull(vs.fieldLastUpdateMs[LaunchControl.TAG_225])
+        // ADR 0002: every reading is "not received" until this connection reads it — polled ones included
+        assertEquals(VehicleState(isConnected = true, session = held().session), lt.readings.value)
         assertEquals("running figures restart", 0, lt.knockCount.value)
         assertEquals(listOf("newConnection"), thermalCalls)
-    }
-
-    @Test fun `RETRY's own blanking returns the polled readings to their sentinels and drops the link flags`() {
-        lt.showForTest(held())
-        lt.retryForgetPolled()
-        val vs = lt.readings.value
-        assertFalse(vs.isConnected); assertFalse(vs.isReconnecting)
-        listOf(vs.tirePressLF, vs.tirePressRF, vs.tirePressLR, vs.tirePressRR, vs.batterySoc).forEach { assertEquals(-1.0, it, 0.0) }
-        listOf(vs.rduTempC, vs.ptuTempC, vs.batteryTempC, vs.cabinTempC).forEach { assertEquals(-99.0, it, 0.0) }
-        assertEquals(-1L, vs.odometerKm)
     }
 
     @Test fun `the user's reset forgets every reading, the figures, peaks and readiness, and keeps the link`() {
