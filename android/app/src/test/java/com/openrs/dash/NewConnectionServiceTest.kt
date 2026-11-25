@@ -54,9 +54,14 @@ class NewConnectionServiceTest {
         CanDataService.probeOverride = null
     }
 
-    /** What the previous link left behind. */
+    /** What the previous link left behind: readings of each kind, and one knock in the session knock log and count. */
     private fun holdPreviousLink() {
         val now = System.currentTimeMillis()
+        com.openrs.dash.data.KnockSessionLog.reset(nowMs = 0L)
+        telemetry.showForTest(VehicleState(ignCorrCyl1 = 2.0).markFresh("ignCorrCyl1", now = now))
+        telemetry.onObdReply(telemetry.readings.value)
+        assertEquals("a knock held from the previous link", 1, telemetry.knockCount.value)
+        assertTrue(com.openrs.dash.data.KnockSessionLog.events.value.isNotEmpty())
         telemetry.showForTest(VehicleState(
             escStatus = EscStatus.PARTIAL, lamps = Lamps(mil = false, srs = true), engineState360 = 0xB2, speedKph = 0.0,
             launchControlActive = true, launchControlEngaged = true,
@@ -84,11 +89,27 @@ class NewConnectionServiceTest {
         assertEquals("$path: coolant temp", -99.0, vs.coolantTempC, 0.0)
     }
 
+    /**
+     * The knock record (the owner's decision, ADR 0002): a start the user asked for (Connect, RETRY) begins it fresh; an
+     * automatic one, which follows a drop or a launch, keeps it, so a drop does not empty what the export and PERF show.
+     */
+    private fun assertKnockRecord(path: String, kept: Boolean) {
+        val events = com.openrs.dash.data.KnockSessionLog.events.value
+        if (kept) {
+            assertEquals("$path: knock count kept", 1, telemetry.knockCount.value)
+            assertTrue("$path: session knock log kept", events.isNotEmpty())
+        } else {
+            assertEquals("$path: knock count starts fresh", 0, telemetry.knockCount.value)
+            assertTrue("$path: session knock log starts fresh", events.isEmpty())
+        }
+    }
+
     @Test fun `Connect is a new connection`() {
         val service = TestServices.create()
         holdPreviousLink()
         service.startConnection()
         assertNewConnection("Connect")
+        assertKnockRecord("Connect", kept = false)
         service.stopConnection(LinkStopReason.USER_DISCONNECT)
     }
 
@@ -98,6 +119,7 @@ class NewConnectionServiceTest {
         val service = TestServices.create()                 // onCreate: the transport is up, so the automatic start runs
         assertTrue("an automatic start began", until { DiagnosticLogger.sessionTransport == "TCP SLCAN (MeatPi Pro)" })
         assertNewConnection("automatic start")
+        assertKnockRecord("automatic start", kept = true)
         service.stopConnection(LinkStopReason.USER_DISCONNECT)
     }
 
@@ -107,6 +129,7 @@ class NewConnectionServiceTest {
         holdPreviousLink()
         service.reconnect()
         assertNewConnection("RETRY")
+        assertKnockRecord("RETRY", kept = false)
         service.stopConnection(LinkStopReason.USER_DISCONNECT)
     }
 

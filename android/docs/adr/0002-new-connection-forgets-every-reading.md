@@ -10,9 +10,10 @@ the old values until they were polled again, up to about 30 seconds. We decided 
 however it started (launch, Connect, RETRY, an automatic reconnect): each reading is "not received" until this
 connection reads it, and the running figures restart.
 
-The session knock log and the header's knock count are the exception among the running figures: they survive a new
-connection (the owner's decision), because a short drop must not empty the knock record that the diagnostic export
-(`drive_knock_session_*.csv`) and PERF's session scope show. Only the user's reset and demo mode clear them.
+The session knock log and the header's knock count are the exception among the running figures (the owner's decision):
+they survive a connection the app starts by itself (an automatic start, the same job's reconnect after a drop), because
+a short drop must not empty the knock record that the diagnostic export (`drive_knock_session_*.csv`) and PERF's session
+scope show. A connection the user starts (Connect, RETRY) begins them fresh, as do the user's reset and demo mode.
 
 Thermal readiness keeps its own rule and is not reset by a new connection: it starts over whenever the link goes down
 (`ThermalReadinessEngine.evaluate` resets while `isConnected` is false, a rule older than this decision), so every

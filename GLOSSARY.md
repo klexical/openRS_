@@ -103,11 +103,12 @@ _Avoid_: Capture mode, debug mode, slow polling
 
 **Live telemetry**:
 What the app currently knows about the car on the current connection: the latest readings, and the running figures
-worked out from them (fuel economy, knock count, boost sweep, performance timer, thermal readiness). Every new connection
-starts it again, however the connection began: each reading is "not received" until that connection reads it, and the
-running figures restart, except the session knock log and knock count, which carry on; thermal readiness starts over
-whenever the link goes down, not at the new connection itself. The user's reset does the same and also clears peaks, the
-knock log and count, and thermal readiness, without touching the connection. In demo mode it holds simulated readings.
+worked out from them (fuel economy, knock count, boost sweep, performance timer, thermal readiness). Every new
+connection starts it again, however the connection began: each reading is "not received" until that connection reads it,
+and the running figures restart, except the session knock log and knock count, which carry on across a connection the
+app starts by itself and start fresh when the user starts one (Connect, RETRY); thermal readiness starts over whenever
+the link goes down, not at the new connection itself. The user's reset does the same and also clears peaks, the knock
+log and count, and thermal readiness, without touching the connection. In demo mode it holds simulated readings.
 _Avoid_: Session (a session is the diagnostic log), telemetry session, live session
 
 ### Exports

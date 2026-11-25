@@ -152,17 +152,21 @@ class LiveTelemetry(
      * A new connection began (every start path: launch, Connect, RETRY, an automatic start, and the same job's reconnect
      * after a drop). Every reading is "not received" until this connection reads it again, polled and CAN alike, and the
      * running figures restart (android/docs/adr/0002-new-connection-forgets-every-reading.md, #600). Kept: the link
-     * flags (the connection publishes them), the peaks (only the user's reset clears those), and the session knock log
-     * with the knock count (the owner's decision: a drop must not empty what the export and PERF show; only the user's
-     * reset and demo mode clear them). Thermal readiness is not reset here: it starts over by itself whenever the link
-     * goes down (see [Thermal]).
+     * flags (the connection publishes them) and the peaks (only the user's reset clears those). The session knock log
+     * and knock count follow [start] (the owner's decision): an [Start.AUTOMATIC] start keeps them, so a drop does not
+     * empty what the export and PERF show; a start the user asked for ([Start.USER]) begins them fresh. Thermal
+     * readiness is not reset here: it starts over by itself whenever the link goes down (see [Thermal]).
      */
-    fun newConnection() {
+    fun newConnection(start: Start) {
         CanDecoder.resetSessionState()
         state.update { VehicleState(isConnected = it.isConnected, isReconnecting = it.isReconnecting, session = it.session) }
         restartCalculators()
+        if (start == Start.USER) restartKnocks()
         thermal.newConnection()
     }
+
+    /** Who began a new connection: the user's Connect or RETRY, or the app (an automatic start, the same job's reconnect after a drop). */
+    enum class Start { USER, AUTOMATIC }
 
     /** The user's reset (DIAG): every reading, the running figures, peaks and thermal readiness; the link is untouched. */
     fun userReset() {

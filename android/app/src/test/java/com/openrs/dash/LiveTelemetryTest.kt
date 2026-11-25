@@ -60,10 +60,10 @@ class LiveTelemetryTest {
         val knockEvents = KnockSessionLog.events.value
         assertTrue("the KR reply was captured", knockEvents.isNotEmpty())
 
-        lt.newConnection()
+        lt.newConnection(LiveTelemetry.Start.AUTOMATIC)
         // ADR 0002: every reading is "not received" until this connection reads it — polled ones included
         assertEquals(VehicleState(isConnected = true, session = held().session), lt.readings.value)
-        // The owner's decision (ADR 0002): the session knock log and the header's knock count survive a reconnect
+        // The owner's decision (ADR 0002): the session knock log and the header's knock count survive an automatic reconnect
         assertEquals("knock count kept", 1, lt.knockCount.value)
         assertEquals("session knock log kept", knockEvents, KnockSessionLog.events.value)
         assertEquals(listOf("newConnection"), thermalCalls)
@@ -72,6 +72,16 @@ class LiveTelemetryTest {
         lt.onObdReply(krReply(2.0, now + 1_000))
         assertEquals(2, lt.knockCount.value)
         assertTrue(KnockSessionLog.events.value.size > knockEvents.size)
+    }
+
+    @Test fun `a connection the user starts (Connect, RETRY) begins the knock log and count fresh`() {
+        lt.showForTest(held())
+        lt.onObdReply(krReply(2.0, now))
+        assertTrue(KnockSessionLog.events.value.isNotEmpty())
+        lt.newConnection(LiveTelemetry.Start.USER)
+        assertEquals(VehicleState(isConnected = true, session = held().session), lt.readings.value)
+        assertEquals(0, lt.knockCount.value)
+        assertTrue(KnockSessionLog.events.value.isEmpty())
     }
 
     @Test fun `the user's reset forgets every reading, the figures, peaks and readiness, and keeps the link`() {

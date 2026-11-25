@@ -99,7 +99,7 @@ internal class LinkSession(
      */
     fun onConnectionBack() { link.deliver(gen) {
         engineReported = false; rpmSeen = false
-        if (connectedBefore) telemetry.newConnection()
+        if (connectedBefore) telemetry.newConnection(LiveTelemetry.Start.AUTOMATIC)   // a drop: the knock record is kept
         connectedBefore = true
         recorder.onConnectionBack()
     } }
