@@ -205,8 +205,8 @@ class FirmwareHttpBodyLimitTest {
         val ok = """{"ok":true}"""
         val r = setDriveMode(headOf(WicanApi.MAX_HEAD_CHARS + 1, "Content-Length: ${ok.length}"), ok)
         val e = r.exceptionOrNull()
-        assertTrue("$r", e is WicanApi.ReplyHeadTooLongException)
-        assertEquals(headTooLong, e?.message)
+        assertTrue("$r", e is com.openrs.dash.can.FirmwareCommandException)   // fixed text, #604
+        assertEquals(com.openrs.dash.can.FirmwareFailure.UNEXPECTED_REPLY, e?.message)
         assertTrue(setDriveMode(headOf(WicanApi.MAX_HEAD_CHARS, "Content-Length: ${ok.length}"), ok).isSuccess)
     }
 

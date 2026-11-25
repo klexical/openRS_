@@ -17,6 +17,34 @@ import java.net.Socket
 class BusyException : RuntimeException("Drive mode change already in progress")
 
 /**
+ * The text of a failed firmware command (#604): fixed wording chosen by the app, shown in the drive mode dock and written
+ * to the DM_CMD / ESC_CMD events and the export. Never the adapter's reply, its status line's reason text or another
+ * exception's message — at most the HTTP status code's three digits ([http]).
+ */
+object FirmwareFailure {
+    const val NOT_CONNECTED = "Not connected to the adapter"
+    const val NOT_REACHED = "Couldn't reach the adapter"
+    const val NO_REPLY = "The adapter didn't answer"
+    const val NOT_SENT = "The command couldn't be sent"
+    const val MAYBE_NOT_DELIVERED = "The adapter may not have received the command"
+    const val ADAPTER_ERROR = "The adapter reported an error"
+    const val UNEXPECTED_REPLY = "Unexpected reply from the adapter"
+    const val FAILED = "The command failed"
+
+    /** A reply whose status was not 200: the code's three digits only, or [UNEXPECTED_REPLY] for a line with none. */
+    fun http(code: Int?): String = code?.let { "The adapter refused the command (HTTP $it)" } ?: UNEXPECTED_REPLY
+
+    /** The drive mode dock's line for a failed request. */
+    fun driveModeFailed(reason: String): String = "Mode change failed — $reason"
+
+    /** The text for a failed command's exception: a [FirmwareCommandException]'s fixed text, any other [FAILED]. */
+    fun textOf(e: Throwable?): String = (e as? FirmwareCommandException)?.message ?: FAILED
+}
+
+/** A failed firmware command. [message] is always one of the [FirmwareFailure] texts (#604). */
+class FirmwareCommandException(text: String) : RuntimeException(text)
+
+/**
  * Transport-agnostic interface for sending firmware commands.
  *
  * Two implementations:
@@ -48,7 +76,7 @@ class BleFirmwareApi(private val connection: SlcanConnection) : FirmwareCommandS
 
     private suspend fun sendCommand(key: String, value: String): Result<Unit> {
         val transport = connection.transport
-            ?: return Result.failure(RuntimeException("Not connected"))
+            ?: return Result.failure(FirmwareCommandException(FirmwareFailure.NOT_CONNECTED))
 
         // Drain any stale responses
         while (connection.commandResponseChannel.tryReceive().isSuccess) { }
@@ -59,22 +87,21 @@ class BleFirmwareApi(private val connection: SlcanConnection) : FirmwareCommandS
         try {
             transport.writeLine("AT+FRS=$key,$value\r")
         } catch (e: java.io.IOException) {
-            return Result.failure(e)
+            return Result.failure(FirmwareCommandException(
+                if (WriteFailure.isNotSent(e)) FirmwareFailure.NOT_SENT else FirmwareFailure.MAYBE_NOT_DELIVERED))
         }
 
         // Wait up to 5 seconds for response
         val response = withTimeoutOrNull(5_000L) {
             connection.commandResponseChannel.receive()
-        } ?: return Result.failure(RuntimeException("AT+FRS timeout"))
+        } ?: return Result.failure(FirmwareCommandException(FirmwareFailure.NO_REPLY))
 
+        // The firmware's own text after ERROR, and any other reply, stay out of the failure (#604)
         return when {
             response.contains("OK") -> Result.success(Unit)
             response.contains("BUSY") -> Result.failure(BusyException())
-            response.contains("ERROR") -> {
-                val msg = response.substringAfter("ERROR,").trimEnd('\r')
-                Result.failure(RuntimeException(msg))
-            }
-            else -> Result.failure(RuntimeException("Unexpected: $response"))
+            response.contains("ERROR") -> Result.failure(FirmwareCommandException(FirmwareFailure.ADAPTER_ERROR))
+            else -> Result.failure(FirmwareCommandException(FirmwareFailure.UNEXPECTED_REPLY))
         }
     }
 }
@@ -110,6 +137,14 @@ object FirmwareApi {
     // Busy is reported like a drive-mode request (#125); OK is request acceptance only — callers confirm on CAN
     suspend fun setEscMode(ctx: Context, host: String, mode: Int): Result<Unit> =
         post(ctx, host, """{"token":"openrs","escMode":$mode}""", checkBusy = true)
+
+    /** A failed request's fixed text by the exception's kind; its message is never read (#604). */
+    private fun failureText(e: Exception): String = when (e) {
+        is java.net.SocketTimeoutException -> FirmwareFailure.NO_REPLY
+        is WicanApi.ReplyHeadTooLongException -> FirmwareFailure.UNEXPECTED_REPLY
+        is java.io.IOException -> FirmwareFailure.NOT_REACHED
+        else -> FirmwareFailure.FAILED
+    }
 
     internal fun findWifiNetwork(ctx: Context): Network? {
         val cm = ctx.getSystemService(ConnectivityManager::class.java)
@@ -155,9 +190,10 @@ object FirmwareApi {
 
                 val reader = BufferedReader(InputStreamReader(s.getInputStream()))
                 val head = WicanApi.HeadReader(reader)   // status line + headers: at most MAX_HEAD_CHARS, else it throws
-                val statusLine = head.readLine() ?: ""
-                if (!statusLine.contains("200"))
-                    return@withContext Result.failure(RuntimeException(statusLine))
+                // Only the status code is read: the reason text after it is the adapter's (#604)
+                val code = WicanApi.httpStatusCode(head.readLine() ?: "")
+                if (code != 200)
+                    return@withContext Result.failure(FirmwareCommandException(FirmwareFailure.http(code)))
 
                 // Read response body to check for busy status.
                 // Parse Content-Length from headers and read that many characters (the reader counts characters,
@@ -183,7 +219,8 @@ object FirmwareApi {
                 Result.success(Unit)
             }
         } catch (e: Exception) {
-            Result.failure(e)
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            Result.failure(FirmwareCommandException(failureText(e)))
         }
     }
 }

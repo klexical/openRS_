@@ -2,7 +2,6 @@ package com.openrs.dash.can
 
 import com.openrs.dash.data.EscStatus
 import com.openrs.dash.data.VehicleState
-import com.openrs.dash.diagnostics.LogText
 import kotlinx.coroutines.delay
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -86,7 +85,7 @@ object EscCommand {
             val requestedAt = clock()
             val result = api.setEscMode(mode)
             result.exceptionOrNull()?.let { e ->
-                return if (e is BusyException) Outcome.Busy else Outcome.Failed(e.message ?: "no reply")
+                return if (e is BusyException) Outcome.Busy else Outcome.Failed(FirmwareFailure.textOf(e))   // fixed text (#604)
             }
             val window = windowMs(from, target)
             while (true) {
@@ -112,7 +111,7 @@ object EscCommand {
         is Outcome.NotConfirmed -> "NOT CONFIRMED — adapter accepted ${target.label}, two 0x1C0 frames after the request didn't report it " +
             "in ${o.waitedMs} ms (car reports ${o.observed.label})"
         Outcome.Busy -> "BUSY — an ESC change is already in progress"
-        is Outcome.Failed -> "FAILED — ${LogText.sanitize(o.message)}"
+        is Outcome.Failed -> "FAILED — ${o.message}"
         Outcome.ConnectionLost -> "CONNECTION LOST or replaced while waiting for the car"
         Outcome.Unsupported -> "UNSUPPORTED — no openRS_ firmware command path"
         Outcome.Refused -> "REFUSED — ESC state unknown (no 0x1C0 report, or unrecognized): nothing sent"
