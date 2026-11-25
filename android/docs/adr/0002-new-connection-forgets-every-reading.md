@@ -19,7 +19,7 @@ Thermal readiness keeps its own rule and is not reset by a new connection: it st
 (`ThermalReadinessEngine.evaluate` resets while `isConnected` is false, a rule older than this decision), so every
 reconnect after a drop, an automatic one included, starts it again; only a new connection begun while the link stays up
 (Connect tapped while linked) leaves its warm-up history in place. The user's reset (DIAG) forgets the same as a new
-connection, and also clears peaks, the knock log and count, and thermal readiness, without touching the connection.
+connection, and also clears the session peaks, the knock log and count, and thermal readiness, without touching the connection.
 
 ## Consequences
 
