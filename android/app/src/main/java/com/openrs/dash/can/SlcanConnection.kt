@@ -738,6 +738,12 @@ class SlcanConnection(
                         }
 
                         framing.accepted()
+                        // Well-formed but shorter than its ID's decoder reads: a spliced line whose leftover length
+                        // matched its DLC digit (#551). Refused and counted with the refused frame lines
+                        if (CanDecoder.shorterThanDecoderNeeds(frame.first, frame.second.size)) {
+                            DiagnosticLogger.countRefusedShortFrame()
+                            continue
+                        }
                         gaps.onFrame(monotonicClock()).let { if (it.isNotEmpty()) logGaps(it) }
 
                         // The prober's own positive reply: response ID + 62 + DID (#250); anything else takes the normal path

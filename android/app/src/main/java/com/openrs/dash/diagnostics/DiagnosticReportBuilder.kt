@@ -675,7 +675,8 @@ internal fun linkIntegrityText(li: DiagnosticLogger.LinkIntegrity, nrcUnattribut
         li.writes[DiagnosticLogger.WRITE_NOT_SENT], li.writes[DiagnosticLogger.WRITE_UNCERTAIN],
         li.writes[DiagnosticLogger.WRITE_OTHER_FAILURE]) + "  (Mode 22 polls + DID probes)",
     "  Framing  : ${when (li.framingTimestamped) { null -> "not decided"; true -> "timestamped (Z1 set on the adapter)"; false -> "plain" }}" +
-        " · ${li.refusedFrameLines} frame line(s) refused (${li.refusedOtherShape} of the other shape)",
+        " · ${li.refusedFrameLines} frame line(s) refused (${li.refusedOtherShape} of the other shape, " +
+        "${li.refusedShortFrames} shorter than its ID's decoder needs)",
     "  Replies  : ${li.refusedReplies} Mode 22 reply(ies) refused for their length / PCI",
     "  NRC      : ${li.nrcAttributed} attributed · $nrcUnattributed unattributed (PCM)",
     "  Buffers  : ${li.overlongLines} overlong line(s) refused · ${li.linesDropped} line(s) dropped (BLE queue full) · " +
@@ -895,6 +896,7 @@ internal fun linkIntegrityJson(li: DiagnosticLogger.LinkIntegrity, nrcUnattribut
     put("framing", when (li.framingTimestamped) { null -> "undecided"; true -> "timestamped"; false -> "plain" })
     put("refusedFrameLines", li.refusedFrameLines)
     put("refusedOtherShape", li.refusedOtherShape)
+    put("refusedShortFrames", li.refusedShortFrames)               // #551, additive
     put("refusedReplies", li.refusedReplies)
     put("nrcAttributed", li.nrcAttributed)
     put("nrcUnattributed", nrcUnattributed)
