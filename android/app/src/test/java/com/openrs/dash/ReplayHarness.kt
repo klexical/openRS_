@@ -68,7 +68,7 @@ internal class ReplayRun(
     val state = MutableStateFlow(VehicleState(isConnected = true))
     val transport = ReplayTransport(scope.backgroundScope, rows)
     private val link = LinkOwnership()
-    private val session = LinkSession(link, link.begin(), state, NoRecorder, onFrameCounted = {}, perfRunSink = { _: PerfRunEntity -> })
+    private val session = LinkSession(link, link.begin(), com.openrs.dash.data.LiveTelemetry(state), NoRecorder, onFrameCounted = {}, perfRunSink = { _: PerfRunEntity -> })
     val connection = SlcanConnection(
         transportFactory = { transport }, maxRetries = 1, rpmProvider = { rpm }, mapPoll = mapPoll,
         ioDispatcher = StandardTestDispatcher(scope.testScheduler), debugSink = {}, clock = { wallClock(scope.testScheduler.currentTime) },

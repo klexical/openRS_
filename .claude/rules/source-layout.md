@@ -7,7 +7,7 @@ paths:
 All source under `android/app/src/main/java/com/openrs/dash/`:
 
 ```
-OpenRSDashApp.kt          — App singleton: vehicleState: MutableStateFlow<VehicleState>,
+OpenRSDashApp.kt          — App singleton: liveTelemetry (the only writer) + its read-only views vehicleState / knockEventCount,
                             debugLines, isOpenRsFirmware, firmwareVersionLabel, driveDb, driveRecorder, driveState
 can/
   CanDecoder.kt           — 22 passive HS-CAN decoders. decode(id,data,state)→VehicleState?
@@ -113,6 +113,11 @@ data/
   DtcResult.kt            — module, code, description, status (ACTIVE/PENDING/PERMANENT/UNKNOWN)
   DtcModuleSpec.kt        — name, requestId, responseId for DTC scan targets
   ForscanCatalog.kt       — Lazy loader for assets/pids/forscan_modules.json
+  LiveTelemetry.kt        — Live telemetry (GLOSSARY.md; android/docs/adr/0001): the only writer of the live readings and the
+                            only feeder / resetter of the running figures (LiveTelemetryWriterGuardTest). Feeds: a decoded CAN
+                            frame (returns a finished perf run; the service saves it), an OBD reply (+ the drive's GPS fix),
+                            demo ticks. Resets: newConnection / retryForgetPolled / userReset / resetPeaks / demoReplay / demoExit.
+                            No Room, GPS or recorder; wall clock passed in; tells ThermalReadinessSession through Thermal
   FuelEconomy.kt          — Real-time fuel economy: 60s rolling window, instant/avg, distance-to-empty
   FuelUsed.kt             — Fuel used from the gauge (#336): a figure only after a drop of 4 steps (0.4 % each); a start on
                             the 100 % clamp moves to the first reading below it; the drive's figure and DRIVE's cell share it
@@ -121,12 +126,12 @@ data/
   BoostSweepStats.kt      — Target-vs-actual boost delta analytics; rc.5 uses fresh-only samples;
                             rc.6 adds avgWgdcAtPeak (≥ 90 % of peak TIP) + byGear (gauge PSI vs std atm)
   BoostSessionLog.kt      — Live 90 s window of fresh TIP decodes (+ target/WGDC if ≤ 2.5 s old) for the POWER
-                            BOOST SWEEP chart; fed from CanDataService.mergeObdState, reset with KnockSessionLog
+                            BOOST SWEEP chart; fed and reset only by LiveTelemetry
   FreshnessGate.kt        — Per-drive gate: polled values recorded once per decode, never pre-drive
   KnockCapture.kt         — Per-cylinder knock events from fresh KR (retard POSITIVE, ≥ 0.1°)
   KnockStats.kt           — Shared knock aggregation: half-open buckets, per-cylinder split
   KnockSessionLog.kt      — In-memory session knock capture (no recording needed), cap 2,000, own FreshnessGate +
-                            PullTracker; fed from CanDataService.mergeObdState, reset with knockEventCount
+                            PullTracker; fed and reset only by LiveTelemetry
   PullTracker.kt          — Streaming WOT pull detector (≥80 % throttle, ≥2,500 RPM, ≥2 s; ≤2 s gaps) + knock attribution
   FuelTrim.kt             — FuelTrimAccumulator (fresh + warm STFT/LTFT avg) + FuelTrimDrift alert (±8 %)
   DriveThermalRecord.kt   — Drive thermal record (thermalPeaksJson v2): DriveThermalTracker (recorder, profile segments),

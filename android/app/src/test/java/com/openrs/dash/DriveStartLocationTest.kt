@@ -61,7 +61,7 @@ class DriveStartLocationTest {
     private lateinit var db: DriveDatabase
     private val gps = FakeGps()
     private lateinit var rec: DriveRecorder
-    private val appVs get() = OpenRSDashApp.instance.vehicleState
+    private val appVs get() = OpenRSDashApp.instance.liveTelemetry
     private val dao get() = db.driveDao()
 
     @Before fun setUp() {
@@ -69,14 +69,14 @@ class DriveStartLocationTest {
         shadowOf(app).grantPermissions(Manifest.permission.ACCESS_FINE_LOCATION)
         db = Room.inMemoryDatabaseBuilder(app, DriveDatabase::class.java).allowMainThreadQueries().build()
         db.openHelper.writableDatabase      // open before any recorder (see ObserverNoteEvidenceTest)
-        rec = DriveRecorder(app, appVs, WeatherRepository(""), db, db.driveDao(), { _, _ -> null }, gps, { })
+        rec = DriveRecorder(app, appVs.readings, WeatherRepository(""), db, db.driveDao(), { _, _ -> null }, gps, { })
         DiagnosticLogger.sessionStart("test", 0, prefs = null)
         KnockSessionLog.reset(0L)
     }
 
     @After fun tearDown() {
         TestServices.destroyAll()
-        rec.cancel(); db.close(); appVs.value = VehicleState(); KnockSessionLog.reset()
+        rec.cancel(); db.close(); appVs.showForTest(VehicleState()); KnockSessionLog.reset()
     }
 
     private fun waitUntil(timeoutMs: Long = 5_000, cond: () -> Boolean): Boolean {
@@ -90,7 +90,7 @@ class DriveStartLocationTest {
     private fun startDrive(): Long {
         val before = rec.driveState.value.driveId
         val opened = gps.opened.get()
-        appVs.value = VehicleState(isConnected = true, speedKph = 62.0, rpm = 2_400.0)
+        appVs.showForTest(VehicleState(isConnected = true, speedKph = 62.0, rpm = 2_400.0))
         rec.startDrive()
         check(waitUntil { rec.driveState.value.let { it.isRecording && it.driveId > 0 && it.driveId != before } && gps.opened.get() > opened }) {
             "drive did not start"
@@ -280,7 +280,7 @@ class DriveStartLocationTest {
     private fun knockThroughService(svc: CanDataService) {
         Thread.sleep(2)                                                      // a new stamp: the gate takes each decode once
         val now = System.currentTimeMillis()
-        val reply = appVs.value.copy(ignCorrCyl1 = 2.5, fieldLastUpdateMs = appVs.value.fieldLastUpdateMs + ("ignCorrCyl1" to now))
+        val reply = appVs.readings.value.copy(ignCorrCyl1 = 2.5, fieldLastUpdateMs = appVs.readings.value.fieldLastUpdateMs + ("ignCorrCyl1" to now))
         val m = CanDataService::class.java.getDeclaredMethod("mergeObdState", VehicleState::class.java).apply { isAccessible = true }
         m.invoke(svc, reply)
     }

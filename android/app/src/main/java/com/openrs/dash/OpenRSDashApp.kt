@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import com.openrs.dash.data.DriveDatabase
 import com.openrs.dash.data.DriveState
+import com.openrs.dash.data.LiveTelemetry
 import com.openrs.dash.data.VehicleState
 import com.openrs.dash.service.DriveRecorder
 import com.openrs.dash.service.WeatherRepository
@@ -34,8 +35,16 @@ class OpenRSDashApp : Application() {
         val instanceOrNull: OpenRSDashApp? get() = if (::instance.isInitialized) instance else null
     }
 
-    /** Global vehicle state. Updated by CanDataService, observed by all UIs. */
-    val vehicleState = MutableStateFlow(VehicleState())
+    /**
+     * Live telemetry (GLOSSARY.md): the only writer of the live readings and the running figures
+     * (android/docs/adr/0001-live-telemetry-single-writer.md). Thermal readiness hears its user reset.
+     */
+    val liveTelemetry = LiveTelemetry(thermal = object : LiveTelemetry.Thermal {
+        override fun userReset() = com.openrs.dash.ui.ThermalReadinessSession.reset()
+    })
+
+    /** The live readings, read-only. Written only by [liveTelemetry]; observed by all UIs. */
+    val vehicleState: StateFlow<VehicleState> = liveTelemetry.readings
 
     /** Real adapter link phase, owned by CanDataService (connecting / connected / reconnecting / failed / off). */
     val linkPhase = MutableStateFlow(com.openrs.dash.can.LinkPhase.OFF)
@@ -60,9 +69,9 @@ class OpenRSDashApp : Application() {
      *  GARAGE-tab badge in BottomNavBar. */
     val activeDtcCount = MutableStateFlow(0)
 
-    /** Session knock event counter — incremented when any cylinder KR < -1.0 deg.
-     *  Reset on each new adapter connection. Feeds ENGINE MANAGEMENT badge on PERF tab. */
-    val knockEventCount = MutableStateFlow(0)
+    /** Knock events this connection, read-only (counted by [liveTelemetry]: fresh KR > 1° retard on any cylinder).
+     *  Feeds the ENGINE MANAGEMENT badge on the PERF tab. */
+    val knockEventCount: StateFlow<Int> = liveTelemetry.knockCount
 
     /** True once openRS_ firmware is confirmed via WebSocket probe on connect. */
     val isOpenRsFirmware = MutableStateFlow(false)
@@ -82,7 +91,7 @@ class OpenRSDashApp : Application() {
     val driveRecorder: DriveRecorder by lazy {
         DriveRecorder(
             context          = this,
-            vehicleStateFlow = vehicleState.asStateFlow(),
+            vehicleStateFlow = vehicleState,
             weatherRepo      = WeatherRepository(BuildConfig.OPENWEATHER_API_KEY),
             db               = driveDb
         )

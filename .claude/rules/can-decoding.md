@@ -36,7 +36,7 @@ paths:
 - **ESC names and raw 3 (#288)** — `EscStatus` labels are Ford's Normal / Sport / Off (2018 RS supplement); the raw 0x1C0
   value → name mapping is CAN-mapped only (RS_HS.dbc VAL_ 448, #125). Raw 3 is `UNRECOGNIZED` (reads "Unknown"; diagnostics
   "unrecognized (raw 3)"; the name "Launch" rests only on the community DBC); `UNKNOWN` is the default until this connection's
-  first 0x1C0 frame (CanDataService resets it at connection start). Never show "Launch" for ESC, never infer launch control
+  first 0x1C0 frame (`LiveTelemetry.newConnection` resets it). Never show "Launch" for ESC, never infer launch control
   from ESC, and never map an unknown state to a firmware escMode (`firmwareMode` is null for both).
 - **0x360 engine state is byte 7, not byte 0 (#328)** — #106 mapped byte 7's names (the DBC's `engine_status`, 56|8) onto
   byte 0. DIAG's ENGINE reads `engineState360` (byte 7; one car's captures): Off (0x02), Running (top bit set), any other value raw and

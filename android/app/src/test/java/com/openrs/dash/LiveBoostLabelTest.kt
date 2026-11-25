@@ -50,7 +50,7 @@ class LiveBoostLabelTest {
         CanDecoder.resetSessionState(); FuelEconomy.reset(); PerformanceTimer.resetSession()
         DiagnosticLogger.sessionStart("test", 0, prefs = null)
         BoostSession.reset(); BoostSession.log = {}
-        link = LinkSession(own, own.begin(), state, NoRecorder(), onFrameCounted = {}, perfRunSink = { _: PerfRunEntity -> })
+        link = LinkSession(own, own.begin(), com.openrs.dash.data.LiveTelemetry(state), NoRecorder(), onFrameCounted = {}, perfRunSink = { _: PerfRunEntity -> })
     }
 
     @After fun clean() { BoostSession.reset(); BoostSession.log = {} }

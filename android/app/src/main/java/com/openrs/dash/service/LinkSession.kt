@@ -1,18 +1,15 @@
 package com.openrs.dash.service
 
 import com.openrs.dash.can.CanDecoder
-import com.openrs.dash.data.FuelEconomy
+import com.openrs.dash.data.LiveTelemetry
 import com.openrs.dash.data.PerfRunEntity
-import com.openrs.dash.data.PerformanceTimer
 import com.openrs.dash.data.VehicleState
 import com.openrs.dash.demo.DemoMode
 import com.openrs.dash.diagnostics.DiagnosticLogger
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.update
 
 /**
- * The work one connection job ([gen]) does with live data (#212): raw CAN frames into VehicleState + the derived
- * calculations fed from them (fuel economy, performance timer, session frame count, frame logging), and auto-record's
+ * The work one connection job ([gen]) does with live data (#212): raw CAN frames decoded and logged, then handed to
+ * [LiveTelemetry] (which writes the readings and feeds the running figures), the session frame count, and auto-record's
  * start / resume / finalize decision. [CanDataService] calls it from the job's collectors; it holds no Android types,
  * so the production callers are unit-tested against stop / reconnect interleavings.
  *
@@ -24,7 +21,8 @@ import kotlinx.coroutines.flow.update
 internal class LinkSession(
     private val link: LinkOwnership,
     val gen: Int,
-    private val state: MutableStateFlow<VehicleState>,
+    /** Receives each decoded frame (the only writer of the live readings). */
+    private val telemetry: LiveTelemetry,
     private val recorder: Recorder,
     /** Called once per frame applied to this session (the session record's frame count). */
     private val onFrameCounted: () -> Unit,
@@ -92,77 +90,49 @@ internal class LinkSession(
     /** #316: this job's connection is up (CONNECTED published). Reaches the recorder only while this job owns the link. */
     fun onConnectionBack() { link.deliver(gen) { engineReported = false; rpmSeen = false; recorder.onConnectionBack() } }
 
-    /** Applies one frame (caller holds ownership); returns a finished perf run to persist, if any. */
+    /**
+     * Applies one frame (caller holds ownership); returns a finished perf run to persist, if any. Decoding and its
+     * diagnostic frame log stay here, in the connection's frame path; [telemetry] receives the decoded change
+     * (android/docs/adr/0001-live-telemetry-single-writer.md).
+     */
     private fun processCanFrame(canId: Int, data: ByteArray, fps: Double): PerfRunEntity? {
         if (DemoMode.isActive) return null   // late frame after demo took over
         onFrameCounted()
-        // Side effects (FuelEconomy, PerformanceTimer, knock counter) must run
-        // OUTSIDE the update{} lambda — MutableStateFlow.update uses a CAS retry
-        // loop, so anything inside the lambda can execute more than once on
-        // contention with concurrent OBD merges.
-        var newState: VehicleState? = null
-        var decodedHere = false                     // set inside the CAS lambda: idempotent across retries
-        state.update { current ->
+        val outcome = telemetry.onCanFrame(canId, fps) { current ->
             val decoded = CanDecoder.decode(canId, data, current)
-            decodedHere = decoded != null
-            if (decoded === current) {
-                // Recognized frame, nothing changed (0x040, 0x300, rejected 0x1A4): log it as
-                // known and skip peaks/fps copy + emit (#189/#192). Checked before stamping,
-                // which would otherwise make a new copy.
-                val (desc, issue) = CanDecoder.describeUnchanged(canId, data)
-                DiagnosticLogger.logFrame(canId, data, current, desc, issue)
-                return@update current
-            }
-            // #194 — stamp CAN-sourced fields (unchanged reports ≤1/s per ID, see stampFresh) so THERMAL availability works
-            val updated = decoded?.let { CanDecoder.stampFresh(canId, current, it, System.currentTimeMillis()) }
-            if (updated != null) {
-                val desc  = CanDecoder.describeDecoded(canId, updated, data)
-                val issue = CanDecoder.validateDecoded(canId, updated)
-                DiagnosticLogger.logFrame(canId, data, updated, desc, issue)
-                val withPeaks = updated.withPeaksUpdated().copy(framesPerSecond = fps)
-                newState = withPeaks
-                withPeaks
-            } else {
-                DiagnosticLogger.logUnknownFrame(canId, data)
-                current
+            when {
+                decoded === current -> {
+                    // Recognized frame, nothing changed (0x040, 0x300, rejected 0x1A4): log it as known and skip
+                    // peaks/fps copy + emit (#189/#192). Checked before stamping, which would otherwise make a new copy.
+                    val (desc, issue) = CanDecoder.describeUnchanged(canId, data)
+                    DiagnosticLogger.logFrame(canId, data, current, desc, issue)
+                    current
+                }
+                decoded != null -> {
+                    // #194 — stamp CAN-sourced fields (unchanged reports ≤1/s per ID, see stampFresh) so THERMAL availability works
+                    val updated = CanDecoder.stampFresh(canId, current, decoded, System.currentTimeMillis())
+                    DiagnosticLogger.logFrame(canId, data, updated, CanDecoder.describeDecoded(canId, updated, data),
+                        CanDecoder.validateDecoded(canId, updated))
+                    updated
+                }
+                else -> { DiagnosticLogger.logUnknownFrame(canId, data); null }
             }
         }
 
         // #316 F5: this connection's own RPM — a 0x090 that decoded (a short one is refused by the decoder and is no reading)
-        if (canId == CanDecoder.ID_ENGINE_RPM && decodedHere) rpmSeen = true
+        if (canId == CanDecoder.ID_ENGINE_RPM && outcome.decoded) rpmSeen = true
 
-        // Side effects — guaranteed to run exactly once after CAS succeeds
-        val wp = newState ?: return null
-
-        // Boost rule session state (#207): source evidence + per-source peaks — outside the CAS lambda
-        val boost = com.openrs.dash.data.BoostSession.onState(wp, System.currentTimeMillis())
-
-        // Feed fuel economy calculator
-        if (canId == 0x130 || canId == 0x380) {
-            FuelEconomy.onUpdate(wp.fuelLevelPct, wp.speedKph)
-        }
-
-        // Feed performance timer (speed from 0x130, ~100 Hz)
-        if (canId == 0x130) {
-            val (sixty, hundred) = PerformanceTimer.onSpeedUpdate(wp.speedKph, wp.rpm, boost)
-            if (hundred || (sixty && PerformanceTimer.state.value == PerformanceTimer.State.FINISHED)) {
-                // Persist completed run to Room
-                val result = PerformanceTimer.result.value
-                if (result != null) {
-                    return PerfRunEntity(
-                        driveId = recorder.activeDriveId,
-                        timestamp = System.currentTimeMillis(),
-                        zeroTo60Ms = result.zeroTo60Ms,
-                        zeroTo100Ms = result.zeroTo100Ms,
-                        peakRpm = result.peakRpm,
-                        peakBoostPsi = 0.0,   // not stored: perf_runs has no source column (#207); exports omit it
-                        launchRpm = result.launchRpm,
-                        ambientTempC = wp.ambientTempC
-                    )
-                }
-            }
-        }
-        return null
+        val run = outcome.finishedRun ?: return null
+        return PerfRunEntity(
+            driveId = recorder.activeDriveId,
+            timestamp = run.atMs,
+            zeroTo60Ms = run.result.zeroTo60Ms,
+            zeroTo100Ms = run.result.zeroTo100Ms,
+            peakRpm = run.result.peakRpm,
+            peakBoostPsi = 0.0,   // not stored: perf_runs has no source column (#207); exports omit it
+            launchRpm = run.result.launchRpm,
+            ambientTempC = run.ambientTempC,
+        )
     }
 
     companion object {

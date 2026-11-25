@@ -88,7 +88,7 @@ class DriveLinkEndFlushTest {
     }
 
     private val dao get() = db.driveDao()
-    private val appVs get() = OpenRSDashApp.instance.vehicleState
+    private val appVs get() = OpenRSDashApp.instance.liveTelemetry
 
     private fun autoRecord(on: Boolean) {
         app.getSharedPreferences("openrs_settings", Context.MODE_PRIVATE).edit()
@@ -97,7 +97,7 @@ class DriveLinkEndFlushTest {
     }
 
     private fun recorder(d: DriveDao) =
-        DriveRecorder(app, appVs, WeatherRepository(""), db, d, { _, _ -> null }, gps, { })
+        DriveRecorder(app, appVs.readings, WeatherRepository(""), db, d, { _, _ -> null }, gps, { })
             .also { recorders += it }
 
     /** The service takes its recorder from the provider (#316 seam 5); hand it [rec] before the service is created. */
@@ -122,12 +122,12 @@ class DriveLinkEndFlushTest {
 
     /** Starts a drive on [rec] and records [n] points through its loop; returns the drive id. */
     private fun recordDrive(rec: DriveRecorder, n: Int): Long {
-        appVs.value = telemetry(0)
+        appVs.showForTest(telemetry(0))
         rec.startDrive()
         check(waitUntil { rec.driveState.value.let { it.isRecording && it.driveId > 0 } && gps.opened.get() > 0 }) { "drive did not start" }
         for (i in 0 until n) {
             val before = rec.driveState.value.totalPointCount
-            appVs.value = telemetry(i)
+            appVs.showForTest(telemetry(i))
             gps.current!!.trySend(fix(i))
             check(waitUntil { rec.driveState.value.totalPointCount == before + 1 }) { "point $i not recorded" }
             Thread.sleep(2)                                    // distinct timestamps

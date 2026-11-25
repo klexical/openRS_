@@ -59,7 +59,7 @@ paths:
   running. Never back them with one "latest job" slot: a later drive's quicker save, or a start cancelled by STOP, would
   hide an earlier save that is still writing, and the foreground service could be released under it
 - **A parked drive adds no distance (#335)** — the loop drops a GPS step only while `DriveState.carParked` (fresh 0x130
-  speed of 0); a car with no known speed keeps its steps (`ParkedDistanceTest`, `SpeedStampConnectResetTest`)
+  speed of 0); a car with no known speed keeps its steps (`ParkedDistanceTest`, `NewConnectionServiceTest`)
 - **A drive's summary is built one way (#321)** — STOP, the export of a drive still recording and a drive closed at the
   next launch all go through `DriveRecorder.summarize`. The aggression score covers every stored point of the drive (the
   owner, on #321). Never read the run's accumulators from outside the loop while it runs: an export reads the loop's

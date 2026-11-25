@@ -52,7 +52,7 @@ class BoostSourceTest {
         CanDecoder.resetSessionState(); FuelEconomy.reset(); PerformanceTimer.resetSession()
         DiagnosticLogger.sessionStart("test", 0, prefs = null)
         BoostSession.reset(); events.clear(); BoostSession.log = { events += it }
-        link = LinkSession(own, own.begin(), state, NoRecorder(), onFrameCounted = {}, perfRunSink = { _: PerfRunEntity -> })
+        link = LinkSession(own, own.begin(), com.openrs.dash.data.LiveTelemetry(state), NoRecorder(), onFrameCounted = {}, perfRunSink = { _: PerfRunEntity -> })
     }
 
     /** BoostSession is process-wide: leave it clean for the next test class (LinkSession tests feed it too). */

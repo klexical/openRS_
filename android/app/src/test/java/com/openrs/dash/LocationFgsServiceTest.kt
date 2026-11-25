@@ -56,7 +56,7 @@ class LocationFgsServiceTest {
     private lateinit var rec: DriveRecorder
     private lateinit var service: CanDataService
     private val gps = FakeGps()
-    private val appVs get() = OpenRSDashApp.instance.vehicleState
+    private val appVs get() = OpenRSDashApp.instance.liveTelemetry
 
     @Before fun setUp() {
         app = ApplicationProvider.getApplicationContext()
@@ -66,7 +66,7 @@ class LocationFgsServiceTest {
         DiagnosticLogger.sessionStart("test", 0, prefs = null)
         db = Room.inMemoryDatabaseBuilder(app, DriveDatabase::class.java).allowMainThreadQueries().build()
         db.openHelper.writableDatabase      // open before any recorder (see ObserverNoteEvidenceTest)
-        rec = DriveRecorder(app, appVs, WeatherRepository(""), db, db.driveDao(), { _, _ -> null }, gps, { })
+        rec = DriveRecorder(app, appVs.readings, WeatherRepository(""), db, db.driveDao(), { _, _ -> null }, gps, { })
         CanDataService.recorderProvider = { rec }                      // #316 seam 5
         service = TestServices.create()
     }
@@ -84,7 +84,7 @@ class LocationFgsServiceTest {
         return cond()
     }
     private fun startRecording() {
-        appVs.value = VehicleState(isConnected = true, speedKph = 50.0)
+        appVs.showForTest(VehicleState(isConnected = true, speedKph = 50.0))
         rec.startDrive()
         check(waitUntil { rec.driveState.value.let { it.isRecording && it.driveId > 0 } && gps.opened.get() > 0 })
     }
@@ -122,7 +122,7 @@ class LocationFgsServiceTest {
         shadowOf(app).denyPermissions(Manifest.permission.ACCESS_FINE_LOCATION)
         AppVisibility.visible.value = true
         promote()
-        appVs.value = VehicleState(isConnected = true, speedKph = 50.0)
+        appVs.showForTest(VehicleState(isConnected = true, speedKph = 50.0))
         rec.startDrive()
         Thread.sleep(500)
         assertEquals(CD, type)

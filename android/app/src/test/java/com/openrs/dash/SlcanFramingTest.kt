@@ -99,7 +99,7 @@ class SlcanFramingTest {
     private fun TestScope.run(vararg notifications: Pair<Long, String>): MutableStateFlow<VehicleState> {
         val state = MutableStateFlow(VehicleState(isConnected = true))
         val own = LinkOwnership()
-        val session = LinkSession(own, own.begin(), state, NoRecorder, onFrameCounted = {}, perfRunSink = { _: PerfRunEntity -> })
+        val session = LinkSession(own, own.begin(), com.openrs.dash.data.LiveTelemetry(state), NoRecorder, onFrameCounted = {}, perfRunSink = { _: PerfRunEntity -> })
         val core = BleGattCore("MEATPI_PRO")
         val transport = object : SlcanTransport {
             override suspend fun open() {

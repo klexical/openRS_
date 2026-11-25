@@ -24,7 +24,6 @@ import com.openrs.dash.can.AdapterState
 import com.openrs.dash.can.AlreadyOpenTransport
 import com.openrs.dash.can.BleFirmwareApi
 import com.openrs.dash.can.BleSlcanTransport
-import com.openrs.dash.can.CanDecoder
 import com.openrs.dash.can.FirmwareCommandSender
 import com.openrs.dash.can.LinkPhase
 import com.openrs.dash.can.PidRegistry
@@ -38,8 +37,6 @@ import com.openrs.dash.data.DriveDatabase
 import com.openrs.dash.data.DtcResult
 import com.openrs.dash.data.DtcScanRecord
 import com.openrs.dash.data.DtcScanResult
-import com.openrs.dash.data.FuelEconomy
-import com.openrs.dash.data.PerformanceTimer
 import com.openrs.dash.data.SessionEntity
 import com.openrs.dash.data.SnapshotEntity
 import com.openrs.dash.data.VehicleState
@@ -787,24 +784,8 @@ class CanDataService : Service() {
         probeLines.forEach { DiagnosticLogger.event(AdapterNetworkFinder.EVENT_PROBE, it) }
         boundNetwork = wifiNet
         finder.stopAll()   // a connection is starting: no network is probed beside it (#324)
-        CanDecoder.resetSessionState()
-        // ESC is unknown until this connection's first 0x1C0 frame — a value held from an earlier link is not a reading
-        OpenRSDashApp.instance.vehicleState.update { it.copy(escStatus = com.openrs.dash.data.EscStatus.UNKNOWN) }
-        // Launch control (#289): no flag or stamp held from an earlier link — "LC" needs this connection's own 0x420
-        OpenRSDashApp.instance.vehicleState.update { com.openrs.dash.data.LaunchControl.clearedForNewConnection(it) }
-        // The car's speed is known only once this connection's 0x130 arrives: a parked drive drops GPS steps on it (#335)
-        OpenRSDashApp.instance.vehicleState.update { it.copy(fieldLastUpdateMs = it.fieldLastUpdateMs - CanDecoder.SPEED_TAG) }
-        // SRS lamp (#199): unknown until this connection's first 0x040 frame — a value held from an earlier link is not a
-        // reading. The IPC lamps are not reset here.
-        OpenRSDashApp.instance.vehicleState.update { it.copy(lamps = it.lamps.copy(srs = null)) }
-        // Engine state (0x360 byte 7, #328): not received until this connection's first 0x360 frame
-        OpenRSDashApp.instance.vehicleState.update { it.copy(engineState360 = -1) }
-        FuelEconomy.reset()
-        PerformanceTimer.resetSession()
-        OpenRSDashApp.instance.knockEventCount.value = 0
-        com.openrs.dash.data.KnockSessionLog.reset()
-        com.openrs.dash.data.BoostSessionLog.reset()
-        com.openrs.dash.data.BoostSession.reset()
+        // Every reading that needs this connection's own frame is forgotten, and the running figures restart
+        OpenRSDashApp.instance.liveTelemetry.newConnection()
         startSessionRecording()
 
         var reportTo: LinkSession? = null                 // the job's session, set below; the report goes through its ownership
@@ -936,45 +917,17 @@ class CanDataService : Service() {
 
     private fun mergeObdState(obdState: VehicleState) {
         if (DemoMode.isActive) return   // late poll response after demo took over
-        OpenRSDashApp.instance.vehicleState.update { current -> com.openrs.dash.data.ObdMerge.merge(current, obdState) }
-        countKnockIfFresh(obdState)
-        // Session knock log (#174) — merged live state so pull detection sees CAN rpm/throttle. Position only from the
-        // recording drive's own fix, at most 2 s old (#311): none outside a drive, before its first fix or in a GPS gap
+        // Session knock log (#174) position only from the recording drive's own fix, at most 2 s old (#311): none outside
+        // a drive, before its first fix or in a GPS gap
         val loc = recorder().freshFix()
-        com.openrs.dash.data.KnockSessionLog.onState(
-            OpenRSDashApp.instance.vehicleState.value, System.currentTimeMillis(),
-            loc?.latitude, loc?.longitude
-        )
-        // Boost rule (#207): a fresh TIP decode can be source evidence / a TIP peak
-        com.openrs.dash.data.BoostSession.onState(OpenRSDashApp.instance.vehicleState.value, System.currentTimeMillis())
-        // Live boost sweep window for the POWER chart (#175)
-        com.openrs.dash.data.BoostSessionLog.onState(
-            OpenRSDashApp.instance.vehicleState.value, System.currentTimeMillis()
-        )
-    }
-
-    /** Stamp of the last KR reading already counted — merges run on Main, so no locking. */
-    private var lastKrCountedMs = 0L
-
-    /**
-     * Knock counter (header badge). Counts each freshly polled KR reading showing > 1° retard
-     * on any cylinder. Sign convention: retard is POSITIVE (ObdResponseParser 0x03EC–EF use
-     * raw / −512). Runs outside the update{} lambda — CAS retries must not double-count.
-     */
-    private fun countKnockIfFresh(obdState: VehicleState) {
-        val stamps = obdState.fieldLastUpdateMs
-        val krStamp = com.openrs.dash.data.KnockCapture.KR_TAGS.maxOf { stamps[it] ?: 0L }
-        if (krStamp <= lastKrCountedMs) return
-        lastKrCountedMs = krStamp
-        val kr = maxOf(obdState.ignCorrCyl1, obdState.ignCorrCyl2, obdState.ignCorrCyl3, obdState.ignCorrCyl4)
-        if (kr > 1.0) OpenRSDashApp.instance.knockEventCount.update { it + 1 }
+        OpenRSDashApp.instance.liveTelemetry.onObdReply(obdState, loc?.latitude, loc?.longitude)
     }
 
     /** The live-data work of connection job [gen] — frames, derived values, auto-record (see [LinkSession]). */
     private fun newLinkSession(gen: Int) = LinkSession(
         link = link,
         gen = gen,
-        state = OpenRSDashApp.instance.vehicleState,
+        telemetry = OpenRSDashApp.instance.liveTelemetry,
         recorder = object : LinkSession.Recorder {
             private val r get() = recorder()
             override val activeDriveId get() = r.driveState.value.let { if (it.isRecording) it.driveId else null }
@@ -1022,7 +975,7 @@ class CanDataService : Service() {
         OpenRSDashApp.instance.linkPhase.value = finalPhase
         // Demo owns the connection flags (WiFi/BT-loss callbacks still land here).
         if (!DemoMode.isActive) {
-            OpenRSDashApp.instance.vehicleState.update { it.copy(isConnected = false, isReconnecting = false) }
+            OpenRSDashApp.instance.liveTelemetry.setLink(connected = false, reconnecting = false)
             OpenRSDashApp.instance.deviceStatus.value = null
         }
         // Leave the foreground and the started state: with no activity bound the service now stops. With points still being
@@ -1073,9 +1026,8 @@ class CanDataService : Service() {
     /** Publish a live phase (the job is current — called inside the ownership lock): link phase, VehicleState flags, notification. */
     private fun applyPhase(phase: LinkPhase) {
         OpenRSDashApp.instance.linkPhase.value = phase
-        OpenRSDashApp.instance.vehicleState.update {
-            it.copy(isConnected = phase == LinkPhase.CONNECTED, isReconnecting = phase == LinkPhase.RECONNECTING)
-        }
+        OpenRSDashApp.instance.liveTelemetry.setLink(
+            connected = phase == LinkPhase.CONNECTED, reconnecting = phase == LinkPhase.RECONNECTING)
         publishNotification(phase)
     }
 
@@ -1133,19 +1085,9 @@ class CanDataService : Service() {
         // Old job, its session record and diagnostic session end before the new ones begin
         val rec = recNow()
         teardownJob(LinkPhase.OFF, LinkStopReason.USER_RETRY, rec)
-        // L-6 fix: reset OBD-polled fields to sentinels so stale values from the
-        // previous session don't persist for up to 30 s while new polls complete.
-        OpenRSDashApp.instance.vehicleState.update {
-            it.copy(
-                isConnected  = false, isReconnecting = false,
-                tirePressLF  = -1.0,  tirePressRF  = -1.0,
-                tirePressLR  = -1.0,  tirePressRR  = -1.0,
-                rduTempC     = -99.0, ptuTempC     = -99.0,
-                odometerKm   = -1L,
-                batterySoc   = -1.0,
-                batteryTempC = -99.0, cabinTempC   = -99.0
-            )
-        }
+        // L-6 fix: OBD-polled fields back to their sentinels so stale values from the previous session don't persist for
+        // up to 30 s while new polls complete
+        OpenRSDashApp.instance.liveTelemetry.retryForgetPolled()
         // Transport down (or no foreground allowed): nothing started, so release instead of keeping a stale notification
         if (!beginConnection(heldDropAtMs = heldDrop, origin = "retry")) {
             // #316: nothing started, so this RCN closed the connection: a "connection lost", as every closure by the service
@@ -1155,26 +1097,14 @@ class CanDataService : Service() {
         }
     }
 
-    fun resetPeaks() {
-        OpenRSDashApp.instance.vehicleState.update { it.withPeaksReset() }
-        com.openrs.dash.data.BoostSession.resetPeaks()
-    }
+    fun resetPeaks() = OpenRSDashApp.instance.liveTelemetry.resetPeaks()
 
     /** Reset the current session without disconnecting from the adapter. */
     fun resetSession() {
         // Demo: replay the scenario instead — never create a Room session for simulated data.
         if (DemoMode.isActive) { DemoMode.reset(); return }
         stopSessionRecording()
-        CanDecoder.resetSessionState()
-        FuelEconomy.reset()
-        PerformanceTimer.resetSession()
-        OpenRSDashApp.instance.knockEventCount.value = 0
-        com.openrs.dash.data.KnockSessionLog.reset()
-        com.openrs.dash.data.BoostSessionLog.reset()
-        com.openrs.dash.data.BoostSession.reset()
-        val connected = OpenRSDashApp.instance.vehicleState.value.isConnected
-        OpenRSDashApp.instance.vehicleState.update { VehicleState(isConnected = connected) }
-        com.openrs.dash.ui.ThermalReadinessSession.reset()
+        OpenRSDashApp.instance.liveTelemetry.userReset()   // readings, running figures, peaks, thermal readiness
         startSessionRecording()
     }
 
