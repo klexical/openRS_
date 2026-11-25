@@ -128,6 +128,12 @@ class FirmwareErrorTextTest {
         assertEquals(EscCommand.Outcome.Failed(FirmwareFailure.FAILED), outcome)
     }
 
+    @Test fun `a Bluetooth GATT status is the one part of a foreign message that is kept`() {
+        val text = failedText(driveMode(Failing(IOException("BLE write failed (GATT 133) $MARK"))))
+        assertEquals(FirmwareFailure.driveModeFailed("${FirmwareFailure.FAILED} (GATT 133)"), text)
+        assertNoForeignText("DM_CMD", events("DM_CMD").joinToString("\n"), MARK)
+    }
+
     // ── WebSocket upgrade ───────────────────────────────────────────────────────────────────────────────────────────
 
     private fun upgradeError(reply: String): IOException {

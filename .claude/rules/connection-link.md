@@ -132,6 +132,7 @@ paths:
   body, never a buffer sized by the reply's `Content-Length`, and its status line and headers through `WicanApi.HeadReader`
   (`MAX_HEAD_CHARS` in all), never a bare `readLine()` (`FirmwareHttpBodyLimitTest`, #535).
   - A failed firmware command (`FirmwareApi`, `BleFirmwareApi`) reads one of the fixed `FirmwareFailure` texts, with at
-    most the HTTP status code's three digits; `DriveCommand` and `EscCommand` show and log only that text
-    (`FirmwareFailure.textOf`: any other exception reads `FAILED`). The WebSocket upgrade fails with
+    most the HTTP status code's three digits or a Bluetooth GATT status's digits (the export's diagnostic tail, #263);
+    `DriveCommand` and `EscCommand` show and log only that text (`FirmwareFailure.textOf`: any other exception reads
+    `FAILED` plus that GATT tail). The WebSocket upgrade fails with
     `Upgrade failed: HTTP <code>` only; `AdapterProbe` reads that prefix (`FirmwareErrorTextTest`, #604)

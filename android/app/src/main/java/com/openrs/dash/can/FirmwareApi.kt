@@ -37,8 +37,20 @@ object FirmwareFailure {
     /** The drive mode dock's line for a failed request. */
     fun driveModeFailed(reason: String): String = "Mode change failed — $reason"
 
-    /** The text for a failed command's exception: a [FirmwareCommandException]'s fixed text, any other [FAILED]. */
-    fun textOf(e: Throwable?): String = (e as? FirmwareCommandException)?.message ?: FAILED
+    /**
+     * The text for a failed command's exception: a [FirmwareCommandException]'s fixed text, any other [FAILED] with its
+     * [gattTail]. No other part of a foreign exception's message is read.
+     */
+    fun textOf(e: Throwable?): String = (e as? FirmwareCommandException)?.message ?: (FAILED + gattTail(e))
+
+    /**
+     * " (GATT 133)" when [e]'s message names a Bluetooth GATT status, else "": the status digits are the one part of a
+     * write failure's text that the export keeps as its diagnostic tail (#263), never the rest of the message (#604).
+     */
+    fun gattTail(e: Throwable?): String =
+        GATT_STATUS.find(e?.message.orEmpty())?.groupValues?.get(1)?.let { " (GATT $it)" } ?: ""
+
+    private val GATT_STATUS = Regex("""\bGATT (\d{1,3})\b""")
 }
 
 /** A failed firmware command. [message] is always one of the [FirmwareFailure] texts (#604). */
@@ -88,7 +100,8 @@ class BleFirmwareApi(private val connection: SlcanConnection) : FirmwareCommandS
             transport.writeLine("AT+FRS=$key,$value\r")
         } catch (e: java.io.IOException) {
             return Result.failure(FirmwareCommandException(
-                if (WriteFailure.isNotSent(e)) FirmwareFailure.NOT_SENT else FirmwareFailure.MAYBE_NOT_DELIVERED))
+                (if (WriteFailure.isNotSent(e)) FirmwareFailure.NOT_SENT else FirmwareFailure.MAYBE_NOT_DELIVERED) +
+                    FirmwareFailure.gattTail(e)))
         }
 
         // Wait up to 5 seconds for response
