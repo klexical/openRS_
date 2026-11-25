@@ -1,5 +1,6 @@
 package com.openrs.dash.diagnostics
 
+import com.openrs.dash.can.ObdResponseParser
 import com.openrs.dash.data.FreezeFrame
 import com.openrs.dash.data.FreezeFrameEntry
 
@@ -78,8 +79,9 @@ object FreezeFrameParser {
         0x045A to DidDef("Boost Desired", 2) { d ->
             "%.1f kPa".format(((d[0].toInt() and 0xFF) shl 8 or (d[1].toInt() and 0xFF)) * 0.1)
         },
-        0x0462 to DidDef("Wastegate DC", 1) { d ->
-            "%.1f%%".format((d[0].toInt() and 0xFF) * 100.0 / 255)
+        // Same decode as the live poll; two data bytes, as the PCM answers it (#528), so the DIDs after it stay aligned
+        0x0462 to DidDef("Wastegate DC", 2) { d ->
+            "%.1f%%".format(ObdResponseParser.wgdcPercent(d[0].toInt() and 0xFF))
         },
     )
 

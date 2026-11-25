@@ -19,6 +19,12 @@ import com.openrs.dash.data.VehicleState
  */
 object ObdResponseParser {
 
+    /**
+     * PCM DID 0x0462, wastegate duty cycle: data byte 4 × 100 / 128 %. The PCM answers two data bytes (#528); only the
+     * first is read. The one decode for the live poll and the DTC freeze frame (FreezeFrameParser), WgdcDecodeTest.
+     */
+    fun wgdcPercent(b4: Int): Double = b4 * 100.0 / 128.0
+
     private const val TAG = "OBD"
 
     private fun logMalformed(module: String, reason: String) {
@@ -258,7 +264,7 @@ object ObdResponseParser {
                     etcAngleDesired = ((b4 shl 8) or b5) / 512.0
                 ).markFresh("etcAngleDesired"))
                 0x0462 -> onObdUpdate(currentState.copy(
-                    wgdcDesired = b4 * 100.0 / 128.0
+                    wgdcDesired = wgdcPercent(b4)
                 ).markFresh("wgdcDesired"))
                 0x03EC -> onObdUpdate(currentState.copy(
                     ignCorrCyl1 = ((b4s.toByte().toInt() shl 8) or b5) / -512.0
