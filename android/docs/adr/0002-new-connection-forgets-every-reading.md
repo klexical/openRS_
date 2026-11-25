@@ -10,10 +10,16 @@ the old values until they were polled again, up to about 30 seconds. We decided 
 however it started (launch, Connect, RETRY, an automatic reconnect): each reading is "not received" until this
 connection reads it, and the running figures restart.
 
-Thermal readiness is the exception: it keeps its warm-up history across a reconnect, because its temperatures age out
-on their own (`VehicleState.tempAvail`) and a short drop should not send a warm car back to "warming". The user's reset
-(DIAG) forgets the same as a new connection, and also clears peaks and thermal readiness, without touching the
-connection.
+The session knock log and the header's knock count are the exception among the running figures (the owner's decision):
+they survive a connection the app starts by itself (an automatic start, the same job's reconnect after a drop), because
+a short drop must not empty the knock record that the diagnostic export (`drive_knock_session_*.csv`) and PERF's session
+scope show. A connection the user starts (Connect, RETRY) begins them fresh, as do the user's reset and demo mode.
+
+Thermal readiness keeps its own rule and is not reset by a new connection: it starts over whenever the link goes down
+(`ThermalReadinessEngine.evaluate` resets while `isConnected` is false, a rule older than this decision), so every
+reconnect after a drop, an automatic one included, starts it again; only a new connection begun while the link stays up
+(Connect tapped while linked) leaves its warm-up history in place. The user's reset (DIAG) forgets the same as a new
+connection, and also clears the session peaks, the knock log and count, and thermal readiness, without touching the connection.
 
 ## Consequences
 

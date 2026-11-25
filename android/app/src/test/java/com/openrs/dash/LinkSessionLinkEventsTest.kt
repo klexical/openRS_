@@ -130,4 +130,25 @@ class LinkSessionLinkEventsTest {
         s.onVehicleState(running) { 7L }
         assertEquals(listOf("back", "engine:7"), rec.events)
     }
+
+    @Test fun `the same job's connection coming back is a new connection - the previous one's readings are forgotten`() {
+        val state = MutableStateFlow(VehicleState())
+        val telemetry = com.openrs.dash.data.LiveTelemetry(state)
+        val s = LinkSession(own, own.begin(), telemetry, Rec(), onFrameCounted = {}, perfRunSink = {})
+        state.value = VehicleState(isConnected = true, tirePressLF = 2.4, odometerKm = 12_345L, oilTempC = 95.0)
+        s.onConnectionBack()                                                   // the job's first connection
+        telemetry.onObdReply(state.value.copy(ignCorrCyl1 = 2.0).markFresh("ignCorrCyl1", now = System.currentTimeMillis()))
+        assertEquals("one knock on the first connection", 1, telemetry.knockCount.value)
+        assertEquals("the first connection's start reset is beginConnection's: nothing forgotten here",
+            2.4, state.value.tirePressLF, 0.0)
+        // a drop, then the same job reconnects (SlcanConnection's own retry: no beginConnection)
+        state.value = state.value.copy(isConnected = false, isReconnecting = true)
+        state.value = state.value.copy(isConnected = true, isReconnecting = false)
+        s.onConnectionBack()
+        assertEquals(-1.0, state.value.tirePressLF, 0.0)
+        assertEquals(-1L, state.value.odometerKm)
+        assertEquals(-99.0, state.value.oilTempC, 0.0)
+        assertEquals("the link flags stay", true, state.value.isConnected)
+        assertEquals("a drop keeps the knock record (the owner's decision, ADR 0002)", 1, telemetry.knockCount.value)
+    }
 }

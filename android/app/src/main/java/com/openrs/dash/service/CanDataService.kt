@@ -37,6 +37,7 @@ import com.openrs.dash.data.DriveDatabase
 import com.openrs.dash.data.DtcResult
 import com.openrs.dash.data.DtcScanRecord
 import com.openrs.dash.data.DtcScanResult
+import com.openrs.dash.data.LiveTelemetry
 import com.openrs.dash.data.SessionEntity
 import com.openrs.dash.data.SnapshotEntity
 import com.openrs.dash.data.VehicleState
@@ -718,7 +719,7 @@ class CanDataService : Service() {
         if (DemoMode.isActive) return@transition null
         link.clearManualConnect()
         val wifiMissing = !isBluetooth() && wifiNetworks().isEmpty()
-        beginConnection(origin = "Connect")
+        beginConnection(origin = "Connect", start = LiveTelemetry.Start.USER)
         if (wifiMissing) NO_WIFI_MESSAGE else null
     }
 
@@ -728,7 +729,7 @@ class CanDataService : Service() {
      */
     private fun beginConnection(
         heldDropAtMs: Long? = null, origin: String, network: Network? = null, handOver: HandOver? = null,
-        probeLines: List<String> = emptyList(),
+        probeLines: List<String> = emptyList(), start: LiveTelemetry.Start = LiveTelemetry.Start.AUTOMATIC,
     ): Boolean = link.transition {
         // A hand-over this start does not adopt is closed by its caller's finally (startOnAdapterNetwork)
         if (isBluetooth()) handOver?.closeIfUntaken()   // the method changed to Bluetooth during the probe (C2)
@@ -784,8 +785,8 @@ class CanDataService : Service() {
         probeLines.forEach { DiagnosticLogger.event(AdapterNetworkFinder.EVENT_PROBE, it) }
         boundNetwork = wifiNet
         finder.stopAll()   // a connection is starting: no network is probed beside it (#324)
-        // Every reading that needs this connection's own frame is forgotten, and the running figures restart
-        OpenRSDashApp.instance.liveTelemetry.newConnection()
+        // Every reading is forgotten and the running figures restart; a Connect / RETRY also starts the knock record fresh (#600)
+        OpenRSDashApp.instance.liveTelemetry.newConnection(start)
         startSessionRecording()
 
         var reportTo: LinkSession? = null                 // the job's session, set below; the report goes through its ownership
@@ -1085,11 +1086,10 @@ class CanDataService : Service() {
         // Old job, its session record and diagnostic session end before the new ones begin
         val rec = recNow()
         teardownJob(LinkPhase.OFF, LinkStopReason.USER_RETRY, rec)
-        // L-6 fix: OBD-polled fields back to their sentinels so stale values from the previous session don't persist for
-        // up to 30 s while new polls complete
-        OpenRSDashApp.instance.liveTelemetry.retryForgetPolled()
+        // The new connection below forgets every reading (LiveTelemetry.newConnection, #600); until it starts the link is down
+        OpenRSDashApp.instance.liveTelemetry.setLink(connected = false, reconnecting = false)
         // Transport down (or no foreground allowed): nothing started, so release instead of keeping a stale notification
-        if (!beginConnection(heldDropAtMs = heldDrop, origin = "retry")) {
+        if (!beginConnection(heldDropAtMs = heldDrop, origin = "retry", start = LiveTelemetry.Start.USER)) {
             // #316: nothing started, so this RCN closed the connection: a "connection lost", as every closure by the service
             // is (the owner's "Yes, pause it"), at the carried drop's moment when one was held, else the closure's
             recorder().onConnectionLost(heldDrop ?: System.currentTimeMillis())

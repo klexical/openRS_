@@ -31,9 +31,12 @@ class LiveTelemetry(
     private val wallClock: () -> Long = System::currentTimeMillis,
     private val thermal: Thermal = Thermal.NONE,
 ) {
-    /** Thermal readiness hears the two reset events it acts on; it keeps its own warm-up history otherwise. */
+    /**
+     * Thermal readiness hears the two reset events it acts on. It also starts over by itself whenever the link goes
+     * down (`ThermalReadinessEngine.evaluate`, while `isConnected` is false), so a reconnect after a drop starts it again.
+     */
     interface Thermal {
-        /** A new connection began (readiness keeps its warm-up history across a reconnect). */
+        /** A new connection began (the app does nothing here: readiness has already started over if the link dropped). */
         fun newConnection() {}
         /** The user reset live telemetry (DIAG): readiness starts over. */
         fun userReset() {}
@@ -146,50 +149,31 @@ class LiveTelemetry(
     // ── Reset events ─────────────────────────────────────────────────────────
 
     /**
-     * A new connection began (every start path: launch, Connect, RETRY, an automatic start). Readings that need this
-     * connection's own frame are forgotten, and the running figures restart.
+     * A new connection began (every start path: launch, Connect, RETRY, an automatic start, and the same job's reconnect
+     * after a drop). Every reading is "not received" until this connection reads it again, polled and CAN alike, and the
+     * running figures restart (android/docs/adr/0002-new-connection-forgets-every-reading.md, #600). Kept: the link
+     * flags (the connection publishes them) and the session peaks (`VehicleState.session`; only the user's reset clears
+     * those). The boost rule's per-source peaks restart with it (`BoostSession.reset`, as before #600). The session
+     * knock log and knock count follow [start] (the owner's decision): an [Start.AUTOMATIC] start keeps them, so a drop does not
+     * empty what the export and PERF show; a start the user asked for ([Start.USER]) begins them fresh. Thermal
+     * readiness is not reset here: it starts over by itself whenever the link goes down (see [Thermal]).
      */
-    fun newConnection() {
+    fun newConnection(start: Start) {
         CanDecoder.resetSessionState()
-        state.update {
-            LaunchControl.clearedForNewConnection(it).copy(
-                // ESC is unknown until this connection's first 0x1C0 frame — a value held from an earlier link is not a reading
-                escStatus = EscStatus.UNKNOWN,
-                // SRS lamp (#199): unknown until this connection's first 0x040 frame. The IPC lamps are not reset here.
-                lamps = it.lamps.copy(srs = null),
-                // Engine state (0x360 byte 7, #328): not received until this connection's first 0x360 frame
-                engineState360 = -1,
-            ).let { s ->
-                // The car's speed is known only once this connection's 0x130 arrives: a parked drive drops GPS steps (#335)
-                s.copy(fieldLastUpdateMs = s.fieldLastUpdateMs - CanDecoder.SPEED_TAG)
-            }
-        }
-        restartRunningFigures()
+        state.update { VehicleState(isConnected = it.isConnected, isReconnecting = it.isReconnecting, session = it.session) }
+        restartCalculators()
+        if (start == Start.USER) restartKnocks()
         thermal.newConnection()
     }
 
-    /**
-     * RETRY's own blanking, before its new connection: OBD-polled fields go back to their sentinels so stale values from
-     * the previous connection don't persist for up to 30 s while new polls complete.
-     */
-    fun retryForgetPolled() {
-        state.update {
-            it.copy(
-                isConnected  = false, isReconnecting = false,
-                tirePressLF  = -1.0,  tirePressRF  = -1.0,
-                tirePressLR  = -1.0,  tirePressRR  = -1.0,
-                rduTempC     = -99.0, ptuTempC     = -99.0,
-                odometerKm   = -1L,
-                batterySoc   = -1.0,
-                batteryTempC = -99.0, cabinTempC   = -99.0,
-            )
-        }
-    }
+    /** Who began a new connection: the user's Connect or RETRY, or the app (an automatic start, the same job's reconnect after a drop). */
+    enum class Start { USER, AUTOMATIC }
 
     /** The user's reset (DIAG): every reading, the running figures, peaks and thermal readiness; the link is untouched. */
     fun userReset() {
         CanDecoder.resetSessionState()
-        restartRunningFigures()
+        restartCalculators()
+        restartKnocks()
         state.update { VehicleState(isConnected = it.isConnected) }
         thermal.userReset()
     }
@@ -215,13 +199,18 @@ class LiveTelemetry(
         restartLogsAndCalculators()
     }
 
-    private fun restartRunningFigures() {
+    /** Every running figure but the knock record (fuel economy, performance timer, boost sweep and rule). */
+    private fun restartCalculators() {
         FuelEconomy.reset()
         PerformanceTimer.resetSession()
-        knocks.value = 0
-        KnockSessionLog.reset()
         BoostSessionLog.reset()
         BoostSession.reset()
+    }
+
+    /** The knock record: the session knock log and the header's knock count. */
+    private fun restartKnocks() {
+        knocks.value = 0
+        KnockSessionLog.reset()
     }
 
     private fun restartLogsAndCalculators() {
