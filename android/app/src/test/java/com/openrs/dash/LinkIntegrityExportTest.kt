@@ -39,7 +39,7 @@ class LinkIntegrityExportTest {
         val text = summary()
         assertTrue(text, text.contains("─── LINK INTEGRITY"))
         assertTrue(text, text.contains("3 sent · 2 possibly delivered (GATT 13) · 1 not sent · 1 delivery unknown · 0 other failures"))
-        assertTrue(text, text.contains("Framing  : timestamped (Z1 set on the adapter) · 2 frame line(s) refused (1 of the other shape)"))
+        assertTrue(text, text.contains("Framing  : timestamped (Z1 set on the adapter) · 2 frame line(s) refused (1 of the other shape, 0 shorter than its ID's decoder needs)"))
         assertTrue(text, text.contains("Replies  : 1 Mode 22 reply(ies) refused"))
         assertTrue(text, text.contains("NRC      : 4 attributed · 1 unattributed (PCM)"))
         assertFalse("the summary's Firmware line is what Sapphire parses — untouched", text.contains("Firmware: timestamped"))

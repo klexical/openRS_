@@ -186,6 +186,28 @@ object CanDecoder {
     )
 
     /**
+     * The fewest data bytes each ID's decoder reads (#551): a frame shorter than this is one the decoder ignores. The
+     * frame loop refuses and counts such a frame ([minBytes]), so a spliced adapter line whose leftover length happens
+     * to match its DLC digit (a one-byte 0x0F8) is counted instead of reaching the inventory as an unknown frame. Each
+     * value is the length check in [decode] (`SlcanShortFrameTest` holds them together). No entry = any length passes:
+     * 0x300 reads no byte, and IDs the app doesn't decode (module replies included) keep whatever length they have.
+     */
+    private val MIN_BYTES: Map<Int, Int> = mapOf(
+        ID_ENGINE_RPM to 6, ID_ENGINE_TEMPS to 8, ID_SPEED to 8, ID_COOLANT to 8, ID_THROTTLE to 1, ID_PEDALS to 2,
+        ID_LONG_ACCEL to 8, ID_LAT_ACCEL to 8, ID_STEERING to 8, ID_BRAKE_PRESS to 3, ID_GAUGE_ILLUM to 4,
+        ID_PCM_AMBIENT to 8, ID_AMBIENT_TEMP to 5, ID_SRS_STATUS to 3, ID_WHEEL_SPEEDS to 8, ID_AWD_TORQUE to 8,
+        ID_DRIVE_MODE to 7, ID_DRIVE_MODE_EXT to 8, ID_ESC_ABS to 2, ID_LAUNCH_CTRL to 6, ID_BUTTONS_260 to 6,
+        ID_DRIVE_MODE_BTN to 5, ID_GEAR to 1, ID_TORQUE to 6, ID_ODOMETER to 6, ID_CLUTCH to 4, ID_WHEEL_ROT to 6,
+        ID_FUEL_LEVEL to 4, ID_VIN_MUX to 7,
+    )
+
+    /** The fewest data bytes [id]'s decoder reads, or null when any length passes (#551, [MIN_BYTES]). */
+    fun minBytes(id: Int): Int? = MIN_BYTES[id]
+
+    /** A frame on [id] with [size] data bytes is shorter than its decoder reads (#551). */
+    fun shorterThanDecoderNeeds(id: Int, size: Int): Boolean = size < (MIN_BYTES[id] ?: 0)
+
+    /**
      * Freshness tags written by each passive CAN decoder (#194). Only fields the UI
      * classifies via `fieldLastUpdateMs` (THERMAL availability) need an entry.
      * Stamped through [stampFresh]: throttled per ID ([CAN_STAMP_THROTTLE_MS]), except a drive-mode or ESC change, at once.

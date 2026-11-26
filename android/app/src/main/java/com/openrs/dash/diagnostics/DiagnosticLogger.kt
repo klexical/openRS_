@@ -220,6 +220,7 @@ object DiagnosticLogger {
         var framingTimestamped: Boolean? = null
         var refusedFrameLines = 0          // frame-shaped lines refused by strict framing (#251)
         var refusedOtherShape = 0          // … of them, lines of the other framing shape on a locked connection
+        var refusedShortFrames = 0         // … of them, frames shorter than their ID's decoder reads (#551)
         var refusedReplies = 0             // Mode 22 replies refused for their length / PCI (#251)
         var nrcAttributed = 0              // PCM NRCs charged to exactly one request (#216)
         var overlongLines = 0              // adapter lines past the transport's bound, refused whole (#253)
@@ -229,7 +230,8 @@ object DiagnosticLogger {
         var isoTpRefused = 0               // ISO-TP frames refused or replies abandoned: truncated SF / FF / CF, FF < 8, sequence break, superseded, deadline (#253)
         fun copy() = LinkIntegrity().also {
             it.writes.putAll(writes); it.framingTimestamped = framingTimestamped; it.refusedFrameLines = refusedFrameLines
-            it.refusedOtherShape = refusedOtherShape; it.refusedReplies = refusedReplies; it.nrcAttributed = nrcAttributed
+            it.refusedOtherShape = refusedOtherShape; it.refusedShortFrames = refusedShortFrames
+            it.refusedReplies = refusedReplies; it.nrcAttributed = nrcAttributed
             it.overlongLines = overlongLines; it.linesDropped = linesDropped
             it.commandRepliesDropped = commandRepliesDropped; it.dtcFramesDropped = dtcFramesDropped
             it.isoTpRefused = isoTpRefused
@@ -329,6 +331,10 @@ object DiagnosticLogger {
     fun framingDecided(timestamped: Boolean) = synchronized(lock) { linkIntegrityLive.framingTimestamped = timestamped }
     fun countRefusedFrameLine(otherShape: Boolean) = synchronized(lock) {
         linkIntegrityLive.refusedFrameLines++; if (otherShape) linkIntegrityLive.refusedOtherShape++
+    }
+    /** A well-formed frame shorter than its ID's decoder reads (#551): a refused frame line, with its own count. */
+    fun countRefusedShortFrame() = synchronized(lock) {
+        linkIntegrityLive.refusedFrameLines++; linkIntegrityLive.refusedShortFrames++
     }
     fun countRefusedReply() = synchronized(lock) { linkIntegrityLive.refusedReplies++ }
     fun countAttributedNrc() = synchronized(lock) { linkIntegrityLive.nrcAttributed++ }
