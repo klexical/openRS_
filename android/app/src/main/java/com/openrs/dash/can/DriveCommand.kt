@@ -7,7 +7,6 @@ import com.openrs.dash.OpenRSDashApp
 import com.openrs.dash.data.DriveMode
 import com.openrs.dash.data.VehicleState
 import com.openrs.dash.diagnostics.DiagnosticLogger
-import com.openrs.dash.diagnostics.LogText
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -89,9 +88,13 @@ suspend fun executeDriveModeChange(
     val result = sender.setDriveMode(targetMode.toFirmwareInt())
     if (result.isFailure) {
         val ex = result.exceptionOrNull()
-        DiagnosticLogger.event("DM_CMD", "FAILED: ${LogText.sanitize(ex?.message ?: "no message")}")
-        return if (ex is BusyException) DriveCommandResult.Busy
-               else DriveCommandResult.Failed(ex?.message ?: "Drive mode command failed")
+        if (ex is BusyException) {
+            DiagnosticLogger.event("DM_CMD", "FAILED: ${ex.message}")   // BusyException's own fixed text, unchanged in the export
+            return DriveCommandResult.Busy
+        }
+        val reason = FirmwareFailure.textOf(ex)   // fixed text only: never an exception's message (#604)
+        DiagnosticLogger.event("DM_CMD", "FAILED: $reason")
+        return DriveCommandResult.Failed(FirmwareFailure.driveModeFailed(reason))
     }
 
     DiagnosticLogger.event("DM_CMD", "ACCEPTED by the adapter (${targetMode.label}) — not yet confirmed by the car")

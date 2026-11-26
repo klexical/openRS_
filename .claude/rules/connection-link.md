@@ -131,8 +131,8 @@ paths:
   throwable, no `e.message` in `Log`, an event or an export; and it reads at most `WicanApi.MAX_REPLY_CHARS` of a reply's
   body, never a buffer sized by the reply's `Content-Length`, and its status line and headers through `WicanApi.HeadReader`
   (`MAX_HEAD_CHARS` in all), never a bare `readLine()` (`FirmwareHttpBodyLimitTest`, #535).
-  - Two accepted exceptions, kept so the export's text does not change in #370: `FirmwareApi.post` (`/api/frs`) fails
-    with the reply's status line, which reaches the DM_CMD / ESC events, the export and the screen; the WebSocket upgrade
-    (`WebSocketSlcanTransport`) fails with up to 80 characters of the reply's headers, which reach the STATE event and
-    the export. Both carry no body, both pass through `LogText.sanitize` before an event, and no credential has been seen
-    in either. Cutting them to the status code changes export text and is a change of its own
+  - A failed firmware command (`FirmwareApi`, `BleFirmwareApi`) reads one of the fixed `FirmwareFailure` texts, with at
+    most the HTTP status code's three digits or a Bluetooth GATT status's digits (the export's diagnostic tail, #263);
+    `DriveCommand` and `EscCommand` show and log only that text (`FirmwareFailure.textOf`: any other exception reads
+    `FAILED` plus that GATT tail). The WebSocket upgrade fails with
+    `Upgrade failed: HTTP <code>` only; `AdapterProbe` reads that prefix (`FirmwareErrorTextTest`, #604)

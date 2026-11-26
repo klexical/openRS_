@@ -55,9 +55,11 @@ class WebSocketSlcanTransport(
         out = s.getOutputStream()
 
         sendHttpUpgrade(out!!)
-        val headers = readHttpHeaders(inp!!)
-        if (!headers.contains("101")) {
-            throw IOException("Upgrade failed: ${headers.take(80).replace('\n', ' ')}")
+        // Only the status line's code is read: the reason text and the headers are the adapter's, and reach the STATE
+        // event, GARAGE's debug lines and the export through the failure (#604). AdapterProbe reads the "Upgrade failed" prefix
+        val code = WicanApi.httpStatusCode(readHttpHeaders(inp!!).substringBefore("\r\n"))
+        if (code != 101) {
+            throw IOException("Upgrade failed: ${code?.let { "HTTP $it" } ?: "no HTTP status code"}")
         }
     }
 

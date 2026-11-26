@@ -228,7 +228,7 @@ class BufferBoundsTest {
         b.notifyText(frame(0) + "\r"); runCurrent()
         val result = BleFirmwareApi(conn).setDriveMode(1)
         assertTrue("a truncated +FRS: line read as accepted: $result", result.isFailure)
-        assertEquals("AT+FRS timeout", result.exceptionOrNull()?.message)
+        assertEquals(com.openrs.dash.can.FirmwareFailure.NO_REPLY, result.exceptionOrNull()?.message)
     }
 
     @Test fun `ble - an overlong line that starts as a frame changes no state, the next frame does`() = runTest {

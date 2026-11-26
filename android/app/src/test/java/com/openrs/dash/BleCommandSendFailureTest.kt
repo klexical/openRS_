@@ -221,7 +221,7 @@ class BleCommandSendFailureTest {
         val r = runCatching { driveMode(BleFirmwareApi(link.conn)) }
         assertTrue("returns a result, not an exception: $r", r.isSuccess)
         val res = r.getOrThrow()
-        assertTrue("$res", res is DriveCommandResult.Failed && res.message.contains("not acknowledged"))
+        assertTrue("$res", res is DriveCommandResult.Failed && res.message == com.openrs.dash.can.FirmwareFailure.driveModeFailed(com.openrs.dash.can.FirmwareFailure.MAYBE_NOT_DELIVERED))
         assertEquals("one AT+FRS, no correction", 1, link.frsWrites)
         assertTrue("link closed (#218)", link.first.closed)
         assertFalse(dmEvents().any { it.startsWith("ACCEPTED") || it.startsWith("CONFIRMED") || it.startsWith("Overshoot") })
