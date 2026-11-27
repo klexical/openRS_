@@ -10,26 +10,42 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * Thread-safe ring buffer holding the most recent [CAPACITY] VehicleState
- * snapshots. On an uncaught exception [CrashReporter] calls [flushToFile]
- * to persist the buffer before the process dies.
+ * Thread-safe ring buffer holding the last 30 s of VehicleState ([CAPACITY] slots of [SAMPLE_INTERVAL_MS], while the
+ * state is emitted at least once per slot), one snapshot per slot. On an uncaught exception [CrashReporter] calls [flushToFile] to persist the buffer before the process dies.
  */
 object CrashTelemetryBuffer {
 
     private const val CAPACITY = 300
 
+    /**
+     * One snapshot per slot of this length, the newest state in it (#521). The state is emitted far faster than this
+     * (up to thousands a second), and when every emission took a slot the record covered under 6 s before the crash.
+     */
+    internal const val SAMPLE_INTERVAL_MS = 100L
+
     private val ring = arrayOfNulls<Snapshot>(CAPACITY)
     private var head = 0
     private var size = 0
+    private var lastSlot = Long.MIN_VALUE
     private val lock = Any()
 
     private var collectorJob: Job? = null
 
     private data class Snapshot(val timestampMs: Long, val state: VehicleState)
 
-    fun push(state: VehicleState) {
+    /**
+     * Keeps [state] as the snapshot of the [SAMPLE_INTERVAL_MS] slot [nowMs] falls in: a new slot takes the next place
+     * in the ring, a later state in the same slot replaces that slot's snapshot (#521).
+     */
+    fun push(state: VehicleState, nowMs: Long = System.currentTimeMillis()) {
+        val slot = Math.floorDiv(nowMs, SAMPLE_INTERVAL_MS)
         synchronized(lock) {
-            ring[head] = Snapshot(System.currentTimeMillis(), state)
+            if (slot == lastSlot && size > 0) {
+                ring[(head - 1 + CAPACITY) % CAPACITY] = Snapshot(nowMs, state)
+                return
+            }
+            lastSlot = slot
+            ring[head] = Snapshot(nowMs, state)
             head = (head + 1) % CAPACITY
             if (size < CAPACITY) size++
         }

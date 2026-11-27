@@ -173,9 +173,11 @@ diagnostics/
                             GPX times to the ms, no <ele> (#524)
   DtcDatabase.kt          — 873-code bundled Ford DTC lookup (from res/raw/dtc_database.json)
   CrashReporter.kt        — Installs UncaughtExceptionHandler; persists CrashTelemetryBuffer to disk; one file per crash
-                            (crashFile: `_2`, `_3` … for crashes in the same second, #511)
-  CrashTelemetryBuffer.kt — 300-snapshot ring buffer of VehicleState (`CAPACITY`); flushed on crash to JSON (+ heap, #510),
-                            a minimal record first, then the full one renamed over it (#511)
+                            (crashFile: `_2`, `_3` … for crashes in the same second, #511); holds a 128 KiB heap reserve
+                            the handler drops first (#552)
+  CrashTelemetryBuffer.kt — 300-snapshot ring buffer of VehicleState (`CAPACITY`), one per 100 ms slot = the last 30 s
+                            (#521); flushed on crash to JSON (+ heap, #510), a minimal record first, then the full one
+                            renamed over it (#511)
   HeapSample.kt           — one reading of Java heap used / size / limit + native heap, KiB (#510): FPS timeline points and
                             the crash record; never throws
   ReplyCount.kt           — Mode 22 replies per module for the export (#514): requests from `# TX` lines, replies from

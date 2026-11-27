@@ -856,9 +856,11 @@ class BufferBoundsTest {
     // ── CrashTelemetryBuffer (300) ──────────────────────────────────────────────────────────────────────────────────
 
     @Test fun `crash - the ring keeps the newest 300 in order and still accepts more`() {
-        // The object outlives tests: 305 pushes overwrite whatever an earlier test left
+        // The object outlives tests: 305 pushes overwrite whatever an earlier test left. One push per 100 ms slot,
+        // since the ring keeps one snapshot per slot (#521)
         val file = tmp.newFile()
-        repeat(305) { CrashTelemetryBuffer.push(VehicleState(rpm = it.toDouble())) }
+        val t0 = 20_000_000L
+        repeat(305) { CrashTelemetryBuffer.push(VehicleState(rpm = it.toDouble()), nowMs = t0 + it * 100L) }
         CrashTelemetryBuffer.flushToFile(file, RuntimeException("t"), "main", "test")
         fun rpms(f: File) = JSONObject(f.readText()).let { o ->
             assertEquals(o.getInt("snapshotCount"), o.getJSONArray("snapshots").length())
@@ -866,7 +868,7 @@ class BufferBoundsTest {
             (0 until a.length()).map { a.getJSONObject(it).getDouble("rpm").toInt() }
         }
         assertEquals((5 until 305).toList(), rpms(file))
-        CrashTelemetryBuffer.push(VehicleState(rpm = 305.0))
+        CrashTelemetryBuffer.push(VehicleState(rpm = 305.0), nowMs = t0 + 305 * 100L)
         CrashTelemetryBuffer.flushToFile(file, RuntimeException("t"), "main", "test")
         assertEquals((6..305).toList(), rpms(file))
     }
