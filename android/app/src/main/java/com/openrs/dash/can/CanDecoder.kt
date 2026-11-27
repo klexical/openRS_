@@ -329,7 +329,7 @@ object CanDecoder {
 
     /** A documented 0x420 (the decoder just stored it in [modeDetail420]); undocumented ones never get here. */
     private fun stampDetail(previous: VehicleState, decoded: VehicleState, now: Long): VehicleState {
-        val key = DETAIL_KEY_PREFIX + "%02X.%d".format((modeDetail420 ushr 8) and 0xFB, modeDetail420 and 0x01)
+        val key = DETAIL_KEY_PREFIX + "%02X.%d".format(Locale.ROOT, (modeDetail420 ushr 8) and 0xFB, modeDetail420 and 0x01)
         val before = previous.fieldLastUpdateMs
         val m = decoded.fieldLastUpdateMs.toMutableMap()
         m.keys.removeAll { it.startsWith(DETAIL_KEY_PREFIX) && it != key }
