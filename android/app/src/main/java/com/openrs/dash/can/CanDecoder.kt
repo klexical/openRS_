@@ -3,6 +3,7 @@ package com.openrs.dash.can
 import com.openrs.dash.data.DriveMode
 import com.openrs.dash.data.EscStatus
 import com.openrs.dash.data.VehicleState
+import java.util.Locale
 
 /**
  * Focus RS MK3 HS-CAN passive frame decoder.
@@ -266,13 +267,13 @@ object CanDecoder {
     fun describeUnchanged(id: Int, data: ByteArray): Pair<String, String?> = when (id) {
         ID_AMBIENT_TEMP -> {
             val raw = if (data.size >= 5) data[4].toInt() and 0xFF else -1
-            "ambient 0x1A4 raw=0x%02X (%.2f°C unsigned) rejected".format(raw, raw * 0.25) to
+            "ambient 0x1A4 raw=0x%02X (%.2f°C unsigned) rejected".format(Locale.ROOT, raw, raw * 0.25) to
                 "0x1A4 > ${AMBIENT_1A4_MAX_C}°C — likely sub-zero, encoding pending (#185)"
         }
         ID_SRS_STATUS      -> (if (data.size < 3) "srs=0x040 too short (no byte 2), lamp unchanged"
-                               else "srs=0x040 lamp unchanged (byte2=0x%02X)".format(data[2].toInt() and 0xFF)) to null
+                               else "srs=0x040 lamp unchanged (byte2=0x%02X)".format(Locale.ROOT, data[2].toInt() and 0xFF)) to null
         ID_CHARGING_STATUS -> "chargingStatus=0x300 (byte mapping pending)" to null
-        else               -> "0x%03X recognized, no state change".format(id) to null
+        else               -> "0x%03X recognized, no state change".format(Locale.ROOT, id) to null
     }
 
     /** Re-stamp an unchanged report's tags at most this often — avoids a map copy on every frame. */
@@ -772,37 +773,37 @@ object CanDecoder {
      * and frame inventory. [data] is the frame, for raw bytes no field keeps (0x360 byte 0, #328).
      */
     fun describeDecoded(id: Int, state: VehicleState, data: ByteArray = ByteArray(0)): String = when (id) {
-        ID_ENGINE_RPM   -> "rpm=${state.rpm.toInt()}, baro=${"%.1f".format(state.barometricPressure)}kPa"
-        ID_ENGINE_TEMPS -> "oilTempC=${"%.0f".format(state.oilTempC)}, boost=${"%.0f".format(state.boostKpa - 101.325)}kPa gauge, ptuTempC=${"%.0f".format(state.ptuTempC)}"
-        ID_SPEED        -> "speedKph=${"%.2f".format(state.speedKph)}"
-        ID_COOLANT      -> "coolantTempC=${"%.1f".format(state.coolantTempC)}, iatTempC=${"%.1f".format(state.intakeTempC)}"
-        ID_THROTTLE     -> "throttlePct=${"%.1f".format(state.throttlePct)}"
-        ID_PEDALS       -> "accelPct=${"%.1f".format(state.accelPedalPct)}, rev=${state.reverseStatus}"
-        ID_LONG_ACCEL   -> "lonG=${"%.4f".format(state.longitudinalG)}g"
-        ID_LAT_ACCEL    -> "latG=${"%.4f".format(state.lateralG)}g yaw=${"%.2f".format(state.yawRate)}°/s vertG=${"%.4f".format(state.verticalG)}g"
-        ID_STEERING     -> "steer=${"%.1f".format(state.steeringAngle)}°"
-        ID_BRAKE_PRESS  -> "brake=${"%.1f".format(state.brakePressure)}"
+        ID_ENGINE_RPM   -> "rpm=${state.rpm.toInt()}, baro=${"%.1f".format(Locale.ROOT, state.barometricPressure)}kPa"
+        ID_ENGINE_TEMPS -> "oilTempC=${"%.0f".format(Locale.ROOT, state.oilTempC)}, boost=${"%.0f".format(Locale.ROOT, state.boostKpa - 101.325)}kPa gauge, ptuTempC=${"%.0f".format(Locale.ROOT, state.ptuTempC)}"
+        ID_SPEED        -> "speedKph=${"%.2f".format(Locale.ROOT, state.speedKph)}"
+        ID_COOLANT      -> "coolantTempC=${"%.1f".format(Locale.ROOT, state.coolantTempC)}, iatTempC=${"%.1f".format(Locale.ROOT, state.intakeTempC)}"
+        ID_THROTTLE     -> "throttlePct=${"%.1f".format(Locale.ROOT, state.throttlePct)}"
+        ID_PEDALS       -> "accelPct=${"%.1f".format(Locale.ROOT, state.accelPedalPct)}, rev=${state.reverseStatus}"
+        ID_LONG_ACCEL   -> "lonG=${"%.4f".format(Locale.ROOT, state.longitudinalG)}g"
+        ID_LAT_ACCEL    -> "latG=${"%.4f".format(Locale.ROOT, state.lateralG)}g yaw=${"%.2f".format(Locale.ROOT, state.yawRate)}°/s vertG=${"%.4f".format(Locale.ROOT, state.verticalG)}g"
+        ID_STEERING     -> "steer=${"%.1f".format(Locale.ROOT, state.steeringAngle)}°"
+        ID_BRAKE_PRESS  -> "brake=${"%.1f".format(Locale.ROOT, state.brakePressure)}"
         ID_GAUGE_ILLUM  -> "illum=${state.gaugeIllumination}, eBrake=${state.eBrake}, ign=${state.ignitionStatus}"
-        ID_PCM_AMBIENT  -> "ambient=${"%.2f".format(state.ambientTempC)}°C (PCMmsg17)"
+        ID_PCM_AMBIENT  -> "ambient=${"%.2f".format(Locale.ROOT, state.ambientTempC)}°C (PCMmsg17)"
         ID_DRIVE_MODE_EXT -> "driveMode=${state.driveMode.label} lc=${state.launchControlActive} (resolved via 0x420+0x1B0)"
-        ID_AMBIENT_TEMP -> "ambientTempC=${"%.2f".format(state.ambientTempC)}"
+        ID_AMBIENT_TEMP -> "ambientTempC=${"%.2f".format(Locale.ROOT, state.ambientTempC)}"
         ID_SRS_STATUS   -> "srsLamp=${state.lamps.srs}"
         ID_CHARGING_STATUS -> "chargingStatus=0x300 (byte mapping pending)"
-        ID_WHEEL_SPEEDS -> "FL=${"%.1f".format(state.wheelSpeedFL)} FR=${"%.1f".format(state.wheelSpeedFR)} RL=${"%.1f".format(state.wheelSpeedRL)} RR=${"%.1f".format(state.wheelSpeedRR)} km/h"
-        ID_AWD_TORQUE   -> "L=${"%.0f".format(state.awdLeftTorque)}Nm R=${"%.0f".format(state.awdRightTorque)}Nm"
+        ID_WHEEL_SPEEDS -> "FL=${"%.1f".format(Locale.ROOT, state.wheelSpeedFL)} FR=${"%.1f".format(Locale.ROOT, state.wheelSpeedFR)} RL=${"%.1f".format(Locale.ROOT, state.wheelSpeedRL)} RR=${"%.1f".format(Locale.ROOT, state.wheelSpeedRR)} km/h"
+        ID_AWD_TORQUE   -> "L=${"%.0f".format(Locale.ROOT, state.awdLeftTorque)}Nm R=${"%.0f".format(Locale.ROOT, state.awdRightTorque)}Nm"
         ID_DRIVE_MODE   -> "driveMode=${state.driveMode.label} (0x1B0 byte6)"
         ID_ESC_ABS      -> "escStatus=${state.escStatus.diagnostic}"
         ID_GEAR         -> "gear=${state.gearDisplay}"
-        ID_TORQUE       -> "torqueNm=${"%.0f".format(state.torqueAtTrans)} suspBtn=${state.suspensionButtonPressed}"
+        ID_TORQUE       -> "torqueNm=${"%.0f".format(Locale.ROOT, state.torqueAtTrans)} suspBtn=${state.suspensionButtonPressed}"
         ID_LAUNCH_CTRL  -> "lc225=${state.launchControlEngaged} (MS-CAN per DigiCluster; diagnostics only)"
-        ID_CLUTCH       -> "clutchPct=${"%.1f".format(state.clutchPedalPct)}"
-        ID_WHEEL_ROT    -> "rotFL=${state.wheelRotFL} FR=${state.wheelRotFR} RL=${state.wheelRotRL} RR=${state.wheelRotRR} avgFront=${"%.2f".format(state.avgFrontWheelSpeedKph)}kph"
-        ID_FUEL_LEVEL   -> "fuelPct=${"%.1f".format(state.fuelLevelPct)} (0x380 Motorola)"
+        ID_CLUTCH       -> "clutchPct=${"%.1f".format(Locale.ROOT, state.clutchPedalPct)}"
+        ID_WHEEL_ROT    -> "rotFL=${state.wheelRotFL} FR=${state.wheelRotFR} RL=${state.wheelRotRL} RR=${state.wheelRotRR} avgFront=${"%.2f".format(Locale.ROOT, state.avgFrontWheelSpeedKph)}kph"
+        ID_FUEL_LEVEL   -> "fuelPct=${"%.1f".format(Locale.ROOT, state.fuelLevelPct)} (0x380 Motorola)"
         ID_ODOMETER     -> "odometerKm=${state.odometerKm} byte0=${data.getOrNull(0)?.let { it.toInt() and 0xFF } ?: "?"} engine=${state.engineState360} (0x360 passive)"
         ID_VIN_MUX      -> if (state.vin.isEmpty()) "vin=(assembling)" else "vin=<masked>"   // goes into exports (#260); DIAG reads the value
         ID_BUTTONS_260  -> "assBtn=${state.autoStartStopButtonPressed}"
         ID_DRIVE_MODE_BTN -> "modeBtn=${state.driveModeButtonPressed}"
-        else            -> "(unknown id 0x%03X)".format(id)
+        else            -> "(unknown id 0x%03X)".format(Locale.ROOT, id)
     }
 
     /**
