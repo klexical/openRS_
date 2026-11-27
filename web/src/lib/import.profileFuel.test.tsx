@@ -18,9 +18,9 @@ vi.mock('./db', () => ({ deleteSession: vi.fn(), putSession: vi.fn() }))
 
 const HEADER = 'timestamp_ms,lat,lng,speed_kph,rpm,fuel_pct'
 const TS = '20200101_000000'
-// #336's idle run: 100, 99.6, 99.2, 98.8, 98.4 % — 1.6 % of the 52.3 L tank, 0.8368 L by the CSV alone
+// #336's idle run: 100, 99.6, 99.2, 98.8, 98.4 % — 1.6 % of the app's 49.8 L tank, 0.7968 L by the CSV alone (#523)
 const IDLE_LEVELS = [100, 99.6, 99.2, 98.8, 98.4]
-const CSV_FIGURE_L = (1.6 / 100) * 52.3
+const CSV_FIGURE_L = 0.7968
 
 const csv = (levels: number[], gps = true) => [HEADER, ...levels.map((fuel, i) =>
   `${1000 + i * 1000},${gps ? (10 + i * 0.001).toFixed(6) : ''},${gps ? '20.000000' : ''},40,3000,${fuel}`)].join('\n')
