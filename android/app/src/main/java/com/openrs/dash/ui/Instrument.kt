@@ -29,6 +29,18 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.layout.IntrinsicMeasurable
+import androidx.compose.ui.layout.IntrinsicMeasureScope
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.Measurable
+import androidx.compose.ui.layout.MeasureResult
+import androidx.compose.ui.layout.MeasureScope
+import androidx.compose.ui.layout.MultiContentMeasurePolicy
+import androidx.compose.ui.node.LayoutModifierNode
+import androidx.compose.ui.node.ModifierNodeElement
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -201,15 +213,29 @@ fun Modifier.instrumentSurface(level: Level = Level.NORMAL, radius: Dp = Tokens.
             .instrumentSurface(level, Tokens.HeroRadius)
             .padding(horizontal = 12.dp, vertical = 12.dp)
     ) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                // 12 dp: inside the caption's line height, so the value box doesn't move
-                if (icon != null) { TelemetryIcon(icon, iconTone, 14.dp); Spacer(Modifier.width(4.dp)) }
-                InstrumentLabel(if (hold) "PEAK" else label, color = if (hold) accent else Dim)
-            }
-            InstrumentMeta(unit)
-        }
+        HeroCaptionRow(
+            caption = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // 12 dp: inside the caption's line height, so the value box doesn't move
+                    if (icon != null) { TelemetryIcon(icon, iconTone, 14.dp); Spacer(Modifier.width(4.dp)) }
+                    InstrumentLabel(if (hold) "PEAK" else label, color = if (hold) accent else Dim)
+                }
+            },
+            unit = { InstrumentMeta(unit) },
+            // While PEAK stands in for the caption, the layout is still decided on the caption's own width, so a
+            // long-press never switches the row between one line and two (measured only, never placed or read out)
+            reference = if (hold) {
+                {
+                    Row(Modifier.clearAndSetSemantics { }, verticalAlignment = Alignment.CenterVertically) {
+                        if (icon != null) { Spacer(Modifier.width(18.dp)) }
+                        InstrumentLabel(label)
+                    }
+                }
+            } else null,
+        )
+        // Extra height (a neighbour whose caption takes two lines) goes here, so the value boxes, trend lines and
+        // PEAK lines of a hero row stay level
+        Spacer(Modifier.weight(1f))
         Box(Modifier.fillMaxWidth().height(valueBox), contentAlignment = Alignment.BottomCenter) {
             DriveNum(if (hold && peakHoldValue != null) peakHoldValue else value,
                 valueSize, valueColor, Modifier.fillMaxWidth())
@@ -219,8 +245,138 @@ fun Modifier.instrumentSurface(level: Level = Level.NORMAL, radius: Dp = Tokens.
             Sparkline(spark, sparkColor, Modifier.fillMaxWidth().height(18.dp), strokeWidth = 1.5.dp, fillAlpha = 0.12f)
         } else Spacer(Modifier.height(18.dp))
         Spacer(Modifier.height(6.dp))
-        InstrumentMeta(peak ?: "", Modifier.fillMaxWidth())
+        // One line always (#293): a PEAK line that wraps would change the card's height with the value
+        InstrumentMeta(peak ?: "", Modifier.fillMaxWidth().fitOneLine())
     }
+}
+
+/** Least gap between a hero's caption and its unit on one line (#508: "ENGINERPM", "SPEEDkm/h" at font 1.3). */
+internal val HeroCaptionGap = 4.dp
+
+/**
+ * Least scale at which a hero keeps caption and unit on one line; below it the unit takes a second line (#293: at font
+ * 2.0 on 360 dp they wrapped letter by letter). The choice depends on the width, the font size and the texts only, so
+ * it never changes with a reading.
+ */
+internal const val HERO_CAPTION_MIN_SCALE = 0.85f
+
+/**
+ * A hero's caption and unit: one line, caption at the start and unit at the end, at least [HeroCaptionGap] apart, both
+ * scaled down together a little if needed; when that would take them below [HERO_CAPTION_MIN_SCALE], the unit goes on
+ * a second line under the caption, each line shrunk only if it alone is wider than the card. Text never wraps inside a
+ * word. [reference], when given, is measured instead of [caption] for that choice and never placed.
+ */
+@Composable private fun HeroCaptionRow(
+    caption: @Composable () -> Unit,
+    unit: @Composable () -> Unit,
+    reference: (@Composable () -> Unit)? = null,
+) {
+    Layout(
+        contents = listOf(caption, unit, reference ?: {}),
+        modifier = Modifier.fillMaxWidth(),
+        measurePolicy = HeroCaptionPolicy,
+    )
+}
+
+/**
+ * Where a hero's caption and unit go, from their natural sizes and the card's inner width [w] (px): one line scaled by
+ * [f] (1 = as drawn before #293), or [stacked] with the caption scaled by [fc] and the unit by [fu]. [decideW] is the
+ * width the one-line-or-two choice is made on (the caption's own, also while PEAK stands in for it).
+ */
+private class CaptionPlan(cw: Int, chh: Int, uw: Int, uh: Int, decideW: Int, w: Int, gap: Int) {
+    private val oneLine = if (decideW + gap + uw <= w) 1f else (w - gap).toFloat() / (decideW + uw).coerceAtLeast(1)
+    val stacked = oneLine < HERO_CAPTION_MIN_SCALE
+    val f = if (stacked) 1f else minOf(1f, oneLine, if (cw + gap + uw <= w) 1f else (w - gap).toFloat() / (cw + uw).coerceAtLeast(1))
+    val fc = if (stacked) minOf(1f, w.toFloat() / cw.coerceAtLeast(1)) else f
+    val fu = if (stacked) minOf(1f, w.toFloat() / uw.coerceAtLeast(1)) else f
+    val captionH = (chh * fc).toInt()
+    val height = if (stacked) captionH + (uh * fu).toInt() else (maxOf(chh, uh) * f).toInt()
+}
+
+private object HeroCaptionPolicy : MultiContentMeasurePolicy {
+    override fun MeasureScope.measure(measurables: List<List<Measurable>>, constraints: Constraints): MeasureResult {
+        val (captionM, unitM, referenceM) = measurables
+        val free = Constraints()
+        val c = captionM.first().measure(free)
+        val u = unitM.first().measure(free)
+        // A hero always has a finite width; an unbounded one (a horizontal scroll) takes the one-line natural width
+        val w = if (constraints.hasBoundedWidth) constraints.maxWidth else c.width + HeroCaptionGap.roundToPx() + u.width
+        val plan = CaptionPlan(c.width, c.height, u.width, u.height,
+            referenceM.firstOrNull()?.measure(free)?.width ?: c.width, w, HeroCaptionGap.roundToPx())
+        return layout(w, plan.height) {
+            if (plan.stacked) {
+                placeScaled(c, 0, 0, plan.fc)
+                placeScaled(u, 0, plan.captionH, plan.fu)
+            } else {
+                placeScaled(c, 0, (plan.height - (c.height * plan.f).toInt()) / 2, plan.f)
+                placeScaled(u, w - (u.width * plan.f).toInt(), (plan.height - (u.height * plan.f).toInt()) / 2, plan.f)
+            }
+        }
+    }
+
+    // DRIVE's hero row sizes its cards with IntrinsicSize.Max: answer with the height the plan for [width] gives
+    private fun IntrinsicMeasureScope.heightFor(measurables: List<List<IntrinsicMeasurable>>, width: Int): Int {
+        val (captionM, unitM, referenceM) = measurables
+        val inf = Constraints.Infinity
+        val c = captionM.first(); val u = unitM.first()
+        val cw = c.maxIntrinsicWidth(inf); val uw = u.maxIntrinsicWidth(inf)
+        if (width == inf) return maxOf(c.maxIntrinsicHeight(inf), u.maxIntrinsicHeight(inf))
+        return CaptionPlan(cw, c.maxIntrinsicHeight(inf), uw, u.maxIntrinsicHeight(inf),
+            referenceM.firstOrNull()?.maxIntrinsicWidth(inf) ?: cw, width, HeroCaptionGap.roundToPx()).height
+    }
+    override fun IntrinsicMeasureScope.maxIntrinsicHeight(measurables: List<List<IntrinsicMeasurable>>, width: Int) =
+        heightFor(measurables, width)
+    override fun IntrinsicMeasureScope.minIntrinsicHeight(measurables: List<List<IntrinsicMeasurable>>, width: Int) =
+        heightFor(measurables, width)
+    override fun IntrinsicMeasureScope.maxIntrinsicWidth(measurables: List<List<IntrinsicMeasurable>>, height: Int): Int {
+        val gap = HeroCaptionGap.roundToPx()
+        return measurables[0].first().maxIntrinsicWidth(height) + gap + measurables[1].first().maxIntrinsicWidth(height)
+    }
+    override fun IntrinsicMeasureScope.minIntrinsicWidth(measurables: List<List<IntrinsicMeasurable>>, height: Int) = 0
+}
+
+private fun androidx.compose.ui.layout.Placeable.PlacementScope.placeScaled(
+    placeable: androidx.compose.ui.layout.Placeable, x: Int, y: Int, f: Float,
+) = if (f >= 1f) placeable.place(x, y) else placeable.placeWithLayer(x, y) {
+    scaleX = f; scaleY = f; transformOrigin = TransformOrigin(0f, 0f)
+}
+
+/**
+ * One line of text that never wraps: measured at its natural width and, only when that is wider than the space it is
+ * given, drawn scaled down to fit (#293: DRIVE's PEAK lines, pedal names and the tab names at font 2.0). The box keeps
+ * one line's height whatever the text, so a changing text never changes the layout's height. Text that fits is laid out
+ * exactly as before. Apply it last, after any size modifier.
+ */
+internal fun Modifier.fitOneLine(): Modifier = this then FitOneLineElement
+
+private data object FitOneLineElement : ModifierNodeElement<FitOneLineNode>() {
+    override fun create() = FitOneLineNode()
+    override fun update(node: FitOneLineNode) = Unit
+    override fun androidx.compose.ui.platform.InspectorInfo.inspectableProperties() { name = "fitOneLine" }
+}
+
+private class FitOneLineNode : Modifier.Node(), LayoutModifierNode {
+    override fun MeasureScope.measure(measurable: Measurable, constraints: Constraints): MeasureResult {
+        val p = measurable.measure(Constraints())
+        val f = scale(p.width, constraints.maxWidth)
+        val w = (p.width * f).toInt().coerceIn(constraints.minWidth, constraints.maxWidth)
+        // The box keeps the line's own height at any scale: a PEAK line is a reading, and a height that followed its
+        // width moved DRIVE's hero row when a peak arrived or gained a digit (review of #614). A shrunk drawing is centred in it.
+        val h = p.height.coerceIn(constraints.minHeight, constraints.maxHeight)
+        return layout(w, h) { placeScaled(p, 0, if (f >= 1f) 0 else ((h - p.height * f) / 2).toInt(), f) }
+    }
+
+    private fun scale(natural: Int, maxWidth: Int) =
+        if (maxWidth != Constraints.Infinity && natural > maxWidth) maxWidth / natural.toFloat() else 1f
+
+    // One line's height whatever the width (as measure): IntrinsicSize parents size to the box, never to the text's width
+    override fun IntrinsicMeasureScope.maxIntrinsicHeight(measurable: IntrinsicMeasurable, width: Int) =
+        measurable.maxIntrinsicHeight(Constraints.Infinity)
+    override fun IntrinsicMeasureScope.minIntrinsicHeight(measurable: IntrinsicMeasurable, width: Int) =
+        measurable.maxIntrinsicHeight(Constraints.Infinity)
+    override fun IntrinsicMeasureScope.maxIntrinsicWidth(measurable: IntrinsicMeasurable, height: Int) =
+        measurable.maxIntrinsicWidth(Constraints.Infinity)
+    override fun IntrinsicMeasureScope.minIntrinsicWidth(measurable: IntrinsicMeasurable, height: Int) = 0
 }
 
 /**
