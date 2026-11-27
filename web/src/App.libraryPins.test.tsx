@@ -40,12 +40,13 @@ vi.mock('./lib/storage', async (importOriginal) => {
         if (gate.failLoad.has(id)) throw new DOMException('invented read failure', 'UnknownError')
         return real.loadDrive(id)
       }
+      const answered = gate.answered                                  // this test's record, even if it ends first (#569)
       gate.started.push(id)
       await held
       try {
         if (gate.failLoad.has(id)) throw new DOMException('invented read failure', 'UnknownError')
         return await real.loadDrive(id)
-      } finally { setTimeout(() => gate.answered.push(id), 0) }        // after the caller's own .then has run
+      } finally { setTimeout(() => answered.push(id), 0) }             // after the caller's own .then has run
     },
     listDrives: async () => {
       if (gate.listHold) await gate.listHold
@@ -230,7 +231,7 @@ describe('the Current drive (pins, Drive library commit 1)', () => {
     await seed([drive('a', 1)])
     gate.hold.set('a', Promise.resolve())
     const { useStore } = await boot('#/drive/a')
-    await waitFor(() => expect(useStore.getState().activeSession?.id).toBe('a'))
+    await waitFor(() => expect(useStore.getState().activeSession?.id).toBe('a'), { timeout: 5000 })   // #569: 1 s ran out under load
     await waitFor(() => expect(gate.answered).toEqual(['a']), { timeout: 5000 })   // its answer, and the app's handling of it, are done
     await act(async () => {})                                     // and the render that follows
     expect(gate.started).toEqual(['a'])
@@ -242,11 +243,36 @@ describe('the Current drive (pins, Drive library commit 1)', () => {
     const { useStore } = await boot('')
     await waitFor(() => expect(useStore.getState().drives).toHaveLength(2))
     await go('#/drive/b')
-    await waitFor(() => expect(useStore.getState().activeSession?.id).toBe('b'))
+    await waitFor(() => expect(useStore.getState().activeSession?.id).toBe('b'), { timeout: 5000 })   // #569: as above
     await waitFor(() => expect(gate.answered).toEqual(['b']), { timeout: 5000 })   // its answer, and the app's handling of it, are done
     await act(async () => {})                                     // and the render that follows
     expect(gate.started).toEqual(['b'])
   }, 15_000)   // the 5 s wait above fails by its own message before the test's limit (F2)
+})
+
+// #569: a held read records its answer in the gate's arrays as they were when the read started. A read still in flight
+// when its test ends (a test that failed early under load) used to push into the next test's fresh array, so the next
+// "read once" test saw a drive it never opened. Only held reads push, and the second test below holds none.
+describe('the gate keeps each test to its own reads (#569)', () => {
+  let releaseLate = () => {}
+  let firstRecord: string[] = []
+  it('a read still held when its test ends', async () => {
+    await seed([drive('a', 1)])
+    const [hold, release] = held()
+    gate.hold.set('a', hold)
+    const { useStore } = await boot('#/drive/a')
+    await waitFor(() => expect(gate.started).toEqual(['a']))
+    expect(useStore.getState().activeSession).toBeNull()
+    releaseLate = release                                           // answered only in the next test
+    firstRecord = gate.answered
+  })
+
+  it('never lands in the next test\'s record', async () => {
+    releaseLate()
+    await waitFor(() => expect([...firstRecord, ...gate.answered]).toContain('a'))   // the late answer has landed
+    expect(gate.answered).toEqual([])
+    expect(gate.started).toEqual([])
+  })
 })
 
 describe('the compared drives (pins, Drive library commit 1)', () => {
