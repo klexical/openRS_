@@ -17,7 +17,12 @@ import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.text.TextLayoutResult
+import com.openrs.dash.data.BoostSession
+import com.openrs.dash.data.DriveMode
+import com.openrs.dash.data.EscStatus
 import com.openrs.dash.data.SessionMarks
+import com.openrs.dash.demo.DemoScenario
+import com.openrs.dash.demo.DemoSimulator
 import com.openrs.dash.data.VehicleState
 import com.openrs.dash.ui.BottomNavBar
 import com.openrs.dash.ui.DrivePage
@@ -26,6 +31,7 @@ import com.openrs.dash.ui.UserPrefs
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -58,6 +64,7 @@ class DriveLabelsFitTest {
     private class Label(val text: String, val bounds: Rect, val layout: TextLayoutResult?)
 
     @After fun tearDown() {
+        BoostSession.reset()
         RuntimeEnvironment.setFontScale(1f)
         repeat(8) { shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(16)) }
     }
@@ -81,7 +88,7 @@ class DriveLabelsFitTest {
         else -> null
     }
 
-    private fun render(widthDp: Int, fontScale: Float, p: UserPrefs): Triple<Float, Rect, List<Label>> {
+    private fun render(widthDp: Int, fontScale: Float, p: UserPrefs, vs: VehicleState = live): Triple<Float, Rect, List<Label>> {
         RuntimeEnvironment.setQualifiers("w${widthDp}dp-h720dp-xxhdpi")
         RuntimeEnvironment.setFontScale(fontScale)
         ShadowChoreographer.setPaused(true)
@@ -91,7 +98,7 @@ class DriveLabelsFitTest {
         activity.setContent {
             val haze = remember { HazeState() }
             Box(Modifier.fillMaxSize()) {
-                Column(Modifier.fillMaxSize().hazeSource(haze)) { DrivePage(vs = live, p = p, link = LinkUi.LIVE) }
+                Column(Modifier.fillMaxSize().hazeSource(haze)) { DrivePage(vs = vs, p = p, link = LinkUi.LIVE) }
                 BottomNavBar(selected = 0, onSelect = {}, hazeState = haze, modifier = Modifier.align(Alignment.BottomCenter))
             }
         }
@@ -163,5 +170,35 @@ class DriveLabelsFitTest {
             println("#293 [$case] ok=${failures.none { it.startsWith("[$case]") }}")
         }
         assertTrue(failures.joinToString("\n"), failures.isEmpty())
+    }
+
+    /**
+     * Review of #614 (REAL-GAP 1): nothing moves the page. DRIVE with two readings whose PEAK lines differ in width — no
+     * peaks yet ("PEAK 0", "PEAK —") and a session with peaks (four-digit RPM, three-digit speed, a boost peak) — must
+     * place the gear module, under the hero row, at the same height, at every width and font size.
+     */
+    @Test fun `the hero row keeps its height whatever the PEAK lines read`() {
+        val failures = mutableListOf<String>()
+        val p = UserPrefs(speedUnit = "KPH", boostUnit = "KPA")
+        for (w in listOf(360, 411)) for (fs in listOf(1.0f, 1.3f, 2.0f)) {
+            val now = System.currentTimeMillis()
+            val frame = DemoSimulator.apply(VehicleState(), DemoScenario.DRIVING, 9_500, DriveMode.SPORT,
+                EscStatus.fromInt(0), now, stamp = true).copy(vin = "")
+            BoostSession.reset()
+            val none = frame.copy(session = SessionMarks())
+            val (_, _, a) = render(w, fs, p, none)
+            BoostSession.onState(frame, System.currentTimeMillis())          // a boost peak for this session
+            val peaks = frame.copy(session = SessionMarks(peakRpm = 6875.0, peakSpeedKph = 187.4))
+            val (_, _, b) = render(w, fs, p, peaks)
+            val case = "$w dp font $fs"
+            println("#293 [$case] peaks: none=${a.filter { it.text.startsWith("PEAK") }.map { it.text }} " +
+                "set=${b.filter { it.text.startsWith("PEAK") }.map { it.text }}")
+            if (b.none { it.text.startsWith("PEAK ") && it.text != "PEAK —" && it.text.any(Char::isDigit) &&
+                    a.none { o -> o.text == it.text } }) failures += "[$case] the readings did not change a PEAK line"
+            val brakeA = a.first { it.text == "BRAKE" }.bounds.top
+            val brakeB = b.first { it.text == "BRAKE" }.bounds.top
+            if (brakeA != brakeB) failures += "[$case] the gear module moved %.0f px when the peaks changed".format(brakeB - brakeA)
+        }
+        assertEquals(failures.joinToString("\n"), emptyList<String>(), failures)
     }
 }
