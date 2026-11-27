@@ -12,7 +12,7 @@ paths:
 - **BLE writes have three outcomes (#248)** — `BleGattCore.write` returns a `WriteOutcome`: SENT, POSSIBLY_DELIVERED
   (GATT 13) or a `WriteFailure` (not sent / uncertain).
   - **Why:** the WiCAN Pro (upstream v4.48p) declares FFF2 with a 20-byte maximum but its stack (ESP-IDF 5.2.3) delivers a
-    longer write and then answers 0x0D, and every 22-byte `t…` frame is one ATT write at MTU 247. Source-level only: no
+    longer write and then answers 0x0D, and every 22-byte `t…` frame is one ATT write at any MTU of 25 or more. Source-level only: no
     GATT trace from a real adapter. USB FEE1 allows 64 bytes.
   - **Rule:** POSSIBLY_DELIVERED keeps the request outstanding until its own reply; it is never resent and never a
     drive-mode / ESC confirmation (CAN only). Only a certainly-not-sent failure withdraws the request
@@ -33,3 +33,7 @@ paths:
 - **BLE permissions must be requested at scan time** — `BleDevicePickerDialog` handles runtime permission requests (BLUETOOTH_SCAN + BLUETOOTH_CONNECT on API 31+). Do NOT rely solely on `MainActivity.onCreate()` permission requests — the user may switch to Bluetooth after app startup. `BleDeviceScanner.startScan()` also has a SecurityException safety net
 - **BLE picker (#218)** — never cache `bluetoothLeScanner` (null while the phone's radio is off). For picker checks the
   emulator AVD has a virtual Bluetooth adapter: `adb shell cmd bluetooth_manager enable|disable`
+- **BLE MTU (#529)** — setup requests 247; the callback may report a larger MTU (517 seen in Bluetooth sessions, status 0),
+  and the app uses what it reports: writes split at the reported MTU − 3, a failed status or a refused request leaves 23
+  (`BleGattCore.onMtuChanged`, `BleMtuContextExportTest`). Why the link reports more than was asked is a hypothesis (the
+  platform raising the request); exports do not record the Android version (#373)
