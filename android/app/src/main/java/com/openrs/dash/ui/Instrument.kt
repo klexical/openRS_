@@ -362,32 +362,47 @@ internal data class Readout(
 )
 
 /**
+ * A [ReadoutGrid] caption, at least 4 dp clear of the next column (#593: "FUEL USED" met "ECONOMY" on TRIP at 360 dp,
+ * font 1.3). A caption that fits its column is [InstrumentLabel] as before. One that doesn't steps down in size, never
+ * below [READOUT_LABEL_MIN] of the user's text size, to stay on one line; one still too wide at that size wraps between
+ * words at that size. Never clipped: a capped single line would cut it silently.
+ */
+@Composable private fun ReadoutLabel(text: String) {
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.padding(end = 4.dp)) {
+        val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+        // Material's Text style underneath, as InstrumentLabel draws it: the same line height and font padding
+        val base = androidx.compose.material3.LocalTextStyle.current.merge(
+            fontFamily = JetBrainsMonoFamily, fontSize = 10.sp, letterSpacing = 0.5.sp,
+        )
+        val room = constraints.maxWidth
+        fun width(scale: Float) = measurer.measure(
+            text, base.copy(fontSize = base.fontSize * scale, letterSpacing = base.letterSpacing * scale),
+            maxLines = 1, softWrap = false,
+        ).size.width
+        val full = width(1f)
+        if (full <= room) {
+            InstrumentLabel(text)
+        } else {
+            // Width is close to linear in size: start from the ratio, then step down until it fits or hits the floor
+            var scale = (room.toFloat() / full).coerceAtLeast(READOUT_LABEL_MIN)
+            while (scale > READOUT_LABEL_MIN && width(scale) > room) scale = (scale - 0.02f).coerceAtLeast(READOUT_LABEL_MIN)
+            androidx.compose.material3.Text(
+                text, color = textColor(Dim), fontFamily = JetBrainsMonoFamily,
+                fontSize = base.fontSize * scale, letterSpacing = base.letterSpacing * scale,
+            )
+        }
+    }
+}
+
+/** The smallest a [ReadoutGrid] caption shrinks to, as a share of its 10 sp: 7 sp. */
+private const val READOUT_LABEL_MIN = 0.7f
+
+/**
  * A section's readings as one instrument panel (was one card per value). Rows of equal-width
  * columns; null = empty slot. [captions] inserts a sub-heading before the given row index.
  * [dense] (TRIP's live panel under the map) tightens spacing and the value size, not the captions;
  * [footer] adds content inside the same panel after the rows.
  */
-/**
- * A [ReadoutGrid] caption: [InstrumentLabel]'s look, on one line, at least 4 dp clear of the next column. When a
- * large font size makes it wider than its column it steps down in size (to 7 sp) instead of wrapping or running into
- * its neighbour — "FUEL USED" met "ECONOMY" on TRIP at 360 dp, font 1.3 (#593).
- */
-@Composable private fun ReadoutLabel(text: String) {
-    androidx.compose.foundation.layout.Box(Modifier.padding(end = 4.dp)) {
-        androidx.compose.foundation.text.BasicText(
-            text,
-            // Material's Text style underneath, as InstrumentLabel draws it: the same line height and font padding
-            style = androidx.compose.material3.LocalTextStyle.current.merge(
-                color = textColor(Dim), fontFamily = JetBrainsMonoFamily, fontSize = 10.sp, letterSpacing = 0.5.sp,
-            ),
-            maxLines = 1,
-            autoSize = androidx.compose.foundation.text.TextAutoSize.StepBased(
-                minFontSize = 7.sp, maxFontSize = 10.sp, stepSize = 0.25.sp,
-            ),
-        )
-    }
-}
-
 @Composable internal fun ReadoutGrid(
     rows: List<List<Readout?>>, level: Level = Level.NORMAL, captions: Map<Int, String> = emptyMap(),
     dense: Boolean = false, footer: (@Composable () -> Unit)? = null,
