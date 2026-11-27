@@ -72,9 +72,26 @@ class TpmsIdPollTest {
     /** The BCM's positive reply to its first ordinary poll (BCM_QUERIES.first(), SOC): the BCM answering at all. */
     private val socReply = line(0x72E, bytes(0x04, 0x62, 0x40, 0x28, 0x50, 0, 0, 0))
 
-    /** Answers the sensor-ID reads per [answerFrom] and the SOC poll from [answersFromMs] of virtual time on. */
-    private fun TestScope.bcm(answerFrom: List<Int>, answersFromMs: Long = 0L) = Bus { bus, frame ->
-        if (testScheduler.currentTime < answersFromMs) return@Bus
+    /** A broadcast frame (0x090, RPM and baro) with nothing to do with the BCM. */
+    private val broadcast = "t09080000C1FF617D0000"
+
+    /** The PCM's (0x7E8) positive reply to a Mode 22 read [frame] sent to 0x7E0; null for any other write. */
+    private fun pcmReply(frame: String): String? {
+        if (!frame.startsWith("t7E0") || frame.length < 13 || frame.substring(5, 9) != "0322") return null
+        val did = frame.substring(9, 13).toInt(16)
+        return line(0x7E8, bytes(0x04, 0x62, did shr 8, did and 0xFF, 0x00, 0, 0, 0))
+    }
+
+    /**
+     * Answers the sensor-ID reads per [answerFrom] and the SOC poll from [answersFromMs] of virtual time on. With
+     * [chatterWhileSilent], before then the bus still carries a broadcast frame after every write and the PCM answers its
+     * own reads: only the BCM is silent.
+     */
+    private fun TestScope.bcm(answerFrom: List<Int>, answersFromMs: Long = 0L, chatterWhileSilent: Boolean = false) = Bus { bus, frame ->
+        if (testScheduler.currentTime < answersFromMs) {
+            if (chatterWhileSilent) bus.rx(listOfNotNull(broadcast, pcmReply(frame)))
+            return@Bus
+        }
         val i = reads.indexOf(frame)
         if (i >= 0 && bus.writes.count { it == frame } >= answerFrom[i]) bus.rx(listOf(idReply(i)))
         if (frame == ObdConstants.BCM_QUERIES.first()) bus.rx(listOf(socReply))
@@ -186,6 +203,20 @@ class TpmsIdPollTest {
         val l = link(bcm(answerFrom = listOf(1, 1, 1, 1), answersFromMs = silentMs))
         advanceTimeBy(silentMs)
         assertEquals("only the first cycle's reads while the BCM is silent", listOf(1, 1, 1, 1),
+            reads.indices.map { l.bus.sends(it) })
+        advanceTimeBy(3 * cycleMs)
+        assertEquals("every position mapped once the BCM answers", listOf(true, true, true, true), mapped(l.state))
+        assertTrue("within the bound", reads.indices.all { l.bus.sends(it) <= ObdConstants.TPMS_ID_MAX_SENDS })
+    }
+
+    @Test fun `only BCM frames open the re-read gate - broadcasts and PCM replies while the BCM is silent spend none`() = runTest {
+        // #572: #513's degraded start kept broadcast frames coming while the BCM answered almost nothing. Counted as the
+        // BCM answering, every re-read would be spent during the silence
+        val silentMs = ObdConstants.BCM_INITIAL_DELAY_MS + 12 * cycleMs
+        val l = link(bcm(answerFrom = listOf(1, 1, 1, 1), answersFromMs = silentMs, chatterWhileSilent = true))
+        advanceTimeBy(silentMs)
+        assertTrue("the PCM was read, and so answered, during the silence", l.bus.writes.any { pcmReply(it) != null })
+        assertEquals("only the first cycle's reads while only the BCM is silent", listOf(1, 1, 1, 1),
             reads.indices.map { l.bus.sends(it) })
         advanceTimeBy(3 * cycleMs)
         assertEquals("every position mapped once the BCM answers", listOf(true, true, true, true), mapped(l.state))
