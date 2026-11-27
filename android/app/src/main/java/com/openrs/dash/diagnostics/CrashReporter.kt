@@ -14,31 +14,56 @@ import java.util.Locale
  * The crash report is saved as `crash_telemetry_<timestamp>.json` inside
  * the app's `diagnostics/` directory and gets included in the next
  * diagnostic ZIP export.
+ *
+ * [install] also sets aside [RESERVE_BYTES] of heap that the handler lets go of before it allocates anything, so a
+ * crash caught on a full heap still has room for the minimal record (#552, #511). The cost is the reserve's size for
+ * the process's whole life.
  */
 object CrashReporter {
 
-    fun install(app: Application) {
+    /** Heap kept for the crash handler: room for the minimal record's stack text and a few KB more (#552). */
+    internal const val RESERVE_BYTES = 128 * 1024
+
+    // Shipped code only writes it, so R8 would remove it: proguard-rules.pro keeps it (#552).
+    @Volatile private var reserve: ByteArray? = null
+
+    /** True while the reserve is held: from [install] until the handler first runs (#552). */
+    internal val reserveHeld: Boolean get() = reserve != null
+
+    /**
+     * [write] is a seam for tests; the app uses the default, which writes the crash record with this build's details.
+     */
+    fun install(
+        app: Application,
+        write: (file: File, exception: Throwable, threadName: String) -> Unit = ::writeRecord,
+    ) {
+        reserve = ByteArray(RESERVE_BYTES)
         val prev = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            // First, before the file name or anything else is allocated: the next allocation's garbage collection
+            // can then reclaim the reserve (#552).
+            reserve = null
             try {
                 val diagDir = File(app.filesDir, "diagnostics").apply { mkdirs() }
                 val ts = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-                val file = crashFile(diagDir, ts)
-                CrashTelemetryBuffer.flushToFile(
-                    file      = file,
-                    exception = throwable,
-                    threadName = thread.name,
-                    appVersion = BuildConfig.VERSION_NAME,
-                    versionCode = BuildConfig.VERSION_CODE,
-                    sourceCommit = BuildConfig.SOURCE_COMMIT + if (BuildConfig.SOURCE_DIRTY) "-dirty" else "",
-                    buildType = BuildConfig.BUILD_TYPE
-                )
+                write(crashFile(diagDir, ts), throwable, thread.name)
             } catch (_: Throwable) {
                 // Must not throw — fall through to default handler.
             }
             prev?.uncaughtException(thread, throwable)
         }
     }
+
+    private fun writeRecord(file: File, exception: Throwable, threadName: String) =
+        CrashTelemetryBuffer.flushToFile(
+            file       = file,
+            exception  = exception,
+            threadName = threadName,
+            appVersion = BuildConfig.VERSION_NAME,
+            versionCode = BuildConfig.VERSION_CODE,
+            sourceCommit = BuildConfig.SOURCE_COMMIT + if (BuildConfig.SOURCE_DIRTY) "-dirty" else "",
+            buildType = BuildConfig.BUILD_TYPE
+        )
 
     /**
      * Claims the file a crash caught at [ts] (`yyyyMMdd_HHmmss`) is written to, in [dir]: `crash_telemetry_<ts>.json`,

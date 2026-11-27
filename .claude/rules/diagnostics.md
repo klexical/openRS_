@@ -126,4 +126,6 @@ paths:
   `crash_telemetry_<ts>.json`, then `_2`, `_3` … in the same second), so threads failing together on a full heap never
   share one. A crash file that is empty or not valid JSON can mean the handler ran out of memory or was killed during
   the minimal write, not that the format changed. The out-of-memory case is simulated at the snapshot seam, never on a
-  real full heap (`CrashRecordFullHeapTest`, `CrashFileNameTest`, `CrashHistoryClearTest`)
+  real full heap (`CrashRecordFullHeapTest`, `CrashFileNameTest`, `CrashHistoryClearTest`). The handler's own first step
+  drops `CrashReporter`'s heap reserve (#552), so nothing in the handler may allocate before that line; a full heap is
+  filled for real only in a child JVM (`CrashHandlerHeapReserveTest`), after the handler's classes are loaded

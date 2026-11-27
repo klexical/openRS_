@@ -85,7 +85,8 @@ class CrashRecordFullHeapTest {
     }
 
     @Test fun `a failure part-way through the snapshots leaves the minimal record whole, and no part file`() {
-        repeat(5) { CrashTelemetryBuffer.push(VehicleState(rpm = 1000.0 + it)) }
+        // One push per 100 ms slot, so all five are kept (the ring keeps one snapshot per slot, #521)
+        repeat(5) { CrashTelemetryBuffer.push(VehicleState(rpm = 1000.0 + it), nowMs = 30_000_000L + it * 100L) }
         val file = crashFile()
         var calls = 0
 
