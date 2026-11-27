@@ -51,6 +51,7 @@ class BleCommandSendFailureTest {
     /** Fake GATT: poll / init writes succeed; `AT+FRS` writes behave per [frs]; OK answers `+FRS:OK`. */
     private inner class FakeGatt(val core: BleGattCore, val scope: CoroutineScope) : GattLink {
         var frs = FrsWrite.OK
+        var reply = "+FRS:OK"                                   // the adapter's answer to an acknowledged AT+FRS
         val frsWrites = mutableListOf<String>()
         var slcanWriteStatus: (String) -> Int = { BleSetupPolicy.GATT_SUCCESS }
         var closed = false
@@ -70,7 +71,7 @@ class BleCommandSendFailureTest {
             when (frs) {
                 FrsWrite.OK -> scope.launch {
                     delay(10); core.onWrite(BleSetupPolicy.GATT_SUCCESS)
-                    delay(50); core.onNotify(pro.notify, "+FRS:OK\r".toByteArray())
+                    delay(50); core.onNotify(pro.notify, "$reply\r".toByteArray())
                 }
                 FrsWrite.NO_CALLBACK -> Unit
                 FrsWrite.CALLBACK_FAILS -> scope.launch { delay(10); core.onWrite(BleSetupPolicy.GATT_INSUFFICIENT_AUTHENTICATION) }
@@ -282,5 +283,41 @@ class BleCommandSendFailureTest {
         link2.first.frs = FrsWrite.REFUSED
         val next = runCatching { esc(api2) }.getOrNull()
         assertTrue("$next", next !is EscCommand.Outcome.Busy)        // null (an escaped exception) is finding 1, not this check
+    }
+
+    // #607: a reply is read by its status word after "+FRS:", never by "OK" anywhere in its text
+    private suspend fun TestScope.replyTo(reply: String): Result<Unit> {
+        val link = connected(FrsWrite.OK)
+        link.first.reply = reply
+        return BleFirmwareApi(link.conn).setDriveMode(1)
+    }
+
+    private fun failureText(r: Result<Unit>) = (r.exceptionOrNull() as? com.openrs.dash.can.FirmwareCommandException)?.message
+
+    @Test fun `an ERROR reply whose reason text holds OK is an adapter error, not accepted`() = runTest {
+        for (reply in listOf("+FRS:ERROR,TOKEN", "+FRS:ERROR,bad token OK", "+FRS:ERROR,OK")) {
+            assertEquals(reply, com.openrs.dash.can.FirmwareFailure.ADAPTER_ERROR, failureText(replyTo(reply)))
+        }
+    }
+
+    @Test fun `a BUSY reply whose text holds OK is busy, not accepted`() = runTest {
+        val r = replyTo("+FRS:BUSY,OK")
+        assertTrue("$r", r.exceptionOrNull() is com.openrs.dash.can.BusyException)
+    }
+
+    @Test fun `a reply whose status word only starts or ends with OK is unexpected`() = runTest {
+        for (reply in listOf("+FRS:OKAY", "+FRS:NOTOK", "+FRS:driveMode=1,escMode=0,lcEnabled=OK")) {
+            assertEquals(reply, com.openrs.dash.can.FirmwareFailure.UNEXPECTED_REPLY, failureText(replyTo(reply)))
+        }
+    }
+
+    @Test fun `the firmware's own replies keep their meaning`() = runTest {
+        assertTrue(replyTo("+FRS:OK").isSuccess)
+        assertTrue(replyTo("+FRS:BUSY").exceptionOrNull() is com.openrs.dash.can.BusyException)
+        for (reply in listOf("+FRS:ERROR,invalid mode", "+FRS:ERROR,bad syntax", "+FRS:ERROR")) {
+            assertEquals(reply, com.openrs.dash.can.FirmwareFailure.ADAPTER_ERROR, failureText(replyTo(reply)))
+        }
+        // An ERROR word with something other than a comma after it is not an error the firmware writes
+        assertEquals(com.openrs.dash.can.FirmwareFailure.UNEXPECTED_REPLY, failureText(replyTo("+FRS:ERRORS")))
     }
 }

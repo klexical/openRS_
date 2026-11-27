@@ -109,11 +109,22 @@ class BleFirmwareApi(private val connection: SlcanConnection) : FirmwareCommandS
             connection.commandResponseChannel.receive()
         } ?: return Result.failure(FirmwareCommandException(FirmwareFailure.NO_REPLY))
 
-        // The firmware's own text after ERROR, and any other reply, stay out of the failure (#604)
+        return classifyReply(response)
+    }
+
+    /**
+     * A `+FRS:` reply by its status word alone (#607): `OK` accepted; `BUSY` busy and `ERROR` failed, each alone or
+     * before a comma; anything else unexpected. Never by "OK" anywhere in the line: an error whose reason text holds the
+     * letters is not an acceptance. The firmware's own text after `ERROR,`, and any other reply, stay out of the
+     * failure (#604).
+     */
+    private fun classifyReply(response: String): Result<Unit> {
+        val status = response.removePrefix("+FRS:").trimEnd()
         return when {
-            response.contains("OK") -> Result.success(Unit)
-            response.contains("BUSY") -> Result.failure(BusyException())
-            response.contains("ERROR") -> Result.failure(FirmwareCommandException(FirmwareFailure.ADAPTER_ERROR))
+            status == "OK" -> Result.success(Unit)
+            status == "BUSY" || status.startsWith("BUSY,") -> Result.failure(BusyException())
+            status == "ERROR" || status.startsWith("ERROR,") ->
+                Result.failure(FirmwareCommandException(FirmwareFailure.ADAPTER_ERROR))
             else -> Result.failure(FirmwareCommandException(FirmwareFailure.UNEXPECTED_REPLY))
         }
     }
