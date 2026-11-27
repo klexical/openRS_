@@ -1,0 +1,1 @@
+- **TRIP's readout labels keep a gap at large font sizes** — At 360 dp and font 1.3 TRIP's FUEL USED label ran into ECONOMY beside it. A label in the readout grids (TRIP, PERF, DIAG) now stays on one line at least 4 dp clear of the next column, stepping down in size when its column is too narrow (`TripReadoutFitTest`). ([#593](https://github.com/klexical/openRS_/issues/593))

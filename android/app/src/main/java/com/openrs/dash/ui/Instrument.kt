@@ -367,6 +367,27 @@ internal data class Readout(
  * [dense] (TRIP's live panel under the map) tightens spacing and the value size, not the captions;
  * [footer] adds content inside the same panel after the rows.
  */
+/**
+ * A [ReadoutGrid] caption: [InstrumentLabel]'s look, on one line, at least 4 dp clear of the next column. When a
+ * large font size makes it wider than its column it steps down in size (to 7 sp) instead of wrapping or running into
+ * its neighbour — "FUEL USED" met "ECONOMY" on TRIP at 360 dp, font 1.3 (#593).
+ */
+@Composable private fun ReadoutLabel(text: String) {
+    androidx.compose.foundation.layout.Box(Modifier.padding(end = 4.dp)) {
+        androidx.compose.foundation.text.BasicText(
+            text,
+            // Material's Text style underneath, as InstrumentLabel draws it: the same line height and font padding
+            style = androidx.compose.material3.LocalTextStyle.current.merge(
+                color = textColor(Dim), fontFamily = JetBrainsMonoFamily, fontSize = 10.sp, letterSpacing = 0.5.sp,
+            ),
+            maxLines = 1,
+            autoSize = androidx.compose.foundation.text.TextAutoSize.StepBased(
+                minFontSize = 7.sp, maxFontSize = 10.sp, stepSize = 0.25.sp,
+            ),
+        )
+    }
+}
+
 @Composable internal fun ReadoutGrid(
     rows: List<List<Readout?>>, level: Level = Level.NORMAL, captions: Map<Int, String> = emptyMap(),
     dense: Boolean = false, footer: (@Composable () -> Unit)? = null,
@@ -383,7 +404,7 @@ internal data class Readout(
                     Column(Modifier.weight(1f)) {
                         if (r != null) {
                             val placeholder = r.value.startsWith("—")
-                            InstrumentLabel(r.label)
+                            ReadoutLabel(r.label)
                             Spacer(Modifier.height(2.dp))
                             DataNum(r.value, if (dense) 16.sp else 18.sp,
                                 if (placeholder) Dim else if (r.color == Color.Unspecified) Frost else r.color)
