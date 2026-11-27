@@ -191,7 +191,23 @@ describe('importZip', () => {
 
     const file = await buildZipFile({ 'drive_fuel.csv': csv })
     const session = await importZip(file)
-    expect(session.trip!.summary.fuelUsedL).toBeCloseTo(2.092, 2)
+    expect(session.trip!.summary.fuelUsedL).toBeCloseTo(1.992, 3)   // 4 % of the app's 49.8 L tank
+  })
+
+  // #523: a drive CSV without its profile (a diagnostic export) is worked out with the app's tank size, 49.8 L
+  // (DriveState.TANK_L), not 52.3 L; rows before the fuel frame arrived have an empty fuel_pct and are no reading
+  it('fuel used from the CSV alone: empty fuel rows ignored, the app\'s 49.8 L tank', async () => {
+    const csv = [
+      ANDROID_CSV_HEADER,
+      makeAndroidCsvRow(1000000, { fuel_pct: '' }),
+      makeAndroidCsvRow(1001000, { fuel_pct: '' }),
+      makeAndroidCsvRow(1002000, { fuel_pct: 80 }),
+      makeAndroidCsvRow(1003000, { fuel_pct: 78 }),
+      makeAndroidCsvRow(1004000, { fuel_pct: 76 }),
+    ].join('\n')
+
+    const session = await importZip(await buildZipFile({ 'drive_fuel_late.csv': csv }))
+    expect(session.trip!.summary.fuelUsedL).toBeCloseTo(1.992, 3)
   })
 
   it('handles sentinel values for temperatures', async () => {

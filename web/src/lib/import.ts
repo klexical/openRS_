@@ -624,7 +624,8 @@ function avg(arr: number[]): number {
 }
 
 
-const FOCUS_RS_TANK_LITRES = 52.3
+// The app's tank size (DriveState.TANK_L, FuelEconomy.TANK_CAPACITY_L), so a CSV-only figure matches the app's (#523)
+const FOCUS_RS_TANK_LITRES = 49.8
 
 function computeFuelUsedL(points: TripPoint[]): number {
   const validFuel = points.map((p) => p.fuelPct).filter((v) => v >= 0)
