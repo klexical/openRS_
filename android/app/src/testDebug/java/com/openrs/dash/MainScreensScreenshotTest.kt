@@ -234,7 +234,8 @@ class MainScreensScreenshotTest(private val fontScale: Float) {
 
     /**
      * What changes from run to run and says nothing about layout, painted over in screen pixels (each box keeps its size):
-     * - the debug build's source revision in Settings' ABOUT line ("· debug 1549b7e*"), new with every commit;
+     * - the debug build's source revision, new with every commit, wherever a screen shows it (Settings' ABOUT line draws a
+     *   fixed label instead, [pinnedVersion]);
      * - the header's LIVE pill: its dot pulses for ever, and how far it has got when the image is taken depends on how long
      *   Robolectric waits for background work first (seen on pages after a scroll), so it differed between runs.
      * A box covers only what shows of its window: a dialog drawn over it hides the part under the dialog's content (What's
@@ -371,13 +372,19 @@ class MainScreensScreenshotTest(private val fontScale: Float) {
         Frame(4, driving) { GaragePage(debugLines = emptyList(), vs = driving, p = UserPrefs(), snackbarHostState = remember { SnackbarHostState() }) }
     }
 
+    /**
+     * Settings' ABOUT strip with a fixed debug label: the build's own ("… · debug <commit>*") wraps beside UPDATES, so its
+     * length (the dirty star) would move the strip's height between a working tree and CI (#594).
+     */
+    private val pinnedVersion = com.openrs.dash.update.BuildInfo.settingsLabel("2.2.7-nightly.20261123", 99, "debug", "0000000", dirty = false)
+
     @Test fun settings() = shoot("settings", driving) {
-        Frame(0, driving) { SettingsDialog(onDismiss = {}) }
+        Frame(0, driving) { SettingsDialog(onDismiss = {}, versionLabel = pinnedVersion) }
     }
 
     /** Settings → UNITS: the region presets, every unit row and the TPMS thresholds. */
     @Test fun settingsUnits() = shoot("settings_units", driving, before = { clickText("UNITS") }) {
-        Frame(0, driving) { SettingsDialog(onDismiss = {}) }
+        Frame(0, driving) { SettingsDialog(onDismiss = {}, versionLabel = pinnedVersion) }
     }
 
     /** What's New: the first screenful only (the list below is release-note text, one style throughout). */

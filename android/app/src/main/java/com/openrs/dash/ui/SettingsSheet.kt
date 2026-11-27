@@ -135,6 +135,8 @@ fun SettingsDialog(
     onExitDemo: () -> Unit = {},
     /** Open on CONNECTION — from the dashboard's "select a Bluetooth device" prompt (#234). */
     openConnection: Boolean = false,
+    /** The ABOUT strip's version; a parameter so the screenshot test draws a fixed one (#594). */
+    versionLabel: String = com.openrs.dash.update.BuildInfo.settingsLabel,
 ) {
     val ctx = LocalContext.current
     val accent = LocalThemeAccent.current
@@ -1002,6 +1004,7 @@ fun SettingsDialog(
                     onToggle = { aboutExpanded = !aboutExpanded },
                     updateChannel = updateChannel,
                     onChannelChange = { updateChannel = it },
+                    versionLabel = versionLabel,
                 )
 
                 // Search bar
@@ -1258,7 +1261,7 @@ internal fun AboutStrip(
     onToggle: () -> Unit,
     updateChannel: String,
     onChannelChange: (String) -> Unit,
-    /** This build's "2.2.7-rc.7 · Build 36 …"; a parameter so a test can draw the release build's label too (#594). */
+    /** This build's "2.2.7-rc.7 · Build 36 …"; a parameter so tests can draw a fixed or a release build's label (#594). */
     versionLabel: String = com.openrs.dash.update.BuildInfo.settingsLabel,
 ) {
     val accent = LocalThemeAccent.current
