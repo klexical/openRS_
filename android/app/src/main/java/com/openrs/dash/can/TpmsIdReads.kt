@@ -12,9 +12,9 @@ import java.util.concurrent.atomic.AtomicInteger
  * positions whose ID is still unknown in the state, until each has been sent [maxSends] times. Read-only Mode 22
  * requests, nothing else; one instance per connection, so a reconnect starts a new budget.
  *
- * A re-read is spent only when the BCM has answered something (a 0x72E frame on the poll path, [bcmAnswered]) since that
- * position's last read went out: while nothing comes back from the BCM (a degraded start, #513) the budget waits instead of
- * running out, and the reads resume once the BCM answers again. Never more than [maxSends] per position.
+ * A re-read is spent only when the BCM has answered something (a 0x72E frame on the poll path, [bcmAnswered]) since
+ * that position's last read went out: while nothing comes back from the BCM (a degraded start, #513) the budget waits
+ * instead of running out, and the reads resume once the BCM answers again. Never more than [maxSends] per position.
  */
 internal class TpmsIdReads(private val maxSends: Int = ObdConstants.TPMS_ID_MAX_SENDS) {
     private val queries = ObdConstants.BCM_TPMS_ID_QUERIES
@@ -26,9 +26,9 @@ internal class TpmsIdReads(private val maxSends: Int = ObdConstants.TPMS_ID_MAX_
     private val answersAtSend = IntArray(queries.size)
 
     /**
-     * The frame loop's ordinary BCM branch saw a frame from the BCM (0x72E). Only the frames the poll path sees count: the
-     * DID prober's own positive reply, frames diverted to a running DTC scan and a prober NRC taken by its ledger do not
-     * reach it (#572). That can only make a re-read wait, never spend one early.
+     * The frame loop's ordinary BCM branch saw a frame from the BCM (0x72E). Only the frames the poll path sees count:
+     * the DID prober's own positive reply, frames diverted to a running DTC scan and a prober NRC taken by its ledger
+     * do not reach it (#572). That can only make a re-read wait, never spend one early.
      */
     fun bcmAnswered() { answers.incrementAndGet() }
 
