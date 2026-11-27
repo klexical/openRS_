@@ -24,6 +24,7 @@ object CrashReporter {
     /** Heap kept for the crash handler: room for the minimal record's stack text and a few KB more (#552). */
     internal const val RESERVE_BYTES = 128 * 1024
 
+    // Shipped code only writes it, so R8 would remove it: proguard-rules.pro keeps it (#552).
     @Volatile private var reserve: ByteArray? = null
 
     /** True while the reserve is held: from [install] until the handler first runs (#552). */

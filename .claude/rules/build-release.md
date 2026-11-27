@@ -61,6 +61,11 @@ paths:
   test were fine. Keep very large composable lambdas split; smoke the minified APK (launch + every tab) and grep logcat
   for `Verifier rejected` before calling a release build good — clear the buffer *before* the cold start, or the grep
   doesn't cover it (the rendered DRIVE page is the real evidence). Tracked in #227
+- **A field the release code only writes is removed by R8** — R8 drops a field nothing in shipped code reads, and the
+  stores and allocation with it, while debug builds and JVM tests keep it. A field kept for its side effect (the crash
+  handler's heap reserve, #552) needs a `-keepclassmembers` rule in `app/proguard-rules.pro`; check it in the minified
+  dex (`./gradlew :app:minifyReleaseWithR8`, then `dexdump -d` of
+  `app/build/intermediates/dex/release/minifyReleaseWithR8/classes.dex`: the `new-array` and `sput-object` are there)
 - **Fresh Play-services AVDs kill the app mid-test** — the Maps SDK's Dynamite loader SIGKILLs its own process when GMS is
   replaced during first-boot updates; `pm disable-user com.android.vending` on the throwaway AVD before smoke tests
 - **Private builds: the safety rules**
