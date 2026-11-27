@@ -72,6 +72,13 @@ class HandOverCloseServiceTest {
             .apply { isAccessible = true }.invoke(service, wifi, t, emptyList<String>())
     }
 
+    /** A read of the provider from another thread, as a service collector starting late on Dispatchers.Default makes. */
+    private fun lateReader() {
+        var failure: Throwable? = null
+        Thread { try { CanDataService.recorderProvider() } catch (e: Throwable) { failure = e } }.apply { start(); join(5_000) }
+        assertEquals("a read on another thread never takes the test's throw", null, failure)
+    }
+
     private fun until(ms: Long = 5_000, ok: () -> Boolean): Boolean {
         val end = System.currentTimeMillis() + ms
         while (!ok() && System.currentTimeMillis() < end) Thread.sleep(20)
@@ -92,10 +99,18 @@ class HandOverCloseServiceTest {
 
     @Test fun `an exception after the hand-over closes the transport (L1)`() {
         // The first read is the foreground promote's (its own catch closes the transport); the second, after the promote,
-        // throws out of beginConnection: the start fails after the hand-over and before any connection exists
+        // throws out of beginConnection: the start fails after the hand-over and before any connection exists.
+        // #554: only reads on this thread are counted. The service's own collectors read the provider on
+        // Dispatchers.Default, and under load one of them can start only now: counted, it took the throw (which then
+        // escaped into the next class's runTest) and beginConnection went on to adopt the transport. A late reader on
+        // another thread is played here between the two reads, so the test pins that it no longer shifts the count.
+        // The close itself is synchronous: startOnAdapterNetwork's finally runs it before handOver returns.
+        val testThread = Thread.currentThread()
         val reads = AtomicInteger()
         CanDataService.recorderProvider = {
-            if (reads.incrementAndGet() == 2) throw IllegalStateException("test: the start fails after the hand-over")
+            if (Thread.currentThread() === testThread && reads.incrementAndGet() == 1) lateReader()
+            if (Thread.currentThread() === testThread && reads.get() == 2)
+                throw IllegalStateException("test: the start fails after the hand-over")
             CanDataService.APP_RECORDER()
         }
         val t = Counting()
