@@ -242,7 +242,8 @@ ui/
                             & AWD, collapsible DETAIL (compact). Offline → "AWAITING CAN"
   Instrument.kt           — Design-pass building blocks: Level (NORMAL/COLD/WARN/CRIT/STALE/NONE), tempLevel(),
                             instrumentSurface() (white + hairline on DAY, no shadow), InstrumentLabel/InstrumentMeta
-                            (10 sp), InstrumentHero, StatusCell, AlertChip, ThresholdBar (caution + redline zones) +
+                            (10 sp), InstrumentHero (caption + unit one line ≥ 4 dp apart, else the unit on a second line;
+                            #293), fitOneLine() (one line, shrunk only when wider than its space), StatusCell, AlertChip, ThresholdBar (caution + redline zones) +
                             ThresholdLegend, MiniReadout, Telltale, ReadoutGrid/Readout (grouped readings panel, dense +
                             footer; POWER + TRIP). Symbols / car art / wordmark / launcher come from the owner-approved
                             concept sheet (BrandArt.kt, res/drawable*/) — never redraw or substitute them unasked
@@ -263,7 +264,8 @@ ui/
   BottomNavBar.kt         — Custom bottom nav: 5 Precision-family icons (nav_<tab>_whole|base|accent alpha layers — inactive
                             whole glyph in Dim, selected two-tone; DAY selected ink = actionInk), frosted glass via Haze (hazeEffect),
                             spring-animated indicator bar, one top hairline, pressClick + haptics
-                            Height: Tokens.NavBarHeight (48 dp tabs) + sysNavPad (gesture area)
+                            Height: Tokens.NavBarHeight (48 dp tabs) + sysNavPad (gesture area); tab names follow the
+                            system font up to NAV_LABEL_MAX_FONT_SCALE (1.3), one line (#293, DriveLabelsFitTest)
   BrandArt.kt             — Concept-sheet artwork in code: Wordmark (traced glyphs, per-glyph alpha for the header
                             typewriter), RsIcon + TelemetryIcon (NORMAL two-tone / MUTED / SELECTED / WARNING / CRITICAL /
                             UNAVAILABLE), OpeningPresentation (cold start; fades once the dashboard has drawn — no timer).

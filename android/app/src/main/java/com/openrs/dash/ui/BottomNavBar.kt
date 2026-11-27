@@ -34,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.painterResource
@@ -66,6 +67,12 @@ import androidx.compose.ui.draw.alpha
  * at the source's common scale. Inactive = [whole] in the muted colour; selected = the design's two-tone.
  */
 private data class NavItem(@DrawableRes val whole: Int, @DrawableRes val base: Int, @DrawableRes val accent: Int, val label: String)
+
+/**
+ * The largest system font scale a tab name follows (#293). [Tokens.NavBarHeight] leaves 19 dp under the 24 dp icon; the
+ * names fit it at 1.3 and ran off the bar at 2.0. Below this scale the names are unchanged.
+ */
+internal const val NAV_LABEL_MAX_FONT_SCALE = 1.3f
 
 private val navItems = listOf(
     NavItem(R.drawable.nav_drive_whole,   R.drawable.nav_drive_base,   R.drawable.nav_drive_accent,   "DRIVE"),
@@ -111,6 +118,12 @@ fun BottomNavBar(
     val haptic = LocalHapticFeedback.current
     val tabCount = navItems.size
     val sysNavPad = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val fontScale = LocalDensity.current.fontScale
+    // Above the cap the name and its line box keep the size they have at the cap (the line box is the theme's, 24 sp)
+    val navCap = if (fontScale > NAV_LABEL_MAX_FONT_SCALE) NAV_LABEL_MAX_FONT_SCALE / fontScale else 1f
+    val navLabelSize = 9.sp * navCap
+    val ambientLineHeight = androidx.compose.material3.LocalTextStyle.current.lineHeight
+    val navLabelLineHeight = if (ambientLineHeight.isSp) ambientLineHeight * navCap else ambientLineHeight
 
     BoxWithConstraints(
         modifier
@@ -230,8 +243,13 @@ fun BottomNavBar(
                             }
                         }
                         Spacer(Modifier.height(1.dp))
-                        // 9 sp (was 7): the tab names must read at arm's length on a mounted phone.
-                        MonoLabel(item.label, 9.sp, tint, if (isActive) FontWeight.Bold else FontWeight.Normal, letterSpacing = 0.2.sp)
+                        // 9 sp (was 7): the tab names must read at arm's length on a mounted phone. The bar's height is
+                        // fixed, so a name grows with the system font only up to NAV_LABEL_MAX_FONT_SCALE, on one line,
+                        // shrunk only if wider than its tab (#293: at font 2.0 the names ran below the bar and into each other).
+                        androidx.compose.material3.Text(
+                            item.label, fontSize = navLabelSize, lineHeight = navLabelLineHeight, fontFamily = JetBrainsMonoFamily,
+                            color = textColor(tint), fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
+                            letterSpacing = 0.2.sp, maxLines = 1, softWrap = false, modifier = Modifier.fitOneLine())
                     }
                 }
             }

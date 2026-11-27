@@ -432,7 +432,8 @@ internal fun economyCells(vs: VehicleState, econState: FuelEconomy.EconomyState,
             Box(Modifier.fillMaxWidth().fillMaxHeight(frac).background(color, RoundedCornerShape(5.dp)))
         }
         Spacer(Modifier.height(6.dp))
-        MonoLabel(label, 9.sp, Mid, letterSpacing = 0.2.sp)
+        // One line in the 60 dp column (#293: "THROT / TLE" at font 2.0)
+        MonoLabel(label, 9.sp, Mid, letterSpacing = 0.2.sp, modifier = Modifier.fitOneLine())
     }
 }
 
