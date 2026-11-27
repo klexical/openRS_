@@ -299,7 +299,8 @@ private object HeroCaptionPolicy : MultiContentMeasurePolicy {
         val free = Constraints()
         val c = captionM.first().measure(free)
         val u = unitM.first().measure(free)
-        val w = constraints.maxWidth
+        // A hero always has a finite width; an unbounded one (a horizontal scroll) takes the one-line natural width
+        val w = if (constraints.hasBoundedWidth) constraints.maxWidth else c.width + HeroCaptionGap.roundToPx() + u.width
         val plan = CaptionPlan(c.width, c.height, u.width, u.height,
             referenceM.firstOrNull()?.measure(free)?.width ?: c.width, w, HeroCaptionGap.roundToPx())
         return layout(w, plan.height) {
@@ -342,8 +343,9 @@ private fun androidx.compose.ui.layout.Placeable.PlacementScope.placeScaled(
 
 /**
  * One line of text that never wraps: measured at its natural width and, only when that is wider than the space it is
- * given, drawn scaled down to fit (#293: DRIVE's PEAK lines, pedal names and the tab names at font 2.0).
- * Text that fits is laid out exactly as before. Apply it last, after any size modifier.
+ * given, drawn scaled down to fit (#293: DRIVE's PEAK lines, pedal names and the tab names at font 2.0). The box keeps
+ * one line's height whatever the text, so a changing text never changes the layout's height. Text that fits is laid out
+ * exactly as before. Apply it last, after any size modifier.
  */
 internal fun Modifier.fitOneLine(): Modifier = this then FitOneLineElement
 
@@ -358,20 +360,20 @@ private class FitOneLineNode : Modifier.Node(), LayoutModifierNode {
         val p = measurable.measure(Constraints())
         val f = scale(p.width, constraints.maxWidth)
         val w = (p.width * f).toInt().coerceIn(constraints.minWidth, constraints.maxWidth)
-        val h = (p.height * f).toInt().coerceIn(constraints.minHeight, constraints.maxHeight)
-        return layout(w, h) { placeScaled(p, 0, 0, f) }
+        // The box keeps the line's own height at any scale: a PEAK line is a reading, and a height that followed its
+        // width moved DRIVE's hero row when a peak arrived or gained a digit (review of #614). A shrunk drawing is centred in it.
+        val h = p.height.coerceIn(constraints.minHeight, constraints.maxHeight)
+        return layout(w, h) { placeScaled(p, 0, if (f >= 1f) 0 else ((h - p.height * f) / 2).toInt(), f) }
     }
 
     private fun scale(natural: Int, maxWidth: Int) =
         if (maxWidth != Constraints.Infinity && natural > maxWidth) maxWidth / natural.toFloat() else 1f
 
-    // The one-line height at the scale [width] would get, so IntrinsicSize parents size to what is drawn
-    private fun heightFor(measurable: IntrinsicMeasurable, width: Int): Int {
-        val inf = Constraints.Infinity
-        return (measurable.maxIntrinsicHeight(inf) * scale(measurable.maxIntrinsicWidth(inf), width)).toInt()
-    }
-    override fun IntrinsicMeasureScope.maxIntrinsicHeight(measurable: IntrinsicMeasurable, width: Int) = heightFor(measurable, width)
-    override fun IntrinsicMeasureScope.minIntrinsicHeight(measurable: IntrinsicMeasurable, width: Int) = heightFor(measurable, width)
+    // One line's height whatever the width (as measure): IntrinsicSize parents size to the box, never to the text's width
+    override fun IntrinsicMeasureScope.maxIntrinsicHeight(measurable: IntrinsicMeasurable, width: Int) =
+        measurable.maxIntrinsicHeight(Constraints.Infinity)
+    override fun IntrinsicMeasureScope.minIntrinsicHeight(measurable: IntrinsicMeasurable, width: Int) =
+        measurable.maxIntrinsicHeight(Constraints.Infinity)
     override fun IntrinsicMeasureScope.maxIntrinsicWidth(measurable: IntrinsicMeasurable, height: Int) =
         measurable.maxIntrinsicWidth(Constraints.Infinity)
     override fun IntrinsicMeasureScope.minIntrinsicWidth(measurable: IntrinsicMeasurable, height: Int) = 0

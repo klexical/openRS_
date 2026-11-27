@@ -243,7 +243,8 @@ ui/
   Instrument.kt           — Design-pass building blocks: Level (NORMAL/COLD/WARN/CRIT/STALE/NONE), tempLevel(),
                             instrumentSurface() (white + hairline on DAY, no shadow), InstrumentLabel/InstrumentMeta
                             (10 sp), InstrumentHero (caption + unit one line ≥ 4 dp apart, else the unit on a second line;
-                            #293), fitOneLine() (one line, shrunk only when wider than its space), StatusCell, AlertChip, ThresholdBar (caution + redline zones) +
+                            #293), fitOneLine() (one line, drawn shrunk only when wider than its space; one line's height
+                            whatever the text), StatusCell, AlertChip, ThresholdBar (caution + redline zones) +
                             ThresholdLegend, MiniReadout, Telltale, ReadoutGrid/Readout (grouped readings panel, dense +
                             footer; POWER + TRIP). Symbols / car art / wordmark / launcher come from the owner-approved
                             concept sheet (BrandArt.kt, res/drawable*/) — never redraw or substitute them unasked
