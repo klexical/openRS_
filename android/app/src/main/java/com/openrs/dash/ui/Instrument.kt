@@ -31,6 +31,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -362,6 +363,44 @@ internal data class Readout(
 )
 
 /**
+ * A [ReadoutGrid] caption, at least 4 dp clear of the next column (#593: "FUEL USED" met "ECONOMY" on TRIP at 360 dp,
+ * font 1.3). A caption that fits its column, on one line or wrapped between words, is [InstrumentLabel] as before. Only a
+ * word wider than the column steps down in size, never smaller than it draws at the phone's default font size (nor
+ * below half its size), and then to leave at least 12 dp to the next column: a shrunk caption filling its column read as one phrase with its neighbour
+ * ("VCT INTAKE VCT EXHAUST" on PERF at font 1.3). Never clipped: a capped single line would cut it silently.
+ */
+@Composable private fun ReadoutLabel(text: String) {
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.padding(end = 4.dp)) {
+        val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+        // Material's Text style underneath, as InstrumentLabel draws it: the same line height and font padding
+        val base = androidx.compose.material3.LocalTextStyle.current.merge(
+            fontFamily = JetBrainsMonoFamily, fontSize = 10.sp, letterSpacing = 0.5.sp,
+        )
+        fun width(s: String, scale: Float) = measurer.measure(
+            s, base.copy(fontSize = base.fontSize * scale, letterSpacing = base.letterSpacing * scale),
+            maxLines = 1, softWrap = false,
+        ).size.width
+        val words = text.split(' ').filter { it.isNotEmpty() }
+        fun widest(scale: Float) = words.maxOf { width(it, scale) }
+        if (widest(1f) <= constraints.maxWidth) {
+            InstrumentLabel(text)
+        } else {
+            // The widest word fits with 8 dp more room (12 dp to the next column). Width is close to linear in size:
+            // start from the ratio, then step down until it fits or reaches the floor.
+            val d = LocalDensity.current
+            val room = constraints.maxWidth - with(d) { 8.dp.roundToPx() }
+            val floor = (1f / d.fontScale).coerceIn(0.5f, 1f)
+            var scale = (room.toFloat() / widest(1f)).coerceIn(floor, 1f)
+            while (scale > floor && widest(scale) > room) scale = (scale - 0.02f).coerceAtLeast(floor)
+            androidx.compose.material3.Text(
+                text, color = textColor(Dim), fontFamily = JetBrainsMonoFamily,
+                fontSize = base.fontSize * scale, letterSpacing = base.letterSpacing * scale,
+            )
+        }
+    }
+}
+
+/**
  * A section's readings as one instrument panel (was one card per value). Rows of equal-width
  * columns; null = empty slot. [captions] inserts a sub-heading before the given row index.
  * [dense] (TRIP's live panel under the map) tightens spacing and the value size, not the captions;
@@ -383,7 +422,7 @@ internal data class Readout(
                     Column(Modifier.weight(1f)) {
                         if (r != null) {
                             val placeholder = r.value.startsWith("—")
-                            InstrumentLabel(r.label)
+                            ReadoutLabel(r.label)
                             Spacer(Modifier.height(2.dp))
                             DataNum(r.value, if (dense) 16.sp else 18.sp,
                                 if (placeholder) Dim else if (r.color == Color.Unspecified) Frost else r.color)
