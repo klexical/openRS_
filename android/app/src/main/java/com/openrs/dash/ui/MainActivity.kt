@@ -620,10 +620,13 @@ internal data class SnackbarColors(val container: Color, val content: Color, val
 
 /**
  * Read inside a composition: the getters follow the theme mode (NIGHT / DAY / ULTRA). The bar is the raised surface
- * ([Surf3]) with the primary ink ([Frost]); an action takes the paint accent as DAY's action ink.
+ * ([Surf3]) with the primary ink ([Frost]); an action takes the paint's [actionInk], lifted towards the ink only as far
+ * as 4.5:1 on the bar needs (#566, SnackbarContrastTest).
  */
 internal fun snackbarColors(accent: Color): SnackbarColors =
-    SnackbarColors(container = Surf3, content = Frost, action = actionInk(accent), dismiss = Mid)
+    SnackbarColors(
+        container = Surf3, content = Frost, action = legibleOn(actionInk(accent), Surf3, Frost), dismiss = Mid,
+    )
 
 /**
  * The one message bar (#368): every message the app shows (copy, drive mode, ESC, connection) goes through it. Placement
