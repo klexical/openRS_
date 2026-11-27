@@ -135,6 +135,8 @@ fun SettingsDialog(
     onExitDemo: () -> Unit = {},
     /** Open on CONNECTION — from the dashboard's "select a Bluetooth device" prompt (#234). */
     openConnection: Boolean = false,
+    /** The ABOUT strip's version; a parameter so the screenshot test draws a fixed one (#594). */
+    versionLabel: String = com.openrs.dash.update.BuildInfo.settingsLabel,
 ) {
     val ctx = LocalContext.current
     val accent = LocalThemeAccent.current
@@ -1002,6 +1004,7 @@ fun SettingsDialog(
                     onToggle = { aboutExpanded = !aboutExpanded },
                     updateChannel = updateChannel,
                     onChannelChange = { updateChannel = it },
+                    versionLabel = versionLabel,
                 )
 
                 // Search bar
@@ -1253,15 +1256,17 @@ private val ActionPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
 // ── Navigation affordances ───────────────────────────────────────────────────
 
 @Composable
-private fun AboutStrip(
+internal fun AboutStrip(
     expanded: Boolean,
     onToggle: () -> Unit,
     updateChannel: String,
     onChannelChange: (String) -> Unit,
+    /** This build's "2.2.7-rc.7 · Build 36 …"; a parameter so tests can draw a fixed or a release build's label (#594). */
+    versionLabel: String = com.openrs.dash.update.BuildInfo.settingsLabel,
 ) {
     val accent = LocalThemeAccent.current
     val label = buildString {
-        append("openRS_ v").append(com.openrs.dash.update.BuildInfo.settingsLabel)
+        append("openRS_ v").append(versionLabel)
         append(" · ").append(updateChannel)
     }
     Column(Modifier.fillMaxWidth().instrumentSurface(radius = 10.dp)) {
@@ -1273,13 +1278,15 @@ private fun AboutStrip(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
+            // UPDATES is measured first and keeps its word; the version label wraps in the rest of the row. Unweighted,
+            // a debug build's long label took the row and UPDATES stacked one letter per line (#594).
             Text(label, fontSize = 11.sp, color = Frost, fontFamily = ShareTechMono,
-                letterSpacing = 0.06.sp)
+                letterSpacing = 0.06.sp, modifier = Modifier.weight(1f).padding(end = 8.dp))
             Text(
                 if (expanded) "HIDE" else "UPDATES",
                 fontSize = 11.sp, color = actionInk(accent),
                 fontFamily = ShareTechMono, fontWeight = FontWeight.Bold,
-                letterSpacing = 0.1.sp,
+                letterSpacing = 0.1.sp, maxLines = 1, softWrap = false,
             )
         }
         AnimatedVisibility(
