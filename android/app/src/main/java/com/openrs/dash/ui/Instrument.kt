@@ -35,6 +35,9 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.isTraversalGroup
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.traversalIndex
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
@@ -381,7 +384,8 @@ internal data class Readout(
             maxLines = 1, softWrap = false,
         ).size.width
         val words = text.split(' ').filter { it.isNotEmpty() }
-        fun widest(scale: Float) = words.maxOf { width(it, scale) }
+        // A blank caption has no word: it fits as it is
+        fun widest(scale: Float) = words.maxOfOrNull { width(it, scale) } ?: 0
         if (widest(1f) <= constraints.maxWidth) {
             InstrumentLabel(text)
         } else {
@@ -417,24 +421,34 @@ internal data class Readout(
     ) {
         rows.forEachIndexed { i, row ->
             captions[i]?.let { InstrumentLabel(it, color = Mid) }
-            Row(Modifier.fillMaxWidth()) {
-                row.forEach { r ->
-                    Column(Modifier.weight(1f)) {
-                        if (r != null) {
-                            val placeholder = r.value.startsWith("—")
-                            ReadoutLabel(r.label)
-                            Spacer(Modifier.height(2.dp))
-                            DataNum(r.value, if (dense) 16.sp else 18.sp,
-                                if (placeholder) Dim else if (r.color == Color.Unspecified) Frost else r.color)
-                            r.sub?.let { MonoLabel(it, 9.sp, WarnInk, letterSpacing = 0.2.sp) }
-                            if (r.spark != null && !placeholder) {
-                                Spacer(Modifier.height(3.dp))
-                                com.openrs.dash.ui.anim.Sparkline(
-                                    data = r.spark,
-                                    lineColor = if (r.color == Color.Unspecified || r.color == Frost) accentMid() else r.color,
-                                    modifier = Modifier.fillMaxWidth().padding(end = 10.dp).height(16.dp),
-                                    strokeWidth = 1.dp, fillAlpha = 0.12f
-                                )
+            // Captions in a row of their own, so the values start level when one caption wraps (#593: FUEL USED at 1.3).
+            // TalkBack still reads each caption with its value: the traversal indexes put them back in pairs.
+            Column(Modifier.semantics { isTraversalGroup = true }) {
+                Row(Modifier.fillMaxWidth()) {
+                    row.forEachIndexed { c, r ->
+                        Box(Modifier.weight(1f).semantics { isTraversalGroup = true; traversalIndex = 2f * c }) {
+                            if (r != null) ReadoutLabel(r.label)
+                        }
+                    }
+                }
+                Spacer(Modifier.height(2.dp))
+                Row(Modifier.fillMaxWidth()) {
+                    row.forEachIndexed { c, r ->
+                        Column(Modifier.weight(1f).semantics { isTraversalGroup = true; traversalIndex = 2f * c + 1 }) {
+                            if (r != null) {
+                                val placeholder = r.value.startsWith("—")
+                                DataNum(r.value, if (dense) 16.sp else 18.sp,
+                                    if (placeholder) Dim else if (r.color == Color.Unspecified) Frost else r.color)
+                                r.sub?.let { MonoLabel(it, 9.sp, WarnInk, letterSpacing = 0.2.sp) }
+                                if (r.spark != null && !placeholder) {
+                                    Spacer(Modifier.height(3.dp))
+                                    com.openrs.dash.ui.anim.Sparkline(
+                                        data = r.spark,
+                                        lineColor = if (r.color == Color.Unspecified || r.color == Frost) accentMid() else r.color,
+                                        modifier = Modifier.fillMaxWidth().padding(end = 10.dp).height(16.dp),
+                                        strokeWidth = 1.dp, fillAlpha = 0.12f
+                                    )
+                                }
                             }
                         }
                     }

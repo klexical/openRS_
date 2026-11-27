@@ -41,6 +41,7 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import org.robolectric.shadows.ShadowChoreographer
 import java.time.Duration
+import kotlin.math.abs
 
 /**
  * #593: at 360 dp and font 1.3 the label of TRIP's live readout grid ran into its neighbour ("FUEL USEDECONOMY").
@@ -171,6 +172,14 @@ class TripReadoutFitTest {
                 row.forEach { if (shrunk(it)) out += "[$case] '${textOf(it)}' shrunk below 10 sp though its words fit" }
                 // the text as drawn: a label's box is its text's width
                 row.zipWithNext().forEach { (a, b) -> gapProblem(case, a, b, density)?.let { out += it } }
+                // The values under a row's labels start level, however many lines a label takes (FUEL USED wraps at 1.3)
+                val values = row.map { label ->
+                    texts.filter { abs(box(it).left - box(label).left) < 0.5f && box(it).top >= box(label).bottom }
+                        .minByOrNull { box(it).top }
+                }
+                if (values.any { it == null }) out += "[$case] row '$start' values found: ${values.map { it?.let(::textOf) }}"
+                else if (values.maxOf { box(it!!).top } - values.minOf { box(it!!).top } > 0.5f)
+                    out += "[$case] row '$start' values start at ${values.map { "${textOf(it!!)} ${"%.1f".format(box(it).top / density)} dp" }}"
                 println("#593 [$case] ${row.map { textOf(it) to it.boundsInRoot.width / density }}")
             }
             return out
@@ -221,6 +230,27 @@ class TripReadoutFitTest {
                 row.sortedBy { box(it).left }.zipWithNext().forEach { (a, b) -> gapProblem(case, a, b, density)?.let { out += it } }
             }
             return out
+        } finally {
+            controller.pause().stop().destroy()
+            idle(8)
+        }
+    }
+
+    @Test fun `a blank readout caption draws without failing`() {
+        val controller = Robolectric.buildActivity(ComponentActivity::class.java).setup()
+        controller.get().setContent {
+            MaterialTheme(colorScheme = darkColorScheme(background = Bg, surface = Surf, primary = Accent)) {
+                ReadoutGrid(listOf(listOf(Readout("", "1.0"), Readout(" ", "2.0"), Readout("FUEL USED", "3.0"))))
+            }
+        }
+        try {
+            idle(30)
+            val root = composeRoot(controller.get().window.decorView)!!.semanticsOwner.unmergedRootSemanticsNode
+            val all = nodes(root)
+            assertEquals(listOf("1.0", "2.0", "3.0"), all.mapNotNull { textOf(it) }.filter { it.endsWith(".0") })
+            // Captions and values sit in rows of their own; TalkBack still reads each caption, then its value
+            fun index(text: String) = all.first { textOf(it) == text }.parent?.config?.getOrNull(SemanticsProperties.TraversalIndex)
+            assertEquals(listOf(4f, 5f), listOf(index("FUEL USED"), index("3.0")))
         } finally {
             controller.pause().stop().destroy()
             idle(8)
