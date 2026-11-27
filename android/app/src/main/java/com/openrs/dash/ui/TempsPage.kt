@@ -398,16 +398,26 @@ data class TempSpec(
         Spacer(Modifier.height(d.inner * 2))
         Box(Modifier.fillMaxWidth().height(1.dp).background(Brd.copy(alpha = borderAlpha(0.4f))))
         Spacer(Modifier.height(d.inner + 4.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        // The chips keep their row; CHECKLIST takes the rest of it, or a row of its own (right-aligned) when it doesn't
+        // fit beside them — squeezed beside them at large font sizes it stacked one letter per line (#592).
+        // The choice follows only the width, font size and chip count, never live data.
+        @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+        androidx.compose.foundation.layout.FlowRow(
+            Modifier.fillMaxWidth(),
+            itemVerticalAlignment = Alignment.CenterVertically,
+        ) {
             PresetSegments(p)
-            Spacer(Modifier.weight(1f))
             Row(
-                Modifier.heightIn(min = 44.dp)
+                Modifier.weight(1f)
+                    .heightIn(min = 44.dp)
                     .clickable(enabled = live, onClickLabel = toggleLabel) { expanded = !expanded }
                     .padding(start = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.End,
             ) {
-                MonoLabel("CHECKLIST", 10.sp, if (live) Mid else Dim.copy(alpha = 0.5f), FontWeight.SemiBold, 0.6.sp)
+                androidx.compose.material3.Text("CHECKLIST", color = textColor(if (live) Mid else Dim.copy(alpha = 0.5f)),
+                    fontFamily = JetBrainsMonoFamily, fontWeight = FontWeight.SemiBold, fontSize = 10.sp,
+                    letterSpacing = 0.6.sp, maxLines = 1, softWrap = false)
                 Spacer(Modifier.width(4.dp))
                 MonoLabel(if (expanded && live) "▾" else "▸", 12.sp, if (live) Mid else Dim.copy(alpha = 0.5f))
             }
@@ -445,9 +455,12 @@ data class TempSpec(
     val ctx = LocalContext.current
     val haptic = LocalHapticFeedback.current
     val accent = LocalThemeAccent.current
-    Row(
+    // Four chips (CUSTOM) don't fit one row at the largest font sizes: they wrap whole, never letter by letter (#592).
+    @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+    androidx.compose.foundation.layout.FlowRow(
         Modifier.background(Surf3, RoundedCornerShape(8.dp)).padding(3.dp),
-        horizontalArrangement = Arrangement.spacedBy(3.dp)
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+        verticalArrangement = Arrangement.spacedBy(3.dp),
     ) {
         // CUSTOM appears once a custom profile exists (Settings → THERMAL); four chips use tighter padding.
         val profiles = listOf("street" to "STREET", "track" to "TRACK", "race" to "RACE") +
