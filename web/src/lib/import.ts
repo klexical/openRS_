@@ -251,6 +251,9 @@ const REQUIRED_COLUMN_GROUPS: { name: string; aliases: string[] }[] = [
   { name: 'rpm', aliases: ['rpm'] },
 ]
 
+/** A decimal digit of any script other than 0-9 (Arabic-Indic, Persian, Devanagari, …). */
+const NON_LATIN_DIGIT = /(?![0-9])\p{Nd}/u
+
 async function parseTripData(zip: JSZip, manifest: ExportManifest | null): Promise<TripData | null> {
   const csvFile = driveCsvFiles(zip, manifest)[0]
   if (!csvFile) return null
@@ -301,6 +304,17 @@ async function parseTripDataFromCsv(zip: JSZip, csvFile: string): Promise<TripDa
       )
     }
     const row = Object.fromEntries(headers.map((h, j) => [h, vals[j]?.trim() ?? '']))
+    // openRS_ before v2.2.7-rc.7 formatted most numbers with the phone's locale: a phone writing Arabic-Indic or
+    // Persian digits gave cells parseFloat reads as no number, while time and rpm stayed Latin and pass the checks
+    // below — the drive would import with every formatted column empty, so the file is refused (#396)
+    const nonLatin = headers.find((h) => NON_LATIN_DIGIT.test(row[h]))
+    if (nonLatin !== undefined) {
+      throw new ImportError(
+        `CSV ${csvFile} row ${lineNo}: ${nonLatin} holds digits other than 0-9. ` +
+        'The file is damaged — exports from openRS_ before v2.2.7-rc.7 on phones that write numbers in another ' +
+        'script are affected. Export the drive again with v2.2.7-rc.7 or later.',
+      )
+    }
     for (const key of [tsKey, 'rpm']) {
       if (!/^-?\d+(\.\d+)?$/.test(row[key])) {
         throw new ImportError(`CSV ${csvFile} row ${lineNo}: ${key} "${row[key]}" is not a number.`)
