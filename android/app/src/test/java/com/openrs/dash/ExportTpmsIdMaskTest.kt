@@ -58,9 +58,10 @@ class ExportTpmsIdMaskTest {
     /**
      * A BCM that answers the four sensor-ID reads in single frames and the "last received sensor" read (0x280B) as a first
      * frame, then, on the app's flow control, a consecutive frame: the sensor ID spans both. Every other read gets a short
-     * positive reply.
+     * positive reply. A sensor-ID read in [lostFirst] (its DID) goes unanswered the first time, as a reply lost on the bus.
      */
-    private class Bcm(private val lastReport: Long) : SlcanTransport {
+    private class Bcm(private val lastReport: Long, private val lostFirst: Set<String> = emptySet()) : SlcanTransport {
+        private val idReads = mutableMapOf<String, Int>()
         val lines = Channel<String>(Channel.UNLIMITED).apply { trySend("t09080000C1FF617D0000") }
         override suspend fun open() = Unit
         override suspend fun readLine(): String? = lines.receive()
@@ -73,6 +74,7 @@ class ExportTpmsIdMaskTest {
             val did = frame.substring(9, 13)
             val resp = frame.substring(1, 4).toInt(16) + 8
             when {
+                resp == 0x72E && did in ID_DIDS && did in lostFirst && idReads.merge(did, 1, Int::plus) == 1 -> Unit
                 resp == 0x72E && did in ID_DIDS -> lines.trySend("t72E80762$did%08X".format(IDS[ID_DIDS.indexOf(did)]))
                 resp == 0x72E && did == "280B" -> lines.trySend("t72E8100C62280B%06X".format(lastReport shr 8))
                 else -> lines.trySend("t%03X8%s".format(resp, "0462" + did + "00000000"))
@@ -95,12 +97,12 @@ class ExportTpmsIdMaskTest {
     }
 
     /** The live connection for one BCM cycle (sensor-ID reads at connect, 0x280B each cycle); returns the app's state after it. */
-    private fun TestScope.runBcm(lastReport: Long = IDS[2]): VehicleState {
+    private fun TestScope.runBcm(lastReport: Long = IDS[2], lostFirst: Set<String> = emptySet(), ms: Long = 20_000L): VehicleState {
         var state = VehicleState(rpm = 0.0)
-        val conn = SlcanConnection(transportFactory = { Bcm(lastReport) }, maxRetries = 1, rpmProvider = { 0.0 },
+        val conn = SlcanConnection(transportFactory = { Bcm(lastReport, lostFirst) }, maxRetries = 1, rpmProvider = { 0.0 },
             ioDispatcher = StandardTestDispatcher(testScheduler), debugSink = {}, clock = { testScheduler.currentTime })
         backgroundScope.launch { conn.connectHybrid({ state = it }, { state }).collect {} }
-        advanceTimeBy(20_000L)                       // one BCM cycle: the sensor-ID reads at 5 s, 0x280B in the cycle after them
+        advanceTimeBy(ms)                            // default one BCM cycle: the sensor-ID reads at 5 s, 0x280B in the cycle after them
         DiagnosticLogger.flushSlcan()
         return state
     }
@@ -190,6 +192,22 @@ class ExportTpmsIdMaskTest {
         assertEquals(0, limits.getInt("tpmsFramesMaskedContent"))
         assertTrue(files.member("diagnostic_summary_").substringAfter("LOG LIMITS").take(900),
             files.member("diagnostic_summary_").contains("6 TPMS sensor-ID frame(s) masked"))
+    }
+
+    @Test fun `a sensor-ID reply that comes on a re-read is masked like the first, and the app maps that position`() = runTest {
+        // #587: RF's first read is lost, so the next BCM cycle (#518) reads it again and the BCM answers the re-read. The
+        // 0x280B reports name RR, so nothing but the re-read's reply tells the logger RF's ID
+        val s = runBcm(lastReport = IDS[2], lostFirst = setOf("2810"), ms = 60_000L)
+        assertEquals("every position mapped with its real ID, RF from the re-read", IDS,
+            listOf(s.tpmsSensorIdLF, s.tpmsSensorIdRF, s.tpmsSensorIdRR, s.tpmsSensorIdLR))
+        val files = exportNow()
+        val raw = files.member("slcan_log_")
+        assertEquals("RF was read twice: once lost, once answered", 2,
+            raw.lines().count { it.startsWith("# TX ") && it.contains(" can0 726#03222810") })
+        assertEquals("RF's one reply, the re-read's, reads 00", listOf("0762281000000000"),
+            frames(raw, "72E").filter { it.startsWith("07622810") })
+        for ((name, text) in files) assertNoIdentifier(name, text)
+        assertNothingRebuilds(raw)
     }
 
     // ── the content layer: a known ID anywhere else ───────────────────────────────────────────────────────────────────
