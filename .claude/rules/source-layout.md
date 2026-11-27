@@ -77,6 +77,9 @@ can/
                             after its first quarter, then the connection's end = nothing; stamped at its start. A gap past
                             the bound or a low start (#513) = one QUIET_SPAN with its full length. Pure, one per
                             connection, fed by SlcanConnection's frame loop. Names gaps; prevents nothing
+  LinkEnd.kt              — the session log's LINK_END line when the frame loop ends by itself (#374): the reason (read
+                            timeout / adapter closed / `SlcanTransport.readEnd`, e.g. Bluetooth GATT status / read error by
+                            class name) + the silence before it; never for a stop (`abort`) or a cancel
   EscCommand.kt           — ESC request + confirmation (#125): window = firmware press plan + 3 s; only a 0x1C0 frame
                             stamped after the request on the same link generation confirms; one request at a time (Busy)
   FirmwareApi.kt          — FirmwareCommandSender interface + WiFiFirmwareApi (REST /api/frs) +
