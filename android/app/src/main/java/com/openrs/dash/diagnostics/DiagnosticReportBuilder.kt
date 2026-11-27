@@ -76,6 +76,17 @@ internal object DiagnosticReportBuilder {
         }
     }
 
+    const val SETTINGS_SOURCE_SESSION = "session"
+    const val SETTINGS_SOURCE_CURRENT = "current"
+    const val SETTINGS_CURRENT_TEXT = "current settings (no adapter session)"
+
+    /**
+     * The settings an export writes (#506), and whether they are the session's: the ones taken when the adapter session
+     * started, or, with no session's (no connection yet, demo mode included, which never starts one), the current ones.
+     */
+    internal fun exportSettings(): Pair<com.openrs.dash.ui.UserPrefs, Boolean> =
+        DiagnosticLogger.sessionPrefs?.let { it to true } ?: (com.openrs.dash.ui.UserPrefsStore.prefs.value to false)
+
     /**
      * Text + JSON of one export from ONE adapter-status snapshot (#233): a reply landing while the export is written
      * can't make the two files (or two lines of one file) disagree. The exporter uses this at every call site.
@@ -147,7 +158,7 @@ internal object DiagnosticReportBuilder {
     ): String = buildString {
         val log = DiagnosticLogger
         val vs  = log.lastVehicleState
-        val p   = log.sessionPrefs
+        val (p, fromSession) = exportSettings()
 
         appendLine("═══════════════════════════════════════════════════════════")
         appendLine("  openRS_ Diagnostic Report")
@@ -192,26 +203,25 @@ internal object DiagnosticReportBuilder {
         }
         appendLine()
 
-        // ── Settings
-        if (p != null) {
-            appendLine("─── SETTINGS ───────────────────────────────────────────────")
-            appendLine("  Speed     : ${p.speedUnit}")
-            appendLine("  Temp      : ${p.tempUnit}")
-            appendLine("  Boost     : ${p.boostUnit}")
-            appendLine("  Tires     : ${p.tireUnit}")
-            // #464, additive: Region (derived from the eleven units) and the seven units added with it
-            appendLine("  Region    : ${p.region.name}")
-            appendLine("  Engine    : ${p.engineUnit}")
-            appendLine("  Air       : ${p.airUnit}")
-            appendLine("  Altitude  : ${p.altitudeUnit}")
-            appendLine("  Fuel      : ${p.fuelUnit}")
-            appendLine("  Economy   : ${p.economyUnit}")
-            appendLine("  Torque    : ${p.torqueUnit}")
-            appendLine("  Mixture   : ${p.mixtureUnit}")
-            appendLine("  TireLow   : ${p.tireLowPsi} PSI")
-            appendLine("  AutoRecon : ${p.autoReconnect} / ${p.reconnectIntervalSec}s")
-            appendLine()
-        }
+        // ── Settings (#506: always written; with no adapter session, the current ones, and the block says so)
+        appendLine("─── SETTINGS ───────────────────────────────────────────────")
+        appendLine("  Speed     : ${p.speedUnit}")
+        appendLine("  Temp      : ${p.tempUnit}")
+        appendLine("  Boost     : ${p.boostUnit}")
+        appendLine("  Tires     : ${p.tireUnit}")
+        // #464, additive: Region (derived from the eleven units) and the seven units added with it
+        appendLine("  Region    : ${p.region.name}")
+        appendLine("  Engine    : ${p.engineUnit}")
+        appendLine("  Air       : ${p.airUnit}")
+        appendLine("  Altitude  : ${p.altitudeUnit}")
+        appendLine("  Fuel      : ${p.fuelUnit}")
+        appendLine("  Economy   : ${p.economyUnit}")
+        appendLine("  Torque    : ${p.torqueUnit}")
+        appendLine("  Mixture   : ${p.mixtureUnit}")
+        appendLine("  TireLow   : ${p.tireLowPsi} PSI")
+        appendLine("  AutoRecon : ${p.autoReconnect} / ${p.reconnectIntervalSec}s")
+        if (!fromSession) appendLine("  Source    : $SETTINGS_CURRENT_TEXT")
+        appendLine()
 
         // ── Vehicle state snapshot
         if (vs != null) {
@@ -463,7 +473,7 @@ internal object DiagnosticReportBuilder {
     ): String {
         val log = DiagnosticLogger
         val vs  = log.lastVehicleState
-        val p   = log.sessionPrefs
+        val (p, fromSession) = exportSettings()
 
         val root = JSONObject()
 
@@ -487,28 +497,27 @@ internal object DiagnosticReportBuilder {
 
         root.put("dtcScan", dtcScanJson(dtcScan))
 
-        // settings
-        if (p != null) {
-            root.put("settings", JSONObject().apply {
-                put("speedUnit", "${p.speedUnit}")
-                put("tempUnit", "${p.tempUnit}")
-                put("boostUnit", "${p.boostUnit}")
-                put("tireUnit", "${p.tireUnit}")
-                // #464, additive (no schema bump): Region and the seven units added with it
-                put("unitRegion", p.region.name)
-                put("engineUnit", p.engineUnit)
-                put("airUnit", p.airUnit)
-                put("altitudeUnit", p.altitudeUnit)
-                put("fuelUnit", p.fuelUnit)
-                put("economyUnit", p.economyUnit)
-                put("torqueUnit", p.torqueUnit)
-                put("mixtureUnit", p.mixtureUnit)
-                put("tireLowPsi", p.tireLowPsi)
-                put("screenOn", p.screenOn)
-                put("autoReconnect", p.autoReconnect)
-                put("reconnectIntervalSec", p.reconnectIntervalSec)
-            })
-        }
+        // settings (#506: always written; settingsSource says whose, additive beside the object so its keys stay as they were)
+        root.put("settingsSource", if (fromSession) SETTINGS_SOURCE_SESSION else SETTINGS_SOURCE_CURRENT)
+        root.put("settings", JSONObject().apply {
+            put("speedUnit", "${p.speedUnit}")
+            put("tempUnit", "${p.tempUnit}")
+            put("boostUnit", "${p.boostUnit}")
+            put("tireUnit", "${p.tireUnit}")
+            // #464, additive (no schema bump): Region and the seven units added with it
+            put("unitRegion", p.region.name)
+            put("engineUnit", p.engineUnit)
+            put("airUnit", p.airUnit)
+            put("altitudeUnit", p.altitudeUnit)
+            put("fuelUnit", p.fuelUnit)
+            put("economyUnit", p.economyUnit)
+            put("torqueUnit", p.torqueUnit)
+            put("mixtureUnit", p.mixtureUnit)
+            put("tireLowPsi", p.tireLowPsi)
+            put("screenOn", p.screenOn)
+            put("autoReconnect", p.autoReconnect)
+            put("reconnectIntervalSec", p.reconnectIntervalSec)
+        })
 
         // adapter device status — this session's /check_status only; how it was obtained (or why not) always (#233)
         root.put("adapterStatusSource", adapterStatusSourceJson(snap.record, snap.sessionStartMs))
