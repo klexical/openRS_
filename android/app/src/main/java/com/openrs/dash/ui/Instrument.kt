@@ -31,6 +31,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -363,9 +364,10 @@ internal data class Readout(
 
 /**
  * A [ReadoutGrid] caption, at least 4 dp clear of the next column (#593: "FUEL USED" met "ECONOMY" on TRIP at 360 dp,
- * font 1.3). A caption that fits its column is [InstrumentLabel] as before. One that doesn't steps down in size, never
- * below [READOUT_LABEL_MIN] of the user's text size, to stay on one line; one still too wide at that size wraps between
- * words at that size. Never clipped: a capped single line would cut it silently.
+ * font 1.3). A caption that fits its column, on one line or wrapped between words, is [InstrumentLabel] as before. Only a
+ * word wider than the column steps down in size, never smaller than it draws at the phone's default font size (nor
+ * below half its size), and then to leave at least 12 dp to the next column: a shrunk caption filling its column read as one phrase with its neighbour
+ * ("VCT INTAKE VCT EXHAUST" on PERF at font 1.3). Never clipped: a capped single line would cut it silently.
  */
 @Composable private fun ReadoutLabel(text: String) {
     androidx.compose.foundation.layout.BoxWithConstraints(Modifier.padding(end = 4.dp)) {
@@ -374,18 +376,22 @@ internal data class Readout(
         val base = androidx.compose.material3.LocalTextStyle.current.merge(
             fontFamily = JetBrainsMonoFamily, fontSize = 10.sp, letterSpacing = 0.5.sp,
         )
-        val room = constraints.maxWidth
-        fun width(scale: Float) = measurer.measure(
-            text, base.copy(fontSize = base.fontSize * scale, letterSpacing = base.letterSpacing * scale),
+        fun width(s: String, scale: Float) = measurer.measure(
+            s, base.copy(fontSize = base.fontSize * scale, letterSpacing = base.letterSpacing * scale),
             maxLines = 1, softWrap = false,
         ).size.width
-        val full = width(1f)
-        if (full <= room) {
+        val words = text.split(' ').filter { it.isNotEmpty() }
+        fun widest(scale: Float) = words.maxOf { width(it, scale) }
+        if (widest(1f) <= constraints.maxWidth) {
             InstrumentLabel(text)
         } else {
-            // Width is close to linear in size: start from the ratio, then step down until it fits or hits the floor
-            var scale = (room.toFloat() / full).coerceAtLeast(READOUT_LABEL_MIN)
-            while (scale > READOUT_LABEL_MIN && width(scale) > room) scale = (scale - 0.02f).coerceAtLeast(READOUT_LABEL_MIN)
+            // The widest word fits with 8 dp more room (12 dp to the next column). Width is close to linear in size:
+            // start from the ratio, then step down until it fits or reaches the floor.
+            val d = LocalDensity.current
+            val room = constraints.maxWidth - with(d) { 8.dp.roundToPx() }
+            val floor = (1f / d.fontScale).coerceIn(0.5f, 1f)
+            var scale = (room.toFloat() / widest(1f)).coerceIn(floor, 1f)
+            while (scale > floor && widest(scale) > room) scale = (scale - 0.02f).coerceAtLeast(floor)
             androidx.compose.material3.Text(
                 text, color = textColor(Dim), fontFamily = JetBrainsMonoFamily,
                 fontSize = base.fontSize * scale, letterSpacing = base.letterSpacing * scale,
@@ -393,9 +399,6 @@ internal data class Readout(
         }
     }
 }
-
-/** The smallest a [ReadoutGrid] caption shrinks to, as a share of its 10 sp: 7 sp. */
-private const val READOUT_LABEL_MIN = 0.7f
 
 /**
  * A section's readings as one instrument panel (was one card per value). Rows of equal-width

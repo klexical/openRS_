@@ -46,14 +46,15 @@ import java.time.Duration
  * #593: at 360 dp and font 1.3 the label of TRIP's live readout grid ran into its neighbour ("FUEL USEDECONOMY").
  *
  * The production [TripPage] (idle, no map, as the screenshot test draws it) under the app's MaterialTheme at 360 dp, in
- * every fuel volume and economy unit, at font 1.0 and 1.3: each label of the readout's three rows is one line, is not
- * cut (no line dropped past its maximum and none wider than the label's box: a clipped label still counts one line) and ends at least [GAP_DP]
- * before the next column's label starts.
+ * every fuel volume and economy unit, at font 1.0 and 1.3: no label of the readout's three rows is cut (no line dropped
+ * past its maximum and none wider than the label's box: a clipped label still counts one line), none breaks inside a
+ * word, none is shrunk (each of their words fits its column, so a long one wraps between words), and each ends at least
+ * [GAP_DP] before the next column's label.
  *
  * Every [ReadoutGrid] (PERF, DIAG, TRIP's replay and summary) draws its captions the same way, so the grid itself is
- * also checked with the longest captions its callers use, in one to four columns at 360 dp, font 1.0 / 1.3 / 2.0: no
- * caption cut, none broken inside a word (a caption too wide for its column even at the smallest size wraps between
- * words), and each [GAP_DP] clear of the next.
+ * also checked with the longest captions its callers use, in one to four columns at 360 dp, font 1.0 / 1.3 / 2.0: none
+ * cut or broken inside a word, each [GAP_DP] clear of the next, and [SHRUNK_GAP_DP] clear when shrunk below its 10 sp
+ * (VCT INTAKE / VCT EXHAUST shrunk to fill their columns at 1.3 read as one phrase).
  */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -67,7 +68,9 @@ class TripReadoutFitTest {
         val TRIP_SCALES = listOf(1.0f, 1.3f)
         /** The longest captions [ReadoutGrid]'s callers pass (DIAG, PERF, TRIP's summary and replay). */
         val LONG_CAPTIONS = listOf("LOADED SAMPLES", "CHARGE TARGET", "FUEL USED", "TOP SPEED", "DURATION", "IGNITION",
-            "DISTANCE", "SHORT FT")
+            "DISTANCE", "SHORT FT", "VCT INTAKE", "VCT EXHAUST")
+        /** The gap a caption shrunk below its 10 sp keeps to the next column: less read as one phrase with it. */
+        const val SHRUNK_GAP_DP = 12f
         val FUEL = listOf(UnitIds.L, UnitIds.US_GAL, UnitIds.UK_GAL)
         val ECONOMY = listOf(UnitIds.L100KM, UnitIds.KML, UnitIds.MPG_US, UnitIds.MPG_UK)
         /** The first label of each row; the rest of a row is every text placed level with it. */
@@ -96,6 +99,22 @@ class TripReadoutFitTest {
 
     private fun lines(n: SemanticsNode): Int? = layout(n)?.lineCount
 
+    /** A node's box in the root, unclipped (boundsInRoot is cut to what shows; the grid case scrolls past the screen). */
+    private fun box(n: SemanticsNode): androidx.compose.ui.geometry.Rect =
+        androidx.compose.ui.geometry.Rect(n.positionInRoot, androidx.compose.ui.geometry.Size(n.size.width.toFloat(), n.size.height.toFloat()))
+
+    /** Drawn below the caption's 10 sp (the sp before the font scale). */
+    private fun shrunk(n: SemanticsNode): Boolean = (layout(n)?.layoutInput?.style?.fontSize?.value ?: 10f) < 9.99f
+
+    /** The gap after [a] to [b]: [GAP_DP] at least, [SHRUNK_GAP_DP] when [a] was shrunk. */
+    private fun gapProblem(case: String, a: SemanticsNode, b: SemanticsNode, density: Float): String? {
+        // Where the text ends, not the box: a caption wrapped over two lines may get a box as wide as its column
+        val inkRight = layout(a)?.let { l -> box(a).left + (0 until l.lineCount).maxOf { l.getLineRight(it) } } ?: box(a).right
+        val gap = (box(b).left - inkRight) / density
+        val need = if (shrunk(a)) SHRUNK_GAP_DP else GAP_DP
+        return if (gap < need) "[$case] '${textOf(a)}'${if (shrunk(a)) " (shrunk)" else ""} ends ${"%.1f".format(gap)} dp from '${textOf(b)}'" else null
+    }
+
     /** A label cut short (clipped, so the fit test's line count alone can't see it) or broken inside a word. */
     private fun cutOrBroken(case: String, n: SemanticsNode): List<String> {
         val l = layout(n) ?: return listOf("[$case] '${textOf(n)}' has no text layout")
@@ -103,10 +122,10 @@ class TripReadoutFitTest {
         // Cut: lines dropped past maxLines, or a line wider than the label's own box (clipped). The layout's own
         // hasVisualOverflow isn't used: the semantics action's layout reports the column's width, not the text's.
         if (l.multiParagraph.didExceedMaxLines) out += "[$case] '${textOf(n)}' is cut (lines past its maximum)"
-        val box = n.boundsInRoot.width
+        val boxWidth = box(n).width
         for (line in 0 until l.lineCount) {
             val w = l.getLineRight(line) - l.getLineLeft(line)
-            if (w > box + 0.5f) out += "[$case] '${textOf(n)}' is cut (line $line ${"%.0f".format(w)} px in a $box px box)"
+            if (w > boxWidth + 0.5f) out += "[$case] '${textOf(n)}' is cut (line $line ${"%.0f".format(w)} px in a $boxWidth px box)"
         }
         val text = textOf(n).orEmpty()
         for (line in 0 until l.lineCount - 1) {
@@ -148,12 +167,10 @@ class TripReadoutFitTest {
                 val row = texts.filter { kotlin.math.abs(it.boundsInRoot.top - top) < 0.5f }.sortedBy { it.boundsInRoot.left }
                 if (row.size != 4) out += "[$case] row '$start' has ${row.size} labels: ${row.map { textOf(it) }}"
                 row.forEach { out += cutOrBroken(case, it) }
-                row.forEach { if (lines(it) != 1) out += "[$case] '${textOf(it)}' takes ${lines(it)} lines" }
-                row.zipWithNext().forEach { (a, b) ->
-                    // the text as drawn, not its node's box: a one-line label's box is its text's width
-                    val gap = (b.boundsInRoot.left - a.boundsInRoot.right) / density
-                    if (gap < GAP_DP) out += "[$case] '${textOf(a)}' ends ${"%.1f".format(gap)} dp from '${textOf(b)}'"
-                }
+                // FUEL USED wraps between its words at 1.3 rather than shrink against ECONOMY (coordinator's call on #611)
+                row.forEach { if (shrunk(it)) out += "[$case] '${textOf(it)}' shrunk below 10 sp though its words fit" }
+                // the text as drawn: a label's box is its text's width
+                row.zipWithNext().forEach { (a, b) -> gapProblem(case, a, b, density)?.let { out += it } }
                 println("#593 [$case] ${row.map { textOf(it) to it.boundsInRoot.width / density }}")
             }
             return out
@@ -189,11 +206,8 @@ class TripReadoutFitTest {
             val out = mutableListOf<String>()
             if (texts.size != LONG_CAPTIONS.size) out += "[$case] captions found: ${texts.map { textOf(it) }}"
             texts.forEach { out += cutOrBroken(case, it) }
-            texts.groupBy { it.boundsInRoot.top }.values.forEach { row ->
-                row.sortedBy { it.boundsInRoot.left }.zipWithNext().forEach { (a, b) ->
-                    val gap = (b.boundsInRoot.left - a.boundsInRoot.right) / density
-                    if (gap < GAP_DP) out += "[$case] '${textOf(a)}' ends ${"%.1f".format(gap)} dp from '${textOf(b)}'"
-                }
+            texts.groupBy { box(it).top }.values.forEach { row ->
+                row.sortedBy { box(it).left }.zipWithNext().forEach { (a, b) -> gapProblem(case, a, b, density)?.let { out += it } }
             }
             return out
         } finally {
