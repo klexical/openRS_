@@ -175,9 +175,20 @@ class TripReadoutFitTest {
             }
             return out
         } finally {
+            // TripPage loads its drive history off the main thread: let those loads land before and after the destroy,
+            // or their callbacks run inside a later Compose class and stop it recomposing (android-general.md)
+            drain()
             controller.pause().stop().destroy()
-            idle(8)
+            drain()
         }
+    }
+
+    private fun drain() {
+        repeat(10) {
+            Thread.sleep(20)
+            shadowOf(Looper.getMainLooper()).idle()
+        }
+        idle(8)
     }
 
     @Test fun `TRIP readout labels keep a gap and are never cut - 360 dp, font 1_0 1_3, every fuel and economy unit`() {
