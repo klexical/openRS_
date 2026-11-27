@@ -9,6 +9,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
@@ -153,6 +154,24 @@ val WarnInk: Color get() = if (_isDay) Color(0xFF6B4700) else Color(0xFFFFCC00)
  */
 fun actionInk(accent: Color): Color =
     if (_isDay) androidx.compose.ui.graphics.lerp(accent, Color(0xFF080D16), 0.4f) else accent
+
+/**
+ * [fg] as text on [bg] at WCAG AA (4.5:1) or better: unchanged when it already passes, otherwise moved towards [ink] in
+ * 5 % steps until it does, so the paint's hue stays (#566: Race Red, Stealth Grey and Deep Orange on NIGHT's Surf3).
+ */
+fun legibleOn(fg: Color, bg: Color, ink: Color, minRatio: Float = 4.5f): Color {
+    fun ratio(c: Color): Float {
+        val a = c.luminance(); val b = bg.luminance()
+        return (maxOf(a, b) + 0.05f) / (minOf(a, b) + 0.05f)
+    }
+    var t = 0f
+    var c = fg
+    while (ratio(c) < minRatio && t < 1f) {
+        t = (t + 0.05f).coerceAtMost(1f)
+        c = androidx.compose.ui.graphics.lerp(fg, ink, t)
+    }
+    return c
+}
 
 /** Routes DAY [Warn] (at any alpha) to [WarnInk] for text; every other colour passes through. */
 fun textColor(c: Color): Color =
