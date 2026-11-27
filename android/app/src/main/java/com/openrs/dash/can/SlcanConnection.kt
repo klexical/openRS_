@@ -85,6 +85,9 @@ class SlcanConnection(
     data class FirmwareStatus(val openRs: Boolean, val probing: Boolean, val label: String)
     private fun addDebugLine(line: String) = debugSink(line)
 
+    /** Set by [abort]: the connection is being stopped, so a read it ends writes no LINK_END line (#374). */
+    @Volatile private var aborted = false
+
     /** The transport of the attempt in progress (opening, handshaking or connected) — closed by [abort]. */
     @Volatile private var attemptTransport: SlcanTransport? = null
 
@@ -93,6 +96,7 @@ class SlcanConnection(
      * after its timeout. The caller cancels the collecting coroutine; this only makes that prompt.
      */
     fun abort() {
+        aborted = true                  // the read this close ends is a stop, not a drop: no LINK_END (#374)
         try { attemptTransport?.close() } catch (_: Exception) { }
     }
 
@@ -709,11 +713,17 @@ class SlcanConnection(
                 }
 
                 // ── Main frame loop ───────────────────────────────────────
+                var lastLineAt = monotonicClock()           // #374: the silence before a read ends is measured from here
+                var readFailure: Exception? = null
+                var readEnded = false
                 try {
                     while (currentCoroutineContext().isActive) {
-                        val line = try { transport.readLine() } catch (e: Exception) {
-                            android.util.Log.d("SLCAN", "readLine failed", e); null
-                        }?.removePrefix("\n") ?: break     // the firmware ends OPENRS: with CR LF: the LF leads the next line
+                        val raw = try { transport.readLine() } catch (e: Exception) {
+                            android.util.Log.d("SLCAN", "readLine failed", e); readFailure = e; null
+                        }
+                        if (raw == null) { readEnded = true; break }
+                        lastLineAt = monotonicClock()
+                        val line = raw.removePrefix("\n")     // the firmware ends OPENRS: with CR LF: the LF leads the next line
 
                         if (line.startsWith("OPENRS:")) {
                             detected(line)
@@ -900,6 +910,12 @@ class SlcanConnection(
                             debugCount = 0
                             debugTimer = now
                         }
+                    }
+                    // #374: the read ended by itself — one line with why and the silence before it. Not for a stop (abort
+                    // closes the transport first, then the job is cancelled) and not for a cancellation
+                    if (readEnded && !aborted && currentCoroutineContext().isActive) {
+                        DiagnosticLogger.event(LinkEnd.TYPE,
+                            LinkEnd.line(readFailure, transport.readEnd, monotonicClock() - lastLineAt, transport.kind))
                     }
                 } finally {
                     logGaps(gaps.onEnd(monotonicClock()))

@@ -97,6 +97,12 @@ class BleGattCore(
     @Volatile private var writeDone = CompletableDeferred<Int>()       // the write callback's GATT status
     /** A write went unacknowledged: callbacks can no longer be matched to writes, the link is closed for good. */
     @Volatile private var invalidated = false
+    /**
+     * Why the read side ended (#374), for the connection's LINK_END line: the first of the link-loss callback (with its
+     * GATT status) and this core closing the link after an unacknowledged write. Null while open, or closed by the app.
+     */
+    @Volatile var readEnd: String? = null
+        private set
     private val servicesReady = CompletableDeferred<Unit>()
     @Volatile private var subscribeStatus = CompletableDeferred<Int>()
     private val mtuReady = CompletableDeferred<Unit>()
@@ -109,6 +115,7 @@ class BleGattCore(
     }
 
     fun onDisconnected(status: Int) {
+        if (readEnd == null) readEnd = "Bluetooth disconnected (GATT $status)"
         val e = IOException("BLE disconnected (GATT $status)")
         if (!writeDone.isCompleted) writeDone.completeExceptionally(e)
         failSetup(IOException("BLE disconnected before setup completed (GATT $status)"))
@@ -264,6 +271,7 @@ class BleGattCore(
                     // from the next write's — close the link instead of reusing it (#218). The reader sees EOF and
                     // SlcanConnection reconnects with a new transport; later writes here fail at once.
                     invalidated = true
+                    if (readEnd == null) readEnd = "Bluetooth link closed after an unacknowledged write"
                     close()
                     throw WriteFailure.uncertain("BLE write not acknowledged in $writeTimeoutMs ms — link closed")
                 }
