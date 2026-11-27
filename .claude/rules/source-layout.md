@@ -30,7 +30,8 @@ can/
   TcpSlcanTransport.kt    — MeatPi Pro: raw TCP 192.168.0.10:35000 (socket source + lookup: the adapter network's, #324)
   WebSocketSlcanTransport.kt — MeatPi USB: WebSocket ws://192.168.80.1:80/ws (socket source + lookup as TCP)
   BleSlcanTransport.kt    — BLE GATT transport: connects and forwards BluetoothGatt callbacks to BleGattCore; GattLink over
-                            BluetoothGatt. autoConnect=true after a first success with that MAC (per process), MTU 247 w/ fallback
+                            BluetoothGatt. autoConnect=true after a first success with that MAC (per process). MTU: requests 247;
+                            the callback may report a larger MTU (517 seen), and the app uses what it reports (23 on failure)
   BleGattCore.kt          — Android-free setup sequence / writes / framing (#218): layout from BleAdapterProfile (Pro
                             FFF0/FFF2/FFF1, USB FEE0/FEE1, legacy FFE0) chosen from discovered services + characteristic
                             properties (write type, notify vs indicate); bonds once; every wait bounded (write callback 2 s).
