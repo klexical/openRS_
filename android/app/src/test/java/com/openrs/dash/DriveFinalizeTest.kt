@@ -131,7 +131,8 @@ class DriveFinalizeTest {
     }
 
     private fun recorder(geo: Geocoder, dao: DriveDao = db.driveDao()) =
-        DriveRecorder(app, vs, WeatherRepository(""), db, dao, geo::lookup, gps, { summaries += it })
+        // The buffer this class drives is the batch path: production writes every point (#512, POINTS_PER_FLUSH = 1)
+        DriveRecorder(app, vs, WeatherRepository(""), db, dao, geo::lookup, gps, { summaries += it }, pointsPerFlush = 30)
             .also { it.lapTimer = lapTimer; recorders += it }
 
     private val dao get() = db.driveDao()

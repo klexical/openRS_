@@ -97,7 +97,9 @@ class ServiceFlushDemoteTest {
         db = Room.inMemoryDatabaseBuilder(app, DriveDatabase::class.java).allowMainThreadQueries().build()
         db.openHelper.writableDatabase      // open before any recorder (see ObserverNoteEvidenceTest)
         gated = GatedDao(db.driveDao())
-        rec = DriveRecorder(app, appVs.readings, WeatherRepository(""), db, gated.dao, { _, _ -> null }, gps, { })
+        // The buffer this class drives is the batch path: production writes every point (#512, POINTS_PER_FLUSH = 1)
+        rec = DriveRecorder(app, appVs.readings, WeatherRepository(""), db, gated.dao, { _, _ -> null }, gps, { },
+            pointsPerFlush = 30)
         CanDataService.recorderProvider = { rec }                      // #316 seam 5
         service = TestServices.create()
         fg = ForegroundController(host)
