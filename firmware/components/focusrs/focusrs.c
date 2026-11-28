@@ -28,10 +28,8 @@ frs_can_tx_fn_t frs_get_can_tx(void) {
 
 static frs_state_t s_state = {
     .drive_mode           = FRS_MODE_NORMAL,
-    .boot_mode            = FRS_MODE_NORMAL,
     .mode_420_detail      = 0xC4,
     .esc_mode             = FRS_ESC_ON,
-    .boot_esc             = FRS_ESC_ON,
     .lc_enabled           = false,
     .ass_kill             = false,
     .battery_mv           = 12000,
@@ -50,11 +48,10 @@ void frs_init(void) {
         abort();
     }
     frs_nvs_load(&s_state);
+    frs_nvs_erase_restore_keys();
     frs_uds_init();
     ESP_LOGI(TAG, "openrs-fw %s — Focus RS module init", OPENRS_FW_VERSION);
-    ESP_LOGI(TAG, "Boot mode: %d, ESC: %d, LC: %d, ASS kill: %d",
-             s_state.boot_mode, s_state.esc_mode,
-             s_state.lc_enabled, s_state.ass_kill);
+    ESP_LOGI(TAG, "LC: %d, ASS kill: %d", s_state.lc_enabled, s_state.ass_kill);
 }
 
 void frs_parse_can_frame(uint32_t can_id, const uint8_t *data, uint8_t dlc) {
@@ -411,12 +408,9 @@ static void frs_drive_mode_task(void *arg) {
 
         // Step 4: Check if we landed on the right mode.
         if (current == target) {
+            // Not saved: the car keeps its own start-up mode (#628).
             ESP_LOGI(TAG, "Drive mode: SUCCESS — reached %d on attempt %d",
                      target, attempt + 1);
-            xSemaphoreTake(s_state_mutex, portMAX_DELAY);
-            s_state.boot_mode = target;
-            xSemaphoreGive(s_state_mutex);
-            frs_nvs_save_boot_mode(target);
             goto done;
         }
 
@@ -495,9 +489,8 @@ static bool frs_send_esc_long(void) {
 
 static uint8_t s_pending_esc = 0xFF;
 
-// #125: boot_esc / NVS are written only for a confirmed change — every planned press sent (valid 0x260 template,
-// no TX abort) and a 0x1C0 frame received *after* the presses reporting the target (frs_esc_should_persist). A
-// failed or unconfirmed sequence leaves the saved boot mode as it was.
+// The task stays busy until a 0x1C0 frame received *after* the presses reports the target, or the wait ends
+// (frs_esc_confirmed, #125). Nothing is saved: ESC starts at the car's own default every ignition (#628).
 static void frs_esc_mode_task(void *arg) {
     uint8_t target_esc = (uint8_t)(uintptr_t)arg;
 
@@ -530,17 +523,15 @@ static void frs_esc_mode_task(void *arg) {
         if (frame_after && observed == target_esc) break;
     }
 
-    bool persist = frs_esc_should_persist(sent, frame_after, observed, target_esc);
+    bool confirmed = frs_esc_confirmed(sent, frame_after, observed, target_esc);
     xSemaphoreTake(s_state_mutex, portMAX_DELAY);
-    if (persist) s_state.boot_esc = target_esc;
     s_pending_esc = 0xFF;
     xSemaphoreGive(s_state_mutex);
 
-    if (persist) {
-        ESP_LOGI(TAG, "ESC: CAN confirmed %d — saved as boot ESC", target_esc);
-        frs_nvs_save_esc(target_esc);
+    if (confirmed) {
+        ESP_LOGI(TAG, "ESC: CAN confirmed %d", target_esc);
     } else {
-        ESP_LOGW(TAG, "ESC: %d not confirmed (sent=%d, frame=%d, observed=%d) — boot ESC unchanged",
+        ESP_LOGW(TAG, "ESC: %d not confirmed (sent=%d, frame=%d, observed=%d)",
                  target_esc, sent, frame_after, observed);
     }
     vTaskDelete(NULL);
@@ -626,8 +617,10 @@ void frs_set_sleep_threshold(float volts) {
 }
 
 // ── Boot apply task ──────────────────────────────────────────
-// Waits for CAN templates to be captured, then applies persisted
-// boot mode, ESC mode, and ASS kill settings.
+// Waits for the CAN templates (the bus is up), then runs the read-only ABS UDS probe (TesterPresent + ReadDID to
+// 0x760). It sends no drive mode, ESC or start-stop button press (#628): older firmware restored the last app-set drive mode and ESC here — Drift and ESC Off included —
+// and pressed start-stop blind (a press toggles; the firmware reads no start-stop state, so a press could turn it back
+// on). The car keeps its own start-up modes; a press happens only on a request from the app.
 static void frs_boot_apply_task(void *arg) {
     const int max_wait_ms = 10000;
     const int poll_ms = 200;
@@ -646,11 +639,7 @@ static void frs_boot_apply_task(void *arg) {
     xSemaphoreTake(s_state_mutex, portMAX_DELAY);
     bool f305 = s_state.frame_305_valid;
     bool f260 = s_state.frame_260_valid;
-    uint8_t boot_mode  = s_state.boot_mode;
-    uint8_t drive_mode = s_state.drive_mode;
-    uint8_t boot_esc   = s_state.boot_esc;
-    uint8_t esc_mode   = s_state.esc_mode;
-    bool ass_kill      = s_state.ass_kill;
+    bool ass_kill = s_state.ass_kill;
     xSemaphoreGive(s_state_mutex);
 
     if (!f305 || !f260) {
@@ -662,24 +651,8 @@ static void frs_boot_apply_task(void *arg) {
     }
 
     ESP_LOGI(TAG, "Boot apply: templates ready after %dms", waited);
-
-    if (boot_mode != drive_mode && boot_mode <= FRS_MODE_TRACK) {
-        ESP_LOGI(TAG, "Boot apply: drive mode %d → %d",
-                 drive_mode, boot_mode);
-        frs_set_drive_mode(boot_mode);
-        vTaskDelay(pdMS_TO_TICKS(3000));
-    }
-
-    if (boot_esc != esc_mode && boot_esc <= FRS_ESC_OFF) {
-        ESP_LOGI(TAG, "Boot apply: ESC %d → %d",
-                 esc_mode, boot_esc);
-        frs_set_esc(boot_esc);
-        vTaskDelay(pdMS_TO_TICKS(2000));
-    }
-
     if (ass_kill) {
-        ESP_LOGI(TAG, "Boot apply: sending ASS kill button press");
-        frs_send_ass_button();
+        ESP_LOGI(TAG, "Boot apply: start-stop kill is on, but start-stop state is unknown — no press (#628)");
     }
 
     vTaskDelay(pdMS_TO_TICKS(1000));

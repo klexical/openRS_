@@ -9,8 +9,8 @@ extern "C" {
 
 // ── Firmware version (returned to Android app via OPENRS? probe) ───────────
 // Actual value is patched per-target by apply_patches.py.
-// USB → "USB v1.61-rc.1"   PRO → "PRO v1.2-rc.1"
-#define OPENRS_FW_VERSION   "USB v1.61-rc.1"
+// USB → "USB v1.62-rc.1"   PRO → "PRO v1.3-rc.1"
+#define OPENRS_FW_VERSION   "USB v1.62-rc.1"
 
 // ── Drive mode values ──────────────────────────────────────────
 // Confirmed from live CAN log (0x1B0 byte6 upper nibble, DBC VAL_ 432):
@@ -100,10 +100,8 @@ extern "C" {
 // ── State struct ───────────────────────────────────────────────
 typedef struct {
     uint8_t  drive_mode;          // Current drive mode from CAN (FRS_MODE_*)
-    uint8_t  boot_mode;           // Drive mode to apply on next ignition (NVS)
     uint8_t  mode_420_detail;     // 0x420 byte7 — bit0 disambiguates Sport(0)/Track(1)
     uint8_t  esc_mode;            // Current ESC mode from CAN (FRS_ESC_*)
-    uint8_t  boot_esc;            // ESC mode to apply on next ignition (NVS) — only a CAN-confirmed change
     uint32_t esc_frames;          // 0x1C0 frames reporting a mode (0/1/2) — confirmation needs one after the presses
     bool     lc_enabled;          // Launch control
     bool     ass_kill;            // Auto Start/Stop kill
@@ -129,12 +127,12 @@ frs_can_tx_fn_t   frs_get_can_tx(void);
 // ── Public API ────────────────────────────────────────────────
 void     frs_init(void);
 void     frs_parse_can_frame(uint32_t can_id, const uint8_t *data, uint8_t dlc);
-bool     frs_set_drive_mode(uint8_t mode);   // closed-loop CAN + NVS; false = busy
-bool     frs_set_esc(uint8_t esc_mode);      // queues the presses; NVS only once CAN confirms; false = busy / invalid
+bool     frs_set_drive_mode(uint8_t mode);   // on request only, never saved (#628); false = busy
+bool     frs_set_esc(uint8_t esc_mode);      // queues the presses, never saved (#628); false = busy / invalid
 void     frs_set_lc(bool enabled);
 void     frs_set_ass_kill(bool enabled);     // sends CAN + updates NVS
 void     frs_set_sleep_threshold(float volts);
-void     frs_boot_apply(void);         // Apply NVS settings after CAN templates captured
+void     frs_boot_apply(void);         // Start-up: ABS UDS probe only — no drive mode, ESC or start-stop press (#628)
 frs_state_t  frs_get_state_copy(void);  // Thread-safe snapshot
 frs_state_t *frs_get_state(void);      // DEPRECATED: not thread-safe on dual-core
 

@@ -12,6 +12,6 @@ int frs_esc_plan(uint8_t current, uint8_t target, frs_esc_press_t presses[2]) {
     return 1;
 }
 
-bool frs_esc_should_persist(bool presses_sent, bool frame_after_presses, uint8_t observed, uint8_t target) {
+bool frs_esc_confirmed(bool presses_sent, bool frame_after_presses, uint8_t observed, uint8_t target) {
     return presses_sent && frame_after_presses && observed == target && target <= FRS_ESC_OFF;
 }

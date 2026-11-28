@@ -17,11 +17,11 @@ int main(void) {
     CHECK(frs_esc_plan(FRS_ESC_OFF, FRS_ESC_ON, p) == 1 && p[0] == FRS_ESC_PRESS_SHORT, "Off -> On: one short press");
     CHECK(frs_esc_plan(FRS_ESC_ON, 7, p) == -1, "invalid target");
 
-    // The criterion: do not persist unconfirmed requests (old code saved boot_esc after any sequence)
-    CHECK(!frs_esc_should_persist(false, true, FRS_ESC_OFF, FRS_ESC_OFF), "no 0x260 template / aborted TX -> not saved");
-    CHECK(!frs_esc_should_persist(true, false, FRS_ESC_OFF, FRS_ESC_OFF), "no 0x1C0 frame after the presses -> not saved");
-    CHECK(!frs_esc_should_persist(true, true, FRS_ESC_ON, FRS_ESC_OFF), "car still reports another mode -> not saved");
-    CHECK(frs_esc_should_persist(true, true, FRS_ESC_OFF, FRS_ESC_OFF), "presses sent and CAN confirms -> saved");
+    // Confirmation needs every press sent and a post-press 0x1C0 frame reporting the target (#125); logged only (#628)
+    CHECK(!frs_esc_confirmed(false, true, FRS_ESC_OFF, FRS_ESC_OFF), "no 0x260 template / aborted TX -> unconfirmed");
+    CHECK(!frs_esc_confirmed(true, false, FRS_ESC_OFF, FRS_ESC_OFF), "no 0x1C0 frame after the presses -> unconfirmed");
+    CHECK(!frs_esc_confirmed(true, true, FRS_ESC_ON, FRS_ESC_OFF), "car still reports another mode -> unconfirmed");
+    CHECK(frs_esc_confirmed(true, true, FRS_ESC_OFF, FRS_ESC_OFF), "presses sent and CAN confirms -> confirmed");
 
     printf("%s (%d failure(s))\n", failures ? "FAILED" : "PASSED", failures);
     return failures ? 1 : 0;

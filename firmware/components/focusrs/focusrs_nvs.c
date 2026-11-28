@@ -8,8 +8,8 @@
 static const char *TAG     = "frs_nvs";
 static const char *NS      = "openrs";   // NVS namespace
 
-#define KEY_BOOT_MODE   "rs_bootmode"
-#define KEY_ESC         "rs_esc"
+#define KEY_BOOT_MODE   "rs_bootmode"   // erased at start-up, never read or written (#628)
+#define KEY_ESC         "rs_esc"        // erased at start-up, never read or written (#628)
 #define KEY_LC          "rs_lc"
 #define KEY_ASS         "rs_ass_kill"
 #define KEY_SLEEP_MV    "sleep_thresh_mv"
@@ -22,25 +22,7 @@ void frs_nvs_load(frs_state_t *state) {
         return;
     }
 
-    uint8_t u8;
     uint16_t u16;
-
-    if (nvs_get_u8(h, KEY_BOOT_MODE, &u8) == ESP_OK) {
-        if (u8 <= FRS_MODE_TRACK) {
-            state->boot_mode = u8;
-        } else {
-            ESP_LOGW(TAG, "NVS boot_mode out of range (%d) — using default", u8);
-        }
-    }
-
-    if (nvs_get_u8(h, KEY_ESC, &u8) == ESP_OK) {
-        if (u8 <= FRS_ESC_OFF) {
-            state->esc_mode = u8;
-            state->boot_esc = u8;
-        } else {
-            ESP_LOGW(TAG, "NVS esc_mode out of range (%d) — using default", u8);
-        }
-    }
 
     uint8_t lc = 0, ass = 0;
     nvs_get_u8(h, KEY_LC,  &lc);
@@ -57,8 +39,7 @@ void frs_nvs_load(frs_state_t *state) {
     }
 
     nvs_close(h);
-    ESP_LOGI(TAG, "Loaded: boot=%d esc=%d lc=%d ass=%d sleep=%lumV",
-             state->boot_mode, state->esc_mode,
+    ESP_LOGI(TAG, "Loaded: lc=%d ass=%d sleep=%lumV",
              state->lc_enabled, state->ass_kill,
              (unsigned long)state->sleep_threshold_mv);
 }
@@ -73,14 +54,32 @@ static esp_err_t nvs_write_u8(const char *key, uint8_t val) {
     return err;
 }
 
-void frs_nvs_save_boot_mode(uint8_t mode) {
-    esp_err_t err = nvs_write_u8(KEY_BOOT_MODE, mode);
-    if (err != ESP_OK) ESP_LOGW(TAG, "NVS write boot_mode failed: %s", esp_err_to_name(err));
-}
-
-void frs_nvs_save_esc(uint8_t mode) {
-    esp_err_t err = nvs_write_u8(KEY_ESC, mode);
-    if (err != ESP_OK) ESP_LOGW(TAG, "NVS write esc failed: %s", esp_err_to_name(err));
+// #628: older firmware saved the last drive mode and ESC here and restored them at every start-up (Drift and ESC Off
+// included). Neither is read any more; erasing them means a later downgrade has nothing to restore. Writes flash only
+// when a key is still there.
+void frs_nvs_erase_restore_keys(void) {
+    nvs_handle_t h;
+    esp_err_t err = nvs_open(NS, NVS_READWRITE, &h);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "NVS open for erase failed: %s", esp_err_to_name(err));
+        return;
+    }
+    const char *keys[] = { KEY_BOOT_MODE, KEY_ESC };
+    bool erased = false;
+    for (int i = 0; i < 2; i++) {
+        err = nvs_erase_key(h, keys[i]);
+        if (err == ESP_OK) {
+            erased = true;
+            ESP_LOGI(TAG, "Erased saved %s (no start-up restore since #628)", keys[i]);
+        } else if (err != ESP_ERR_NVS_NOT_FOUND) {
+            ESP_LOGW(TAG, "NVS erase %s failed: %s", keys[i], esp_err_to_name(err));
+        }
+    }
+    if (erased) {
+        err = nvs_commit(h);
+        if (err != ESP_OK) ESP_LOGW(TAG, "NVS commit after erase failed: %s", esp_err_to_name(err));
+    }
+    nvs_close(h);
 }
 
 void frs_nvs_save_lc(bool enabled) {

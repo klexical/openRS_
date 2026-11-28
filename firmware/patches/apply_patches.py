@@ -32,8 +32,8 @@ Pro-only patches:
 """
 
 OPENRS_FW_VERSIONS = {
-    "usb": "USB v1.61-rc.1",
-    "pro": "PRO v1.2-rc.1",
+    "usb": "USB v1.62-rc.1",
+    "pro": "PRO v1.3-rc.1",
 }
 OPENRS_FW_VERSION = None  # set per-target in main()
 
@@ -126,10 +126,10 @@ static esp_err_t frs_get_handler(httpd_req_t *req)
     frs_state_t *s = &snap;
     char json[512];
     snprintf(json, sizeof(json),
-        "{\"driveMode\":%d,\"bootMode\":%d,\"escMode\":%d,\"bootEsc\":%d,"
+        "{\"driveMode\":%d,\"escMode\":%d,"
         "\"lcEnabled\":%s,\"assKill\":%s,\"battMv\":%lu,\"sleepMv\":%u,"
         "\"canTxErrors\":%d,\"canBusOff\":%s,\"absReachable\":%s}",
-        s->drive_mode, s->boot_mode, s->esc_mode, s->boot_esc,
+        s->drive_mode, s->esc_mode,
         s->lc_enabled ? "true" : "false",
         s->ass_kill   ? "true" : "false",
         (unsigned long)s->battery_mv,
