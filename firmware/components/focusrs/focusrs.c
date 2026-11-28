@@ -617,8 +617,8 @@ void frs_set_sleep_threshold(float volts) {
 }
 
 // ── Boot apply task ──────────────────────────────────────────
-// Waits for the CAN templates (the bus is up), then runs the ABS UDS probe. It sends no drive mode, ESC or start-stop
-// button press (#628): older firmware restored the last app-set drive mode and ESC here — Drift and ESC Off included —
+// Waits for the CAN templates (the bus is up), then runs the read-only ABS UDS probe (TesterPresent + ReadDID to
+// 0x760). It sends no drive mode, ESC or start-stop button press (#628): older firmware restored the last app-set drive mode and ESC here — Drift and ESC Off included —
 // and pressed start-stop blind (a press toggles; the firmware reads no start-stop state, so a press could turn it back
 // on). The car keeps its own start-up modes; a press happens only on a request from the app.
 static void frs_boot_apply_task(void *arg) {

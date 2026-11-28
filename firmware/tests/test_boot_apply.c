@@ -1,4 +1,5 @@
-// Host test (#628): adapter start-up sends nothing to the car on its own. Runs the real focusrs.c (CAN parser, boot
+// Host test (#628): adapter start-up sends no drive mode, ESC or button command to the car on its own (the read-only
+// ABS UDS probe remains; stubbed here). Runs the real focusrs.c (CAN parser, boot
 // apply task, drive mode task, ESC task) and the real focusrs_nvs.c against an in-memory NVS (tests/stubs/nvs.h).
 // FreeRTOS, TWAI and ESP log are host stubs; time is a fake clock advanced by vTaskDelay; created tasks run in order.
 // Nothing is built for or flashed to an adapter. Run: firmware/tests/run.sh
@@ -100,7 +101,7 @@ int main(void) {
     CHECK(has("rs_ass_kill") && frs_get_state_copy().ass_kill, "start-stop kill setting kept");
     CHECK(frs_get_state_copy().esc_mode == FRS_ESC_ON, "ESC state not taken from flash before the car reports it");
 
-    {   // 1. Start-up with the bus already up: nothing is sent to the car
+    {   // 1. Start-up with the bus already up: no button press is sent to the car
         reset_run(); bus_up();
         frs_boot_apply();
         run_tasks();
@@ -131,7 +132,7 @@ int main(void) {
         frs_boot_apply();
         bus_up();
         run_tasks();
-        CHECK(tx_305 == 0 && tx_260 == 0, "second start-up: nothing sent");
+        CHECK(tx_305 == 0 && tx_260 == 0, "second start-up: no button press sent");
     }
 
     printf("%s (%d failure(s))\n", failures ? "FAILED" : "PASSED", failures);

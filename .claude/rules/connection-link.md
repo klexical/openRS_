@@ -136,9 +136,10 @@ paths:
     `DriveCommand` and `EscCommand` show and log only that text (`FirmwareFailure.textOf`: any other exception reads
     `FAILED` plus that GATT tail). The WebSocket upgrade fails with
     `Upgrade failed: HTTP <code>` only; `AdapterProbe` reads that prefix (`FirmwareErrorTextTest`, #604)
-- **The adapter sends nothing to the car at start-up (#628, owner decision)** — `frs_boot_apply_task` restores no drive
-  mode or ESC and presses no start-stop button; the firmware saves neither mode (it erases the `rs_bootmode` / `rs_esc`
-  keys older firmware left) and a press happens only on a request from the app. The start-stop kill setting stays, but
+- **The adapter sends no drive-mode, ESC or button command at start-up (#628, owner decision)** — `frs_boot_apply_task`
+  restores no drive mode or ESC and presses no start-stop button (the read-only ABS UDS probe to 0x760 remains); the
+  firmware saves neither mode (it erases the `rs_bootmode` / `rs_esc` keys older firmware left) and a press happens only
+  on a request from the app. The start-stop kill setting stays, but
   its start-up press waits for a readable start-stop state: a blind press toggles, so it could turn start-stop back on.
   Any new start-up action that sends a frame to the car is the owner's decision first. Host test: `test_boot_apply.c`
   in `firmware/tests/run.sh`; the car check is #628's

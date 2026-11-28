@@ -12,7 +12,7 @@ cc -std=c99 -Wall -Wextra -Werror -I"$src" \
 cc -std=c99 -Wall -Wextra -Werror -Wno-unused-parameter -I"$here/stubs" -I"$src" \
    "$here/test_esc_confirm.c" "$src/focusrs.c" "$src/focusrs_esc_plan.c" -o "$out/test_esc_confirm"
 "$out/test_esc_confirm"
-# #628: start-up sends nothing to the car; the real focusrs_nvs.c runs against an in-memory NVS (stubs/nvs.h).
+# #628: start-up sends no drive mode, ESC or button command to the car (the read-only ABS UDS probe remains); the real focusrs_nvs.c runs against an in-memory NVS (stubs/nvs.h).
 cc -std=c99 -Wall -Wextra -Werror -Wno-unused-parameter -I"$here/stubs" -I"$src" \
    "$here/test_boot_apply.c" "$src/focusrs.c" "$src/focusrs_esc_plan.c" "$src/focusrs_nvs.c" -o "$out/test_boot_apply"
 "$out/test_boot_apply"
