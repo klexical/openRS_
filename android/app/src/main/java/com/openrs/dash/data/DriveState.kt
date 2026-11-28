@@ -121,9 +121,17 @@ data class DriveState(
          * stamp is at most [BoostRule.LINK_FRESH_MS] old, and it reads 0. A speed never received, or older than that, is
          * not known, and the GPS step counts as before: a car that does not send 0x130 never loses its distance.
          */
-        fun carParked(vs: VehicleState, nowMs: Long): Boolean {
-            val at = vs.fieldLastUpdateMs[com.openrs.dash.can.CanDecoder.SPEED_TAG] ?: return false
-            return nowMs - at in 0L..BoostRule.LINK_FRESH_MS && vs.speedKph <= 0.0
+        fun carParked(vs: VehicleState, nowMs: Long): Boolean = freshSpeedKph(vs, nowMs)?.let { it <= 0.0 } ?: false
+
+        /**
+         * The car's speed at [nowMs] when it is current (#515): CAN 0x130 was received on this connection and its stamp is
+         * at most [BoostRule.LINK_FRESH_MS] old; null otherwise. VehicleState holds the last decoded speed for as long as no
+         * new 0x130 frame arrives, so a held value is not a reading: a drive point records it as absent
+         * ([DrivePointEntity.NO_SPEED]), and the drive's average and top speed leave it out.
+         */
+        fun freshSpeedKph(vs: VehicleState, nowMs: Long): Double? {
+            val at = vs.fieldLastUpdateMs[com.openrs.dash.can.CanDecoder.SPEED_TAG] ?: return null
+            return vs.speedKph.takeIf { nowMs - at in 0L..BoostRule.LINK_FRESH_MS }
         }
 
         fun haversineKm(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {

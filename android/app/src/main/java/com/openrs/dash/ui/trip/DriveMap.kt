@@ -306,6 +306,7 @@ private fun buildColorSegments(
 
 internal fun pointColor(point: DrivePointEntity, mode: ColorMode, boostSource: com.openrs.dash.data.BoostSource? = null): Color = when (mode) {
     ColorMode.SPEED -> when {
+        point.speedKph < 0   -> com.openrs.dash.ui.Dim   // no current speed at the point (#515)
         point.speedKph < 60  -> Ok       // green — slow
         point.speedKph < 100 -> Accent   // cyan — moderate
         point.speedKph < 140 -> Warn     // yellow — fast

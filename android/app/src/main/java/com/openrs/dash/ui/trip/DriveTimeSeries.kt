@@ -76,7 +76,7 @@ private data class Channel(
 )
 
 private val CHANNELS = listOf(
-    Channel("SPD",    { Accent })  { it.speedKph },
+    Channel("SPD",    { Accent }, valid = { it.speedKph >= 0.0 }) { it.speedKph },  // −1 = no current speed (#515)
     Channel("RPM",    { Warn })    { it.rpm.toDouble() },
     // #207: one line per measurement — CAN 0x0F8 (BOOST; also points recorded before sources were stored, as
     // recorded) and TIP − baro (TIP). A point with no reading, or another source's, is a gap — never 0, never joined.

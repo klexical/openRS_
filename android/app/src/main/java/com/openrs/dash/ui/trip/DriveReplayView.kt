@@ -41,6 +41,7 @@ import com.google.android.gms.maps.model.LatLng
 import com.google.maps.android.compose.rememberCameraPositionState
 import com.openrs.dash.data.DriveEntity
 import com.openrs.dash.data.DrivePointEntity
+import com.openrs.dash.data.speedReadingKph
 import com.openrs.dash.ui.*
 import kotlinx.coroutines.delay
 
@@ -206,7 +207,7 @@ fun DriveReplayView(
                     val boost = prefs.boostPsi(currentPoint.boostPsi).let { it.value to it.unit }
                     ReadoutGrid(
                         rows = listOf(
-                            listOf(Readout("SPEED", v(prefs.speed(currentPoint.speedKph).text)),
+                            listOf(Readout("SPEED", v(currentPoint.speedReadingKph()?.let { prefs.speed(it).text } ?: "\u2014 \u2014")),
                                 Readout("RPM", v("${currentPoint.rpm}")),
                                 Readout("GEAR", v(currentPoint.gear.ifEmpty { "\u2014 \u2014" })),
                                 // #207: the point's own source when recorded (TIP / BOOST); no reading → "— —"; points from

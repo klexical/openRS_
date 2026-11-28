@@ -113,7 +113,9 @@ class DriveLinkEndFlushTest {
 
     private fun telemetry(i: Int) = VehicleState(
         isConnected = true, speedKph = 60.0 + i, rpm = 2_000.0 + 100 * i, lateralG = 0.1 * i,
-        oilTempC = 90.0 + i, coolantTempC = 85.0 + i, driveMode = if (i < 8) DriveMode.NORMAL else DriveMode.SPORT
+        oilTempC = 90.0 + i, coolantTempC = 85.0 + i, driveMode = if (i < 8) DriveMode.NORMAL else DriveMode.SPORT,
+        // A current 0x130 speed (#515: a point stores the speed only while its stamp is fresh)
+        fieldLastUpdateMs = mapOf(com.openrs.dash.can.CanDecoder.SPEED_TAG to System.currentTimeMillis())
     )
 
     private fun fix(i: Int) = Location("test").apply {
