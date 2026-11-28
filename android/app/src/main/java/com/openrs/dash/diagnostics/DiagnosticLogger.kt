@@ -145,7 +145,9 @@ object DiagnosticLogger {
      * One frame-rate sample; [heap] is the app's memory at the same moment (#510), null when it could not be read.
      * The reading adds about 56 bytes per sample, about 0.4 MiB at the [MAX_FPS_POINTS] cap.
      */
-    data class FpsPoint(val relMs: Long, val fps: Double, val heap: HeapSample? = null)
+    data class FpsPoint(val relMs: Long, val fps: Double, val heap: HeapSample? = null,
+                        /** UI timing since the previous sample (#630); null outside a session. */
+                        val ui: UiSample? = null)
 
     /** A single DID probe result from the DID Prober. */
     data class ProbeResult(val did: Int, val status: String, val responseHex: String)
@@ -278,6 +280,12 @@ object DiagnosticLogger {
     /** True from [sessionStart] to [sessionEnd]: frames are counted only while a connection's session runs. */
     @Volatile var uiTimingCounting = false
         private set
+    /** The pager's settled page (MainActivity, #630): the tab an FPS-timeline sample names. */
+    @Volatile var settledPage = 0
+    /** The TRIP map exists (TripPage, #630): once made it is retained, and a retained map's cost is what #629 found. */
+    @Volatile var tripMapCreated = false
+    /** Per-sample differences of the UI timing counts (#630), reset with them at [sessionStart]. */
+    private val uiSampler = UiSampler()
     /** Bluetooth delivery of this session's earlier attempts, and the current attempt's live counts (read at export). */
     private var bleDeliveryEarlier: com.openrs.dash.can.BleDelivery? = null
     private var attemptBleDelivery: com.openrs.dash.can.BleDeliveryCounts? = null
@@ -529,7 +537,7 @@ object DiagnosticLogger {
             linkIntegrityLive = LinkIntegrity()
             connectionAttempts = 0; attemptMtuTrace = null
             // UI timing (#421): every counter starts at this connection's start
-            mainThreadLag.reset(); frameTimes.reset(); linkLockWait.reset()
+            mainThreadLag.reset(); frameTimes.reset(); linkLockWait.reset(); uiSampler.reset()
             bleDeliveryEarlier = null; attemptBleDelivery = null
             uiTimingCounting = true
             didInventoryLive.clear(); didInventoryOverflow = 0
@@ -631,7 +639,8 @@ object DiagnosticLogger {
     /** Records a frame-rate sample with the app's memory beside it (#510); [heap] is read outside the lock. */
     fun fps(value: Double, heap: HeapSample? = HeapSample.read()) {
         synchronized(lock) {
-            fpsTimelineDeque.addLast(FpsPoint(relativeMs(), value, heap))
+            val ui = if (sessionStartMs > 0) uiSampler.take(mainThreadLag.read(), frameTimes.read(), settledPage, tripMapCreated) else null
+            fpsTimelineDeque.addLast(FpsPoint(relativeMs(), value, heap, ui))
             while (fpsTimelineDeque.size > MAX_FPS_POINTS) {
                 fpsTimelineDeque.removeFirst()
                 fpsDropped++
