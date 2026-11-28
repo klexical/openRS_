@@ -1398,7 +1398,7 @@ internal fun deleteTripTitle(drive: DriveEntity, prefs: UserPrefs, nowMs: Long =
 private const val NBSP = '\u00A0'
 
 /** The delete confirmation's other wording (#631; user-visible, the owner's sign-off on the PR). */
-internal const val DELETE_TRIP_TEXT = "This can't be undone."
+internal const val DELETE_TRIP_TEXT = "Its laps are deleted too. This can't be undone."
 internal const val DELETE_TRIP_CONFIRM = "DELETE"
 internal const val DELETE_TRIP_CANCEL = "CANCEL"
 
