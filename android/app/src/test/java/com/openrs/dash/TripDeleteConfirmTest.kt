@@ -15,16 +15,24 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
+import androidx.room.Room
+import androidx.test.core.app.ApplicationProvider
+import com.openrs.dash.data.DriveDatabase
 import com.openrs.dash.data.DriveEntity
+import com.openrs.dash.data.LapSessionEntity
 import com.openrs.dash.ui.UserPrefs
 import com.openrs.dash.ui.trip.DELETE_TRIP_CANCEL
 import com.openrs.dash.ui.trip.DELETE_TRIP_CONFIRM
 import com.openrs.dash.ui.trip.DELETE_TRIP_TEXT
 import com.openrs.dash.ui.trip.DELETE_TRIP_TITLE
+import com.openrs.dash.ui.trip.DriveHistory
 import com.openrs.dash.ui.trip.SwipeDriveCard
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
@@ -36,13 +44,32 @@ import java.time.Duration
 
 /**
  * #631: a swipe left on a drive in TRIP's history used to delete it at once — the drive, its points and its laps,
- * with no undo. The production [SwipeDriveCard], swiped with real touch events: the swipe only asks ("Delete this
- * trip?"); only the dialog's DELETE deletes, and CANCEL keeps the drive. Teardown as the Compose rule in
- * `.claude/rules/android-general.md` says.
+ * with no undo. The production [SwipeDriveCard], swiped with real touch events, deleting through TRIP's own
+ * [DriveHistory.delete] into an in-memory Room database: the swipe only asks ("Delete this trip?") and the drive stays in
+ * the database; CANCEL keeps it and the card is back at rest; only DELETE removes the drive and its lap sessions.
+ * Teardown as the Compose rule in `.claude/rules/android-general.md` says.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(qualifiers = "w411dp-h914dp-xxhdpi", application = OpenRSDashApp::class)
 class TripDeleteConfirmTest {
+
+    private lateinit var db: DriveDatabase
+    private var driveId = 0L
+
+    @Before fun setUp() {
+        db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext(), DriveDatabase::class.java)
+            .allowMainThreadQueries().build()
+        driveId = db.driveDao().insertDrive(DriveEntity(startTime = 1_000_000L, endTime = 2_000_000L, name = DRIVE_NAME))
+        db.driveDao().insertLapSession(LapSessionEntity(driveId = driveId, startFinishLat = 0.0, startFinishLng = 0.0,
+            startFinishBearing = 0f, createdAt = 1_500_000L))
+    }
+
+    @After fun tearDown() { db.close() }
+
+    private companion object { const val DRIVE_NAME = "Test drive" }
+
+    private fun inDatabase() = db.driveDao().getDrive(driveId) != null
+    private fun lapSessions() = db.driveDao().getLapSessionsForDrive(driveId).size
 
     private fun idle(frames: Int) = repeat(frames) { shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(16)) }
 
@@ -73,10 +100,11 @@ class TripDeleteConfirmTest {
     }
 
     /**
-     * Composes one drive card, swipes it right to left with touch events, and hands [after] the card's view; [deleted]
-     * counts the card's onDelete calls. Destroys and drains at the end.
+     * Composes the stored drive's card, swipes it right to left with touch events, and hands [after] the count of the
+     * card's onDelete calls (each one runs TRIP's [DriveHistory.delete]) and a reading of how far the card's name sits
+     * from where it rested before the swipe, in px. Destroys and drains at the end.
      */
-    private fun swiped(after: (deleted: () -> Int) -> Unit) {
+    private fun swiped(after: (deleted: () -> Int, offset: () -> Float) -> Unit) {
         ShadowChoreographer.setPaused(true)
         ShadowChoreographer.setFrameDelay(Duration.ofMillis(16))
         var deletes = 0
@@ -85,19 +113,31 @@ class TripDeleteConfirmTest {
         activity.setContent {
             Box(Modifier.fillMaxWidth()) {
                 SwipeDriveCard(
-                    drive = DriveEntity(id = 7, startTime = 1_000_000L, endTime = 2_000_000L, name = "Test drive"),
+                    drive = db.driveDao().getDrive(driveId)!!,
                     prefs = UserPrefs(),
                     isSelected = false,
                     onClick = {},
                     onSummary = {},
                     onExport = {},
-                    onDelete = { deletes++ },
+                    onDelete = { deletes++; DriveHistory.delete(db.driveDao(), driveId) },
                     onRename = {}
                 )
             }
         }
         idle(6)
         try {
+            val cardRoot = {
+                val compose = activity.findViewById<ViewGroup>(android.R.id.content).getChildAt(0) as ViewGroup
+                (compose.getChildAt(0) as ViewRootForTest).semanticsOwner.unmergedRootSemanticsNode
+            }
+            // Robolectric draws no frame of the activity's window while a dialog window is over it, so the card's last
+            // placement would be read: measure and lay out its Compose root by hand first
+            fun relayout() {
+                val compose = activity.findViewById<ViewGroup>(android.R.id.content).getChildAt(0) as ViewGroup
+                (compose.getChildAt(0) as ViewRootForTest).measureAndLayoutForTest()
+            }
+            fun nameLeft() = relayout().let { nodes(cardRoot()).first { DRIVE_NAME in texts(it) && it.children.isEmpty() }.boundsInRoot.left }
+            val rest = nameLeft()
             val content = activity.findViewById<ViewGroup>(android.R.id.content).getChildAt(0)
             val loc = IntArray(2).also { content.getLocationInWindow(it) }
             val root = activity.window.decorView
@@ -115,30 +155,38 @@ class TripDeleteConfirmTest {
             }
             root.dispatchTouchEvent(MotionEvent.obtain(t0, t0 + steps * 8L + 8, MotionEvent.ACTION_UP, endX, y, 0))
             idle(60)                                   // the settle animation runs to the end
-            after { deletes }
+            after({ deletes }, { nameLeft() - rest })
         } finally {
             controller.pause().stop().destroy()
             idle(8)
         }
     }
 
-    @Test fun `a swipe asks first and deletes nothing`() = swiped { deleted ->
+    @Test fun `a swipe asks first and deletes nothing`() = swiped { deleted, _ ->
         assertEquals("a swipe alone must not delete the drive", 0, deleted())
+        assertTrue("the drive is still in the database", inDatabase())
         val dialog = dialogRoot()
         assertNotNull("the swipe shows the delete confirmation", dialog)
         val shown = texts(dialog!!)
         assertEquals(listOf(true, true, true), listOf(DELETE_TRIP_TEXT in shown, DELETE_TRIP_CONFIRM in shown, DELETE_TRIP_CANCEL in shown))
     }
 
-    @Test fun `DELETE in the dialog deletes the drive once`() = swiped { deleted ->
+    @Test fun `DELETE in the dialog deletes the drive and its lap sessions once`() = swiped { deleted, _ ->
+        assertEquals(1, lapSessions())
         dialogRoot()!!.tap(DELETE_TRIP_CONFIRM)
         assertEquals(1, deleted())
+        assertEquals("the drive is gone", false, inDatabase())
+        assertEquals("its lap sessions are gone", 0, lapSessions())
         assertNull("the dialog closes", dialogRoot())
     }
 
-    @Test fun `CANCEL keeps the drive`() = swiped { deleted ->
+    @Test fun `CANCEL keeps the drive and the card returns to rest`() = swiped { deleted, offset ->
         dialogRoot()!!.tap(DELETE_TRIP_CANCEL)
+        idle(30)
         assertEquals(0, deleted())
         assertNull("the dialog closes", dialogRoot())
+        assertTrue("the drive is still in the database", inDatabase())
+        assertEquals("its lap sessions are kept", 1, lapSessions())
+        assertEquals("the card is back where it rested", 0f, offset(), 0.5f)
     }
 }
