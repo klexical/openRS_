@@ -6,6 +6,8 @@ All notable changes to the openrs-fw firmware are documented here.
 
 ## Unreleased — source only (not flashed; built once for PRO in isolation, 2026-10-29)
 
+Version text: USB v1.62-rc.1 / PRO v1.3-rc.1 (owner's choice, so the app can tell fixed adapters from older ones; [#628](https://github.com/klexical/openRS_/issues/628)).
+
 ### Fixed
 - **The adapter changed the car's drive mode and ESC by itself at start-up** — `frs_boot_apply_task` restored the last drive mode the app had set (Drift included) and the last confirmed ESC mode (Off included) every time the adapter booted with the bus up, and pressed start-stop blind when the kill setting was on. Start-up now sends no button press to the car: the drive mode and ESC are never saved, the `rs_bootmode` / `rs_esc` keys older firmware left are erased at start-up, and `GET /api/frs` no longer reports `bootMode` / `bootEsc`. The start-stop kill setting is kept; its start-up press waits for a readable start-stop state. Host-tested (`tests/test_boot_apply.c` in `tests/run.sh`). Not built or flashed — no vehicle test. ([#628](https://github.com/klexical/openRS_/issues/628))
 - **A reserved ESC state could confirm a mode reported before the presses** — 0x1C0 raw state 3 (Launch in RS_HS.dbc) kept the previous mode but still counted as a received frame, so a target mode seen *during* the presses followed by raw-3 frames passed the post-press confirmation and saved boot ESC. Only a frame that reports ESC On / Off / Sport now counts. `tests/run.sh` now runs the real `focusrs.c` (CAN parser → ESC task → `frs_nvs_save_esc`) against host stubs for FreeRTOS / TWAI. Not flashed — no vehicle test. ([#125](https://github.com/klexical/openRS_/issues/125))
