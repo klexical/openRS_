@@ -21,7 +21,7 @@ paths:
 - **TRIP map: created on TRIP, then retained** — the pager composes neighbouring pages, so `TripPage` creates `DriveMap`
   only once TRIP is the settled page and then pins itself: one MapView for the activity's life. Off screen its lifecycle
   is capped at CREATED and its inputs are held, so anything infinite-animated or modal inside TRIP must gate on `visible`
-  (rec pulse, lap timer, post-drive summary sheet)
+  (rec pulse, lap timer, post-drive summary sheet, every 1 s `wallClockMs()` clock: `TripHiddenRecompositionTest`, #629)
 - **Navigation swipe + TRIP map isolation** — pager swipe is disabled while a finger is on the map (`onMapTouched` →
   `mapTouched` in MainActivity). `nestedScroll` does NOT work for this: Google Maps is an `AndroidView` that dispatches no
   Compose nested-scroll events, so the map Box's `pointerInput` monitors (does NOT consume) touches. The Google logo cannot
