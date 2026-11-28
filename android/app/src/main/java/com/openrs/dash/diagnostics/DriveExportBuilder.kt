@@ -4,6 +4,7 @@ import com.openrs.dash.BuildConfig
 import com.openrs.dash.data.DriveBookmarkEntity
 import com.openrs.dash.data.DriveEntity
 import com.openrs.dash.data.DrivePointEntity
+import com.openrs.dash.data.speedReadingKph
 import com.openrs.dash.data.DriveThermalReview
 import com.openrs.dash.data.DriveThermalSensor
 import com.openrs.dash.data.THERMAL_FLAG_FRACTION
@@ -102,7 +103,7 @@ internal object DriveExportBuilder {
                 // No <ele> (#524): a point records no altitude, and GPX's ele is optional — 0 was made up
                 appendLine("        <time>${isoFmt.format(Date(pt.timestamp))}</time>")
                 appendLine("        <extensions>")
-                appendLine("          <openrs:speed>${"%.1f".format(Locale.ROOT, pt.speedKph)}</openrs:speed>")
+                gpxReading("speed", pt.speedReadingKph())          // none when no current speed (#515)
                 appendLine("          <openrs:rpm>${pt.rpm}</openrs:rpm>")
                 appendLine("          <openrs:gear>${pt.gear}</openrs:gear>")
                 pt.boostReadingPsi()?.let { appendLine("          <openrs:boostPsi>${"%.2f".format(Locale.ROOT, it)}</openrs:boostPsi>") }
@@ -180,7 +181,7 @@ internal object DriveExportBuilder {
             appendLine(
                 "${pt.timestamp}," +
                 (if (hasGps) "${"%.6f".format(Locale.ROOT, pt.lat)},${"%.6f".format(Locale.ROOT, pt.lng)}," else ",,") +
-                "${"%.2f".format(Locale.ROOT, pt.speedKph)}," +
+                "${field(pt.speedReadingKph(), "%.2f")}," +    // empty when no current speed (#515)
                 "${pt.rpm}," +
                 "${csvEscape(pt.gear)}," +
                 "${pt.boostReadingPsi()?.let { "%.3f".format(Locale.ROOT, it) } ?: ""}," +
@@ -723,13 +724,13 @@ internal object DriveExportBuilder {
         val t0 = points.first().timestamp
         points.forEach { pt ->
             val timeSec = (pt.timestamp - t0) / 1000.0
-            val speedMs = pt.speedKph / 3.6
+            val speedKph = pt.speedReadingKph()                  // empty when no current speed (#515)
             appendLine(
                 "${"%.3f".format(Locale.ROOT, timeSec)}," +
                 "${"%.6f".format(Locale.ROOT, pt.lat)}," +
                 "${"%.6f".format(Locale.ROOT, pt.lng)}," +
-                "${"%.2f".format(Locale.ROOT, speedMs)}," +
-                "${"%.2f".format(Locale.ROOT, pt.speedKph)}," +
+                "${field(speedKph?.let { it / 3.6 }, "%.2f")}," +
+                "${field(speedKph, "%.2f")}," +
                 "${"%.4f".format(Locale.ROOT, pt.lateralG)}," +
                 "${"%.4f".format(Locale.ROOT, pt.longitudinalG)}," +
                 "${pt.rpm}," +
@@ -758,7 +759,7 @@ internal object DriveExportBuilder {
         val t0 = points.first().timestamp
         points.forEach { pt ->
             val timeSec = (pt.timestamp - t0) / 1000.0
-            val speedMph = pt.speedKph * 0.621371
+            val speedMph = pt.speedReadingKph()?.let { it * 0.621371 }   // empty when no current speed (#515)
             // Empty until received (#523) — the −99 written here before was a °C sentinel in a °F column
             val coolantF = receivedTempC(pt.coolantTempC)?.let { it * 9.0 / 5.0 + 32.0 }
             val oilF = receivedTempC(pt.oilTempC)?.let { it * 9.0 / 5.0 + 32.0 }
@@ -766,7 +767,7 @@ internal object DriveExportBuilder {
                 "${"%.3f".format(Locale.ROOT, timeSec)}," +
                 "${"%.6f".format(Locale.ROOT, pt.lat)}," +
                 "${"%.6f".format(Locale.ROOT, pt.lng)}," +
-                "${"%.1f".format(Locale.ROOT, speedMph)}," +
+                "${field(speedMph, "%.1f")}," +
                 "${"%.4f".format(Locale.ROOT, pt.lateralG)}," +
                 "${"%.4f".format(Locale.ROOT, pt.longitudinalG)}," +
                 "${pt.rpm}," +

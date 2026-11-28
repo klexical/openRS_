@@ -64,3 +64,7 @@ paths:
   next launch all go through `DriveRecorder.summarize`. The aggression score covers every stored point of the drive (the
   owner, on #321). Never read the run's accumulators from outside the loop while it runs: an export reads the loop's
   published `SummaryParts` (`DriveSummaryOneRuleTest`)
+- **A stored speed is a current 0x130 reading or none (#515)** — the loop stores `DriveState.freshSpeedKph` (stamp at most
+  `BoostRule.LINK_FRESH_MS` old), else `DrivePointEntity.NO_SPEED` (−1). Any new reader of a stored point's speed goes
+  through `speedReadingKph()`: exports write an empty field, the drive's average / top speed leave it out, and a point
+  with no speed is never parked. Points from before #515 always hold a value (`RecorderStaleSpeedTest`)

@@ -22,6 +22,7 @@ import com.openrs.dash.data.DriveEntity
 import com.openrs.dash.data.DriveMode
 import com.openrs.dash.data.DrivePointEntity
 import com.openrs.dash.data.DriveState
+import com.openrs.dash.data.speedReadingKph
 import com.openrs.dash.data.DriveThermalSensor
 import com.openrs.dash.data.DriveThermalTracker
 import com.openrs.dash.data.FreshnessGate
@@ -762,12 +763,14 @@ class DriveRecorder(
                 val boost = com.openrs.dash.data.BoostSession.read(vs, now)
                 // The shared verdict (DRIVE row / THERMAL card) including its holds: TEMPS READY only.
                 val raceReady = ThermalReadinessSession.verdict.value.isReady
+                // #515: the speed only while 0x130 is current; VehicleState holds the last decode when frames stop
+                val speed = DriveState.freshSpeedKph(vs, now)
                 val point = DrivePointEntity(
                     driveId        = driveId,
                     timestamp      = now,
                     lat            = location.latitude,
                     lng            = location.longitude,
-                    speedKph       = vs.speedKph,
+                    speedKph       = speed ?: DrivePointEntity.NO_SPEED,
                     rpm            = vs.rpm.toInt(),
                     gear           = vs.gearDisplay,
                     boostPsi       = boost.psi ?: 0.0,
@@ -873,7 +876,7 @@ class DriveRecorder(
                     DriveState.drivenStepKm(prev.lat, prev.lng, point.lat, point.lng, DriveState.carParked(vs, now))   // #335
                 else 0.0
 
-                val peaks = buildPeakEvents(state, vs, boost, point, now)
+                val peaks = buildPeakEvents(state, vs, boost, speed, point, now)
                 val newBoostPeak = com.openrs.dash.data.BoostRule.nextDrivePeak(state.peakBoostPsi, state.peakBoostSource, boost)
                 val isRaceReady = raceReady
                 val rtrPt = state.rtrAchievedPoint ?: if (isRaceReady) point else null
@@ -887,13 +890,13 @@ class DriveRecorder(
                         cumulativeDistanceKm = s.cumulativeDistanceKm + segDist,
                         rpmSum               = if (vs.rpm > 400) s.rpmSum + vs.rpm else s.rpmSum,
                         rpmSamples           = if (vs.rpm > 400) s.rpmSamples + 1 else s.rpmSamples,
-                        speedSum             = s.speedSum + vs.speedKph,
+                        speedSum             = s.speedSum + (speed ?: 0.0),        // #515: current speeds only
                         fuelBasePct          = com.openrs.dash.data.FuelUsed.rebase(s.fuelBaseOrStartPct, vs.fuelLevelPct),
-                        speedSamples         = s.speedSamples + 1,
+                        speedSamples         = if (speed != null) s.speedSamples + 1 else s.speedSamples,
                         modeCounts           = s.modeCounts.toMutableMap().also {
                             it[vs.driveMode] = (it[vs.driveMode] ?: 0) + 1
                         },
-                        maxSpeedKph          = maxOf(s.maxSpeedKph, vs.speedKph),
+                        maxSpeedKph          = maxOf(s.maxSpeedKph, speed ?: 0.0),
                         peakRpm              = maxOf(s.peakRpm, vs.rpm),
                         peakBoostPsi         = newBoostPeak?.first ?: s.peakBoostPsi,
                         peakBoostSource      = newBoostPeak?.second ?: s.peakBoostSource,
@@ -968,6 +971,7 @@ class DriveRecorder(
         state: DriveState,
         vs: VehicleState,
         boost: com.openrs.dash.data.BoostReading,
+        speedKph: Double?,
         point: DrivePointEntity,
         now: Long
     ): List<PeakEvent> {
@@ -984,9 +988,9 @@ class DriveRecorder(
             peaks.removeAll { it.type == PeakType.LATERAL_G }
             peaks += PeakEvent(PeakType.LATERAL_G, abs(vs.lateralG), point.lat, point.lng, now)
         }
-        if (vs.speedKph > state.maxSpeedKph) {
+        if (speedKph != null && speedKph > state.maxSpeedKph) {
             peaks.removeAll { it.type == PeakType.SPEED }
-            peaks += PeakEvent(PeakType.SPEED, vs.speedKph, point.lat, point.lng, now)
+            peaks += PeakEvent(PeakType.SPEED, speedKph, point.lat, point.lng, now)
         }
         return peaks
     }
@@ -1194,15 +1198,17 @@ class DriveRecorder(
     private fun fromStoredPoints(orphan: DriveEntity, points: List<DrivePointEntity>): DriveEntity {
         if (points.isEmpty()) return orphan
         var distanceKm = 0.0
-        // A stored point's speed has no "not received" form (#335): zero-speed steps are dropped only when the drive shows
-        // it had the car's speed (some point above 0); a drive with every point at 0 keeps its GPS steps, so a car that
-        // never sent 0x130 keeps its distance, and a drive parked from start to finish keeps its wander
+        // A point recorded before #515 has no "not received" speed (#335): zero-speed steps are dropped only when the drive
+        // shows it had the car's speed (some point above 0); a drive with every point at 0 keeps its GPS steps, so a car
+        // that never sent 0x130 keeps its distance, and a drive parked from start to finish keeps its wander. A point with
+        // no current speed (NO_SPEED, #515) is never parked
         val speedSeen = points.any { it.speedKph > 0.0 }
         for (i in 1 until points.size) {
             val a = points[i - 1]; val b = points[i]
             if (b.timestamp - a.timestamp <= ORPHAN_SEGMENT_MAX_GAP_MS)
-                distanceKm += DriveState.drivenStepKm(a.lat, a.lng, b.lat, b.lng, parked = speedSeen && b.speedKph <= 0.0)
+                distanceKm += DriveState.drivenStepKm(a.lat, a.lng, b.lat, b.lng, parked = speedSeen && b.speedKph == 0.0)
         }
+        val speeds = points.mapNotNull { it.speedReadingKph() }
         val oil = points.filter { it.oilTempC > -90 }
         val coolant = points.filter { it.coolantTempC > -90 }
         val modes = JSONObject().apply {
@@ -1210,8 +1216,8 @@ class DriveRecorder(
         }.toString()
         return orphan.copy(
             distanceKm = distanceKm,
-            avgSpeedKph = points.sumOf { it.speedKph } / points.size,
-            maxSpeedKph = points.maxOf { it.speedKph },
+            avgSpeedKph = if (speeds.isEmpty()) 0.0 else speeds.average(),
+            maxSpeedKph = speeds.maxOrNull() ?: 0.0,
             peakRpm = points.maxOf { it.rpm },
             peakLateralG = points.maxOf { abs(it.lateralG) },
             peakOilTempC = oil.maxOfOrNull { it.oilTempC } ?: orphan.peakOilTempC,

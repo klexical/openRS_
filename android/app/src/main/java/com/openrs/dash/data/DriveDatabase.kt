@@ -119,7 +119,18 @@ data class DrivePointEntity(
     // ── MAP (v15, #271) — PCM 0xF40B, kPa absolute, only from a fresh decode; null = none at this point or recorded before v15
     //    (never backfilled). 255 is the byte's ceiling: a saturated value, not a measurement (MapF40b.isSaturated) ──
     val mapKpa: Double? = null
-)
+) {
+    companion object {
+        /**
+         * [speedKph] when the point has no current speed (#515): no 0x130 frame within the link limit
+         * ([DriveState.freshSpeedKph]). Points recorded before #515 always hold a value. Read through [speedReadingKph].
+         */
+        const val NO_SPEED = -1.0
+    }
+}
+
+/** The point's speed as a reading (#515): null when it was recorded with no current 0x130 speed ([DrivePointEntity.NO_SPEED]). */
+fun DrivePointEntity.speedReadingKph(): Double? = speedKph.takeIf { it >= 0.0 }
 
 // ═══════════════════════════════════════════════════════════════════════════
 // DTC HISTORY — persisted scan results for trending and comparison
