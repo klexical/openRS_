@@ -55,6 +55,9 @@ import com.openrs.dash.ui.UserPrefs
 import com.openrs.dash.ui.UserPrefsStore
 import com.openrs.dash.ui.WhatsNewDialog
 import com.openrs.dash.ui.legibleAccent
+import com.openrs.dash.ui.trip.DeleteTripDialog
+import com.openrs.dash.ui.trip.deleteTripTitle
+import com.openrs.dash.data.DriveEntity
 import com.openrs.dash.ui.trip.TripPage
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
@@ -76,7 +79,7 @@ import java.util.TimeZone
 
 /**
  * Screenshot tests of the main screens at 360 dp (the smallest phone width the layout is checked at), at the phone's font
- * size 1.0, 1.3 and 2.0: DRIVE, PERF, THERMAL, TRIP, GARAGE (CONTROL and DIAG), Settings (its first page and
+ * size 1.0, 1.3 and 2.0: DRIVE, PERF, THERMAL, TRIP (and its delete confirmation), GARAGE (CONTROL and DIAG), Settings (its first page and
  * UNITS) and What's New, each under
  * the app's header and bottom tab bar as MainActivity lays them out. Each image is the screen as it opens (no scrolling).
  *
@@ -362,6 +365,19 @@ class MainScreensScreenshotTest(private val fontScale: Float) {
     @Test fun trip() = shoot("trip", driving) {
         // settled = false: no Google map (it needs Play services); its place keeps the page's layout
         Frame(3, driving) { TripPage(DriveState(), driving, UserPrefs(), settled = false) }
+    }
+
+    /** TRIP's delete confirmation (#631) over the TRIP page, as a swipe on a drive opens it. */
+    @Test fun tripDelete() = shoot("trip_delete", driving, paged = false) {
+        Frame(3, driving) {
+            TripPage(DriveState(), driving, UserPrefs(), settled = false)
+            // A fixed drive: 20 km (12.4 mi) on a fixed date, never "today" (the test clock's TZ is UTC)
+            DeleteTripDialog(
+                title = deleteTripTitle(DriveEntity(startTime = 1_795_780_800_000L, distanceKm = 20.0), UserPrefs(),
+                    nowMs = 1_795_780_800_000L + 3 * 86_400_000L),
+                onConfirm = {}, onDismiss = {},
+            )
+        }
     }
 
     @Test fun garage() = shoot("garage", driving) {

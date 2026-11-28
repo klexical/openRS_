@@ -41,6 +41,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.*
@@ -1384,9 +1385,50 @@ private fun DriveHistoryList(
     }
 }
 
+/**
+ * The delete confirmation's title names the drive (#631, the owner's choice): the history list's date label for its
+ * start (today / yesterday / "Nov 27") and its distance in the chosen unit, e.g. "Delete the drive from Nov 27, 12.4 mi?".
+ */
+internal fun deleteTripTitle(drive: DriveEntity, prefs: UserPrefs, nowMs: Long = System.currentTimeMillis()): String {
+    val day = driveDateLabel(drive.startTime, nowMs).let { if (it == "Today" || it == "Yesterday") it.lowercase() else it }
+    // No-break spaces keep "Nov 27" and "12.4 mi" whole when the title wraps (font 2.0 split "Nov / 27")
+    return "Delete the drive from ${day.replace(' ', NBSP)}, ${prefs.distance(drive.distanceKm).text.replace(' ', NBSP)}?"
+}
+
+private const val NBSP = '\u00A0'
+
+/** The delete confirmation's other wording (#631; user-visible, the owner's sign-off on the PR). */
+internal const val DELETE_TRIP_TEXT = "Its laps are deleted too. This can't be undone."
+internal const val DELETE_TRIP_CONFIRM = "DELETE"
+internal const val DELETE_TRIP_CANCEL = "CANCEL"
+
+/**
+ * Asks before a swiped drive is deleted (#631): [title] names it ([deleteTripTitle]); only DELETE calls [onConfirm];
+ * CANCEL, Back and a tap outside call [onDismiss]. Deleting removes the drive, its points and its laps, with no undo.
+ */
+@Composable
+internal fun DeleteTripDialog(title: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Surf,
+        title = { UIText(title, 16.sp, Frost, FontWeight.Bold) },
+        text = { MonoLabel(DELETE_TRIP_TEXT, 11.sp, Mid) },
+        dismissButton = {
+            TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) {
+                MonoLabel(DELETE_TRIP_CANCEL, 12.sp, Mid, FontWeight.Bold, 0.5.sp)
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm, modifier = Modifier.heightIn(min = 48.dp)) {
+                MonoLabel(DELETE_TRIP_CONFIRM, 12.sp, Orange, FontWeight.Bold, 0.5.sp)
+            }
+        }
+    )
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SwipeDriveCard(
+internal fun SwipeDriveCard(
     drive: DriveEntity,
     prefs: UserPrefs,
     isSelected: Boolean,
@@ -1400,14 +1442,22 @@ private fun SwipeDriveCard(
     onReplay: () -> Unit = {},
     onCompare: () -> Unit = {}
 ) {
+    // #631: a swipe only asks. The card springs back (the swipe is never accepted) and the drive is deleted only by
+    // the dialog's DELETE.
+    var confirmDelete by remember { mutableStateOf(false) }
     val dismissState = rememberSwipeToDismissBoxState(
         confirmValueChange = { value ->
-            if (value == SwipeToDismissBoxValue.EndToStart) {
-                onDelete()
-                true
-            } else false
+            if (value == SwipeToDismissBoxValue.EndToStart) confirmDelete = true
+            false
         }
     )
+    if (confirmDelete) {
+        DeleteTripDialog(
+            title = deleteTripTitle(drive, prefs),
+            onConfirm = { confirmDelete = false; onDelete() },
+            onDismiss = { confirmDelete = false }
+        )
+    }
 
     SwipeToDismissBox(
         state = dismissState,
@@ -1685,18 +1735,20 @@ private fun formatDuration(ms: Long): String {
 }
 
 private fun groupDrivesByDate(drives: List<DriveEntity>): List<Pair<String, List<DriveEntity>>> {
-    val today = Calendar.getInstance()
-    val yesterday = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -1) }
-    val dateFormat = SimpleDateFormat("MMM d", Locale.getDefault())
+    val now = System.currentTimeMillis()
+    return drives.groupBy { drive -> driveDateLabel(drive.startTime, now) }.toList()
+}
 
-    return drives.groupBy { drive ->
-        val cal = Calendar.getInstance().apply { timeInMillis = drive.startTime }
-        when {
-            isSameDay(cal, today) -> "Today"
-            isSameDay(cal, yesterday) -> "Yesterday"
-            else -> dateFormat.format(Date(drive.startTime))
-        }
-    }.toList()
+/** The history list's date label for a drive's start: "Today", "Yesterday", else "MMM d" ("Nov 27"). */
+internal fun driveDateLabel(startMs: Long, nowMs: Long): String {
+    val today = Calendar.getInstance().apply { timeInMillis = nowMs }
+    val yesterday = Calendar.getInstance().apply { timeInMillis = nowMs; add(Calendar.DAY_OF_YEAR, -1) }
+    val cal = Calendar.getInstance().apply { timeInMillis = startMs }
+    return when {
+        isSameDay(cal, today) -> "Today"
+        isSameDay(cal, yesterday) -> "Yesterday"
+        else -> SimpleDateFormat("MMM d", Locale.getDefault()).format(Date(startMs))
+    }
 }
 
 private fun isSameDay(a: Calendar, b: Calendar): Boolean =
