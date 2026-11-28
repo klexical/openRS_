@@ -23,11 +23,17 @@ Forked from [`meatpiHQ/wican-fw`](https://github.com/meatpiHQ/wican-fw) — the 
 - **Drive mode write** — send N/S/T/D directly from the app
   - Simulates the physical drive mode button on CAN ID 0x305 (byte 4, bit 2)
   - Uses 0x420 to disambiguate Sport from Track (0x1B0 alone is ambiguous)
-  - Persists selected mode to NVS — car boots in that mode next ignition on
+  - Persists the last mode it set to NVS and restores it when the adapter starts with the car on (see the warning below)
 - **ESC control** — On / Sport / Off via CAN button simulation (0x260 byte 5, bit 4)
 - **Launch Control enable/disable**
 - **Auto Start/Stop kill** — simulates ASS button on CAN 0x260 (byte 1, bit 0)
 - **Boot apply** — on startup, automatically applies persisted drive mode, ESC mode, and ASS kill
+
+> **Warning ([#628](https://github.com/klexical/openRS_/issues/628)):** the released firmware (USB v1.61, PRO v1.2 and
+> older) restores the last drive mode the app set, Drift and Track included, and the last ESC mode, Off included,
+> every time the adapter starts with the car's bus already up. It also presses the start-stop button blind when the
+> kill setting is on. Check the drive mode and ESC on the cluster after starting the car. A fix that sends nothing to
+> the car at start-up is in progress and is not released yet.
 - **Bluetooth LE** uses the MeatPi firmware's transport. Enable it in the adapter's web interface before pairing. See [connection support by app release](../android/docs/hardware-setup.md#which-connection-to-use).
 - **Battery protection** — configurable voltage threshold (default 12.2V) for sleep mode
 - **Battery voltage REST API** (`GET /api/frs` → includes `battery_mv`)
