@@ -24,7 +24,7 @@ import com.openrs.dash.ui.UserPrefs
 import com.openrs.dash.ui.trip.DELETE_TRIP_CANCEL
 import com.openrs.dash.ui.trip.DELETE_TRIP_CONFIRM
 import com.openrs.dash.ui.trip.DELETE_TRIP_TEXT
-import com.openrs.dash.ui.trip.DELETE_TRIP_TITLE
+import com.openrs.dash.ui.trip.deleteTripTitle
 import com.openrs.dash.ui.trip.DriveHistory
 import com.openrs.dash.ui.trip.SwipeDriveCard
 import org.junit.After
@@ -45,7 +45,7 @@ import java.time.Duration
 /**
  * #631: a swipe left on a drive in TRIP's history used to delete it at once — the drive, its points and its laps,
  * with no undo. The production [SwipeDriveCard], swiped with real touch events, deleting through TRIP's own
- * [DriveHistory.delete] into an in-memory Room database: the swipe only asks ("Delete this trip?") and the drive stays in
+ * [DriveHistory.delete] into an in-memory Room database: the swipe only asks ("Delete the drive from …, 12.4 mi?") and the drive stays in
  * the database; CANCEL keeps it and the card is back at rest; only DELETE removes the drive and its lap sessions.
  * Teardown as the Compose rule in `.claude/rules/android-general.md` says.
  */
@@ -59,7 +59,7 @@ class TripDeleteConfirmTest {
     @Before fun setUp() {
         db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext(), DriveDatabase::class.java)
             .allowMainThreadQueries().build()
-        driveId = db.driveDao().insertDrive(DriveEntity(startTime = 1_000_000L, endTime = 2_000_000L, name = DRIVE_NAME))
+        driveId = db.driveDao().insertDrive(DriveEntity(startTime = 1_000_000L, endTime = 2_000_000L, name = DRIVE_NAME, distanceKm = 20.0))
         db.driveDao().insertLapSession(LapSessionEntity(driveId = driveId, startFinishLat = 0.0, startFinishLng = 0.0,
             startFinishBearing = 0f, createdAt = 1_500_000L))
     }
@@ -88,7 +88,7 @@ class TripDeleteConfirmTest {
             ?: (v as? ViewGroup)?.let { g -> (0 until g.childCount).firstNotNullOfOrNull { find(g.getChildAt(it)) } }
         return windows().asReversed().filter { it.isAttachedToWindow }.mapNotNull { find(it) }
             .map { it.semanticsOwner.unmergedRootSemanticsNode }
-            .firstOrNull { DELETE_TRIP_TITLE in texts(it) }
+            .firstOrNull { DELETE_TRIP_TEXT in texts(it) }
     }
 
     /** Taps the nearest clickable node at or above the one showing [text]. */
@@ -169,6 +169,8 @@ class TripDeleteConfirmTest {
         assertNotNull("the swipe shows the delete confirmation", dialog)
         val shown = texts(dialog!!)
         assertEquals(listOf(true, true, true), listOf(DELETE_TRIP_TEXT in shown, DELETE_TRIP_CONFIRM in shown, DELETE_TRIP_CANCEL in shown))
+        val title = deleteTripTitle(db.driveDao().getDrive(driveId)!!, UserPrefs())
+        assertTrue("the title names the drive: $shown", title in shown && title.endsWith(", 12.4\u00A0mi?"))
     }
 
     @Test fun `DELETE in the dialog deletes the drive and its lap sessions once`() = swiped { deleted, _ ->

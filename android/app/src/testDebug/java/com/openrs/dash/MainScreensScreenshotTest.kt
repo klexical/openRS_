@@ -56,6 +56,8 @@ import com.openrs.dash.ui.UserPrefsStore
 import com.openrs.dash.ui.WhatsNewDialog
 import com.openrs.dash.ui.legibleAccent
 import com.openrs.dash.ui.trip.DeleteTripDialog
+import com.openrs.dash.ui.trip.deleteTripTitle
+import com.openrs.dash.data.DriveEntity
 import com.openrs.dash.ui.trip.TripPage
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
@@ -369,7 +371,12 @@ class MainScreensScreenshotTest(private val fontScale: Float) {
     @Test fun tripDelete() = shoot("trip_delete", driving, paged = false) {
         Frame(3, driving) {
             TripPage(DriveState(), driving, UserPrefs(), settled = false)
-            DeleteTripDialog(onConfirm = {}, onDismiss = {})
+            // A fixed drive: 20 km (12.4 mi) on a fixed date, never "today" (the test clock's TZ is UTC)
+            DeleteTripDialog(
+                title = deleteTripTitle(DriveEntity(startTime = 1_795_780_800_000L, distanceKm = 20.0), UserPrefs(),
+                    nowMs = 1_795_780_800_000L + 3 * 86_400_000L),
+                onConfirm = {}, onDismiss = {},
+            )
         }
     }
 
