@@ -652,7 +652,10 @@ private fun TripPageContent(
                         // 1.1 — DTE + boost (live recording only)
                         if (driveState.isRecording) {
                             // Boost bands (8 / 16 psi) weren't limits — read it in ink like the live panel. TIP gauge (#207).
-                            val boost = com.openrs.dash.data.BoostSession.gauge(vehicleState, com.openrs.dash.ui.wallClockMs())
+                            // The 1 s freshness tick runs only while TRIP is seen (#629): off screen its inputs are held, so it
+                            // would only re-run this page's composition every second behind whatever tab is shown
+                            val boostClockMs = if (visible) com.openrs.dash.ui.wallClockMs() else System.currentTimeMillis()
+                            val boost = com.openrs.dash.data.BoostSession.gauge(vehicleState, boostClockMs)
                             MonoText("${com.openrs.dash.ui.liveGaugeLabel(boost)} ${boost.gaugeKpa?.let { g -> prefs.displayGauge(g).let { (v, u) -> "$v $u" } } ?: "—"}", 10.sp, Dim)
                             val dte = driveState.distanceToEmptyKm
                             if (dte > 0) {
@@ -749,6 +752,7 @@ private fun TripPageContent(
                     if (preview != null) { TripPreview.set(TripPreview.Mode.SUMMARY); return@LiveHud }
                     recorder.stopDrive()   // the history updates when the drive's end is written (observed list)
                 },
+                visible = visible,
                 modifier = Modifier.weight(0.45f).fillMaxWidth()
             )
         } else {
@@ -994,9 +998,12 @@ private fun LiveHud(
     onPause: () -> Unit,
     onResume: () -> Unit,
     onStop: () -> Unit,
+    /** TRIP is on screen; off screen the boost freshness tick stops (#629, recorder-trip rule). */
+    visible: Boolean,
     modifier: Modifier = Modifier
 ) {
     val accent = LocalThemeAccent.current
+    val boostClockMs = if (visible) com.openrs.dash.ui.wallClockMs() else System.currentTimeMillis()
 
     Column(
         modifier
@@ -1051,7 +1058,7 @@ private fun LiveHud(
                         Readout("RPM", if (live) "%.0f".format(vehicleState.rpm) else ph),
                         Readout("GEAR", if (live) vehicleState.gearDisplay else ph),
                         // Value + the user's pressure unit; DAY reads the darker paint (actionInk) like the map labels.
-                        com.openrs.dash.data.BoostSession.gauge(vehicleState, com.openrs.dash.ui.wallClockMs()).let { b ->
+                        com.openrs.dash.data.BoostSession.gauge(vehicleState, boostClockMs).let { b ->
                             Readout(com.openrs.dash.ui.liveGaugeLabel(b), if (live) b.gaugeKpa?.let { g -> prefs.displayGauge(g).let { (v, u) -> "$v $u" } } ?: ph else ph,
                                 color = actionInk(accent))
                         },
