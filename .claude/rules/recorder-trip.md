@@ -64,3 +64,8 @@ paths:
   next launch all go through `DriveRecorder.summarize`. The aggression score covers every stored point of the drive (the
   owner, on #321). Never read the run's accumulators from outside the loop while it runs: an export reads the loop's
   published `SummaryParts` (`DriveSummaryOneRuleTest`)
+- **A process death loses at most the point being written (#512)** — the loop writes every point as it is recorded
+  (`POINTS_PER_FLUSH` = 1; batch tests pass `pointsPerFlush`) and every `CHECKPOINT_MS` writes `summarize`'s live summary
+  to the open row (endTime stays 0, score left to the close), so a drive closed at the next launch keeps it. A new
+  per-drive in-memory figure goes into `summarize`'s live branch, or a crash loses it. Laps are not checkpointed, and the
+  drive started after the restart is a separate drive (#512) (`RecorderProcessDeathTest`)

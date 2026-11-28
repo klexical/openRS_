@@ -105,6 +105,8 @@ class DriveRecorder(
     onSummary: ((DriveEntity) -> Unit)? = null,
     /** Wall clock for every time the recorder takes (#316, seam 2); production uses the system clock. */
     private val clock: () -> Long = System::currentTimeMillis,
+    /** Points per insert (#512): production writes every point as it is recorded; batch tests pass a larger number. */
+    private val pointsPerFlush: Int = POINTS_PER_FLUSH,
 ) {
     /** GPS for the recording loop + the weather lookup (fused provider in production). */
     interface LocationSource {
@@ -143,11 +145,11 @@ class DriveRecorder(
      * points to the old one. These used to be recorder fields that [startDrive] reassigned under the old drive.
      */
     private class DriveRun(vs: VehicleState, startMs: Long) {
-        /** Buffer for batch writes — flushed to Room every FLUSH_SIZE points. Shared by the loop (add, batch / final
+        /** Buffer for point writes — flushed to Room every [pointsPerFlush] points. Shared by the loop (add, batch / final
          *  drain) and the drains outside it (pause, export): every access goes through [addPoint] / [bufferedCount] /
          *  [takePoints], one monitor, so a point added during a take is never cleared unstored and two takes never
          *  hold the same points (#238 review). Nothing suspends inside it; inserts run after the take. */
-        val pointsBuffer = ArrayList<DrivePointEntity>(FLUSH_SIZE * 2)
+        val pointsBuffer = ArrayList<DrivePointEntity>(8)
         fun addPoint(p: DrivePointEntity) = synchronized(pointsBuffer) { pointsBuffer.add(p) }
         fun bufferedCount() = synchronized(pointsBuffer) { pointsBuffer.size }
         fun takePoints(): List<DrivePointEntity> =
@@ -194,6 +196,8 @@ class DriveRecorder(
         @Volatile var linkLostAtMs = 0L
         /** #316: the time of the last point this drive recorded (0 = none); a drive closed at its loss never ends before it. */
         @Volatile var lastPointMs = 0L
+        /** #512: when the loop last wrote the drive's summary to its row while recording (0 = not yet). Loop only. */
+        var lastCheckpointMs = 0L
     }
 
     /** The drive being recorded (or the last one); see [DriveRun]. */
@@ -911,9 +915,16 @@ class DriveRecorder(
                 run.summaryParts = SummaryParts.of(run)            // #321: what an export during the drive reads
 
                 // Flush to Room when the buffer is full — last, so a STOP cancellation delivered when the insert
-                // returns (flushBuffer rethrows it) can't cut this point's state update short
-                if (run.bufferedCount() >= FLUSH_SIZE) {
+                // returns (flushBuffer rethrows it) can't cut this point's state update short. Production flushes every
+                // point (#512): a process death loses at most the point being recorded
+                if (run.bufferedCount() >= pointsPerFlush) {
                     flushBuffer(run)
+                }
+                // #512: the summary STOP would write, kept on the open row, so a drive closed at the next launch keeps
+                // what lives only in memory (fuel, thermal record, trims, pulls, boost peak, weather)
+                if (now - run.lastCheckpointMs >= CHECKPOINT_MS) {
+                    run.lastCheckpointMs = now
+                    checkpointSummary(driveId, run, vs)
                 }
             }
         } finally {
@@ -960,6 +971,28 @@ class DriveRecorder(
             run.inFlight.update { it - 1 }
         }
         return failure == null
+    }
+
+    /**
+     * Writes the summary STOP would write now (#512, [summarize] with the run's live parts) to the open drive's row, which
+     * stays open (endTime 0). The name and tags are the row's own, read in the same transaction; a deleted row gets
+     * nothing. The aggression score is left to the close ([closedOrphan] or STOP), which scores every stored point. A failed
+     * write is logged and the drive records on; STOP's own write replaces it.
+     */
+    private suspend fun checkpointSummary(driveId: Long, run: DriveRun, vs: VehicleState) {
+        val state = _driveState.value.takeIf { it.driveId == driveId } ?: return
+        val live = LiveSummary(state, run.summaryParts, run.startOilTempC, run.startCoolantTempC, vs, FuelEconomy.state.value)
+        try {
+            withContext(NonCancellable + Dispatchers.IO) {
+                db.runInTransaction(Runnable {
+                    val current = dao.getDrive(driveId) ?: return@Runnable
+                    if (current.endTime != 0L) return@Runnable
+                    dao.updateDrive(summarize(current, emptyList(), live).copy(endTime = 0L, aggressionScore = current.aggressionScore))
+                })
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "drive $driveId summary checkpoint failed", e)
+        }
     }
 
     // ── Peak event tracking ──────────────────────────────────────────────────
@@ -1138,8 +1171,10 @@ class DriveRecorder(
      * [ORPHAN_SEGMENT_MAX_GAP_MS] apart: a pause or a link loss breaks the live polyline and its fixes are never stored, so
      * a longer gap is not driven distance (a late fix is left out too, and a single skipped fix can be bridged — so it can
      * differ slightly from what STOP would have written); a step at a later point with speed 0 is dropped only when some point
-     * of the drive is above 0 ([DriveState.drivenStepKm], #335). Fuel, fuel economy, trims, pulls, the thermal record, laps,
-     * weather and the name stay at the row's values: they lived in memory only. No summary sheet is posted for it.
+     * of the drive is above 0 ([DriveState.drivenStepKm], #335). Fuel, fuel economy, trims, pulls, the thermal record, the
+     * boost peak, weather and the name stay at the row's values: the loop's last summary checkpoint ([checkpointSummary],
+     * at most [CHECKPOINT_MS] old, #512), or the defaults for a drive that never reached one. Laps lived in memory only and
+     * are lost. No summary sheet is posted for it.
      */
     private fun closedOrphan(orphan: DriveEntity, points: List<DrivePointEntity>): DriveEntity {
         if (points.isEmpty()) return orphan.copy(endTime = orphan.startTime)
@@ -1380,7 +1415,10 @@ class DriveRecorder(
         private const val WEATHER_REFRESH_MS = 15 * 60_000L
         /** #316: a link pause older than this (from the loss) is not resumed: its drive is saved and a new one starts. */
         const val STALE_LINK_PAUSE_MS = 15 * 60_000L
-        private const val FLUSH_SIZE = 30           // flush every ~30 seconds at 1 Hz
+        /** Points per insert in production (#512): every point, so a process death loses none already recorded. */
+        const val POINTS_PER_FLUSH = 1
+        /** #512: how often the loop writes the drive's summary to its open row (a drive closed at launch keeps it). */
+        const val CHECKPOINT_MS = 10_000L
         /** An orphan's distance joins two stored points only this close (1 Hz fixes; see [closedOrphan], #262). */
         private const val ORPHAN_SEGMENT_MAX_GAP_MS = 2_000L
         private const val MAX_RECENT_POINTS = 3600  // ~1 hour of points for live polyline

@@ -137,7 +137,8 @@ class ThumbnailInputRegressionTest {
     @After fun tearDown() { recorders.forEach { it.cancel() }; db.close() }
 
     private fun recorder(dao: DriveDao) =
-        DriveRecorder(app, vs, WeatherRepository(""), db, dao, { _, _ -> null }, gps, { }).also { recorders += it }
+        // The buffer this class drives is the batch path: production writes every point (#512, POINTS_PER_FLUSH = 1)
+        DriveRecorder(app, vs, WeatherRepository(""), db, dao, { _, _ -> null }, gps, { }, pointsPerFlush = 30).also { recorders += it }
 
     private fun waitUntil(timeoutMs: Long = 10_000, cond: () -> Boolean): Boolean {
         val end = System.currentTimeMillis() + timeoutMs
