@@ -129,7 +129,11 @@ fun TripPage(
     val pinnable = LocalPinnableContainer.current
     DisposableEffect(mapCreated, pinnable) {
         val handle = if (mapCreated) pinnable?.pin() else null
-        onDispose { handle?.release() }
+        com.openrs.dash.diagnostics.DiagnosticLogger.tripMapCreated = mapCreated   // #630: named on each FPS sample
+        onDispose {
+            handle?.release()
+            com.openrs.dash.diagnostics.DiagnosticLogger.tripMapCreated = false
+        }
     }
 
     val parentOwner = LocalLifecycleOwner.current

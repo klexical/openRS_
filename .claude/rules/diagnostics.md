@@ -129,3 +129,9 @@ paths:
   real full heap (`CrashRecordFullHeapTest`, `CrashFileNameTest`, `CrashHistoryClearTest`). The handler's own first step
   drops `CrashReporter`'s heap reserve (#552), so nothing in the handler may allocate before that line; a full heap is
   filled for real only in a child JVM (`CrashHandlerHeapReserveTest`), after the handler's classes are loaded
+- **UI timing per FPS-timeline sample (#630)** — each `fpsTimeline` point carries `uiMainWakes`, `uiMainLateOver50`,
+  `uiFrames`, `uiFramesOver32`, `uiFramesOver100` (counts since the previous sample, `UiSampler`), `uiTab` (the settled
+  tab, `DiagnosticLogger.settledPage` from MainActivity) and `uiTripMapCreated` (TripPage); the summary rolls them up per
+  minute, at most 60 rows (`uiRollUpLines`). Counts and offsets only, reset with the #421 counters at `sessionStart`;
+  additive (no schema bump; Sapphire's import reads only `relMs` / `fps`). A new key here is a change to what is exported:
+  the owner's call (`UiSampleExportTest`)

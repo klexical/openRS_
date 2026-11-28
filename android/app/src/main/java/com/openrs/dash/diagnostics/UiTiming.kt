@@ -89,3 +89,50 @@ class UiTimingRecord(
     val mergeLockWait: TimingCounts,
     val bluetooth: BleDelivery?,
 )
+
+/**
+ * UI timing since the previous FPS-timeline sample (#630): counts only, plus the settled [tab] (one of [FrameTimes.TABS],
+ * null for a page outside them) and whether the TRIP map exists ([tripMapCreated], it is retained once made). Lets an
+ * export place lag in time and by tab, where [UiTimingRecord] has only the session's totals.
+ */
+data class UiSample(
+    val mainWakes: Long,
+    val mainLateOver50: Long,
+    val frames: Long,
+    val framesOver32: Long,
+    val framesOver100: Long,
+    val tab: String?,
+    val tripMapCreated: Boolean,
+)
+
+/**
+ * Turns the session's running UI timing counts into [UiSample]s (#630): each [take] is the difference from the previous
+ * one. [reset] goes with the counters' own reset at a session start. A measure whose total went down (its counters reset
+ * between two reads) counts from zero, never negative. Pure; locks itself.
+ */
+class UiSampler {
+    private var mainWakes = 0L
+    private var mainLate = 0L
+    private var frames = 0L
+    private var over32 = 0L
+    private var over100 = 0L
+
+    @Synchronized fun reset() { mainWakes = 0; mainLate = 0; frames = 0; over32 = 0; over100 = 0 }
+
+    @Synchronized fun take(main: TimingCounts, byTab: Map<String, TimingCounts>, page: Int, tripMapCreated: Boolean): UiSample {
+        val nowWakes = main.count
+        val nowLate = main.overMs[50] ?: 0L
+        val nowFrames = byTab.values.sumOf { it.count }
+        val now32 = byTab.values.sumOf { it.overMs[32] ?: 0L }
+        val now100 = byTab.values.sumOf { it.overMs[100] ?: 0L }
+        // A total below the last one means its counters were reset since: that measure counts from zero
+        val mainReset = nowWakes < mainWakes || nowLate < mainLate
+        val framesReset = nowFrames < frames || now32 < over32 || now100 < over100
+        fun since(now: Long, last: Long, reset: Boolean) = if (reset) now else now - last
+        val s = UiSample(since(nowWakes, mainWakes, mainReset), since(nowLate, mainLate, mainReset),
+            since(nowFrames, frames, framesReset), since(now32, over32, framesReset), since(now100, over100, framesReset),
+            FrameTimes.TABS.getOrNull(page), tripMapCreated)
+        mainWakes = nowWakes; mainLate = nowLate; frames = nowFrames; over32 = now32; over100 = now100
+        return s
+    }
+}

@@ -150,6 +150,33 @@ internal object DiagnosticReportBuilder {
             " · native now ${mb(last.nativeKb)} MiB · ${heaps.size} of ${fps.size} samples"
     }
 
+    /** Most rows the UI roll-up prints; a longer session widens each row past one minute (#630). */
+    internal const val UI_ROLLUP_MAX_ROWS = 60
+
+    /**
+     * The FPS timeline's UI timing rolled up per minute of the session (#630): late main-thread wakes over wakes, frames
+     * over 32 / 100 ms over frames, the tabs settled at the minute's samples (pager order) and whether the TRIP map
+     * existed at its last sample. Offsets only. Empty when no sample carries UI timing.
+     */
+    internal fun uiRollUpLines(fps: List<DiagnosticLogger.FpsPoint>): List<String> {
+        val samples = fps.filter { it.ui != null }
+        if (samples.isEmpty()) return emptyList()
+        val minutes = samples.last().relMs / 60_000 + 1
+        val width = ((minutes + UI_ROLLUP_MAX_ROWS - 1) / UI_ROLLUP_MAX_ROWS).coerceAtLeast(1)
+        val head = if (width == 1L) "per minute" else "per $width minutes"
+        val out = mutableListOf("  UI $head (late wakes > 50 ms / wakes · frames > 32 / > 100 ms / frames · tabs · TRIP map):")
+        samples.groupBy { it.relMs / (width * 60_000) }.toSortedMap().forEach { (row, pts) ->
+            val u = pts.map { it.ui!! }
+            val tabs = FrameTimes.TABS.filter { t -> u.any { it.tab == t } }.ifEmpty { listOf("—") }.joinToString(", ")
+            val start = row * width
+            out += "    +%d:%02d  %d/%d · %d/%d/%d · %s · %s".format(java.util.Locale.ROOT, start / 60, start % 60,
+                u.sumOf { it.mainLateOver50 }, u.sumOf { it.mainWakes },
+                u.sumOf { it.framesOver32 }, u.sumOf { it.framesOver100 }, u.sumOf { it.frames },
+                tabs, if (u.last().tripMapCreated) "yes" else "no")
+        }
+        return out
+    }
+
     fun buildSummaryText(
         ts: String,
         snap: AdapterStatusSnapshot = DiagnosticLogger.snapshotAdapterStatus(),
@@ -408,6 +435,7 @@ internal object DiagnosticReportBuilder {
             val avgFps = fps.map { it.fps }.average()
             appendLine("  Min: ${"%.0f".format(minFps)}  Max: ${"%.0f".format(maxFps)}  Avg: ${"%.0f".format(avgFps)}")
             heapLine(fps)?.let { appendLine(it) }
+            uiRollUpLines(fps).forEach { appendLine(it) }
             appendLine("  Last 10 samples:")
             fps.takeLast(10).forEach { pt ->
                 appendLine("    +${log.formatDuration(pt.relMs)} → ${"%.0f".format(pt.fps)} fps")
@@ -574,6 +602,15 @@ internal object DiagnosticReportBuilder {
                         put("heapTotalKb", h.totalKb)
                         put("heapMaxKb", h.maxKb)
                         put("nativeHeapKb", h.nativeKb)
+                    }
+                    pt.ui?.let { u ->   // #630: counts since the previous sample, the settled tab, the TRIP map
+                        put("uiMainWakes", u.mainWakes)
+                        put("uiMainLateOver50", u.mainLateOver50)
+                        put("uiFrames", u.frames)
+                        put("uiFramesOver32", u.framesOver32)
+                        put("uiFramesOver100", u.framesOver100)
+                        put("uiTab", u.tab ?: JSONObject.NULL)
+                        put("uiTripMapCreated", u.tripMapCreated)
                     }
                 })
             }

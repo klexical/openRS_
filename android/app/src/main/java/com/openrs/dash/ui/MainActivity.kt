@@ -240,7 +240,10 @@ class MainActivity : ComponentActivity() {
                 }
             } ?: driveState
             val pagerState  = rememberPagerState(pageCount = { 5 })
-            LaunchedEffect(pagerState) { snapshotFlow { pagerState.settledPage }.collect { frameTab = it } }   // #421
+            LaunchedEffect(pagerState) { snapshotFlow { pagerState.settledPage }.collect {
+                frameTab = it
+                com.openrs.dash.diagnostics.DiagnosticLogger.settledPage = it   // #630: the tab each FPS sample names
+            } }   // #421
             val selectedTab by remember { derivedStateOf { pagerState.currentPage } }
             var mapTouched  by remember { mutableStateOf(false) }
             val hazeState   = remember { HazeState() }
