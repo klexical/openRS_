@@ -1,0 +1,1 @@
+- **TRIP asks before deleting a drive** — Swiping a drive left in TRIP's history now asks "Delete this trip?" with DELETE and CANCEL instead of deleting it at once; the drive, its points and its laps go only on DELETE (`SwipeDriveCard`, `DeleteTripDialog`). ([#631](https://github.com/klexical/openRS_/issues/631))

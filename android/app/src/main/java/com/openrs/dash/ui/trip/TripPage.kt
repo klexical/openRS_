@@ -41,6 +41,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.*
@@ -1384,9 +1385,39 @@ private fun DriveHistoryList(
     }
 }
 
+/** The delete confirmation's wording (#631; user-visible, the owner's sign-off on the PR). */
+internal const val DELETE_TRIP_TITLE = "Delete this trip?"
+internal const val DELETE_TRIP_TEXT = "This can't be undone."
+internal const val DELETE_TRIP_CONFIRM = "DELETE"
+internal const val DELETE_TRIP_CANCEL = "CANCEL"
+
+/**
+ * Asks before a swiped drive is deleted (#631): only DELETE calls [onConfirm]; CANCEL, Back and a tap outside call
+ * [onDismiss]. Deleting removes the drive, its points and its laps, with no undo.
+ */
+@Composable
+internal fun DeleteTripDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Surf,
+        title = { UIText(DELETE_TRIP_TITLE, 16.sp, Frost, FontWeight.Bold) },
+        text = { MonoLabel(DELETE_TRIP_TEXT, 11.sp, Mid) },
+        dismissButton = {
+            TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) {
+                MonoLabel(DELETE_TRIP_CANCEL, 12.sp, Mid, FontWeight.Bold, 0.5.sp)
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm, modifier = Modifier.heightIn(min = 48.dp)) {
+                MonoLabel(DELETE_TRIP_CONFIRM, 12.sp, Orange, FontWeight.Bold, 0.5.sp)
+            }
+        }
+    )
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SwipeDriveCard(
+internal fun SwipeDriveCard(
     drive: DriveEntity,
     prefs: UserPrefs,
     isSelected: Boolean,
@@ -1400,14 +1431,21 @@ private fun SwipeDriveCard(
     onReplay: () -> Unit = {},
     onCompare: () -> Unit = {}
 ) {
+    // #631: a swipe only asks. The card springs back (the swipe is never accepted) and the drive is deleted only by
+    // the dialog's DELETE.
+    var confirmDelete by remember { mutableStateOf(false) }
     val dismissState = rememberSwipeToDismissBoxState(
         confirmValueChange = { value ->
-            if (value == SwipeToDismissBoxValue.EndToStart) {
-                onDelete()
-                true
-            } else false
+            if (value == SwipeToDismissBoxValue.EndToStart) confirmDelete = true
+            false
         }
     )
+    if (confirmDelete) {
+        DeleteTripDialog(
+            onConfirm = { confirmDelete = false; onDelete() },
+            onDismiss = { confirmDelete = false }
+        )
+    }
 
     SwipeToDismissBox(
         state = dismissState,
