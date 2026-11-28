@@ -1,7 +1,7 @@
 // Changelog fragments: each web/CHANGELOG.md entry is written as its own file under web/changelog.d/, so two pull
 // requests never edit the same lines of the changelog (web/changelog.d/README.md). The build folds them in, so the live
-// site's "What's new" reads the folded text; a slice's last delivery writes the fold into the file
-// (`node scripts/changelog.mjs fold`). Pure, and erasable TypeScript only, so that script imports it as it is.
+// site's "What's new" reads the folded text; a slice's last delivery writes the fold into the file (from web/,
+// `node scripts/changelog/changelog.mjs fold`). Pure, and erasable TypeScript only, so that script imports it as it is.
 
 export const SECTIONS = ['added', 'fixed', 'changed', 'removed'] as const
 export type Section = (typeof SECTIONS)[number]
